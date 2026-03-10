@@ -18,6 +18,8 @@ struct ContentView: View {
     @State private var selected: SavedLocation? = nil
     @State private var showingNotInCanadaAlert = false
     @State private var showingSettings = false
+    
+    @State private var selectedDay: DailyForecastDay? = nil
 
     var body: some View {
         NavigationStack {
@@ -38,7 +40,7 @@ struct ContentView: View {
 
                     if let snap = viewModel.snapshot {
                         currentTile(snap)
-                        hourlyTile(snap)
+//                        hourlyTile(snap)
                         dailyTile(snap)
                         sunTile(snap)
                     } else if !viewModel.isLoading && viewModel.errorMessage == nil {
@@ -76,6 +78,11 @@ struct ContentView: View {
             let initial = locationStore.selected ?? SavedLocation.toronto
             selected = initial
             await viewModel.load(for: initial.coordinate, locationName: initial.displayName)
+        }
+        .sheet(item: $selectedDay) { day in
+            DailyForecastDetailSheet(day: day)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showingLocations) {
             LocationPickerView(
@@ -187,63 +194,69 @@ struct ContentView: View {
         .tileStyle()
     }
 
-    private func hourlyTile(_ snap: WeatherSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Hourly")
-                    .font(.headline)
-                Spacer()
-                Text("Temp (°C)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            if snap.hourlyTempsC.isEmpty {
-                Text("No hourly data.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            } else {
-                HourlyTempChart(tempsC: Array(snap.hourlyTempsC.prefix(24)))
-                    .frame(height: 150)
-            }
-        }
-        .tileStyle()
-    }
+//    private func hourlyTile(_ snap: WeatherSnapshot) -> some View {
+//        VStack(alignment: .leading, spacing: 10) {
+//            HStack {
+//                Text("Hourly")
+//                    .font(.headline)
+//                Spacer()
+//                Text("Temp (°C)")
+//                    .font(.caption)
+//                    .foregroundStyle(.secondary)
+//            }
+//
+//            if snap.hourlyTempsC.isEmpty {
+//                Text("No hourly data.")
+//                    .font(.callout)
+//                    .foregroundStyle(.secondary)
+//            } else {
+//                HourlyTempChart(tempsC: Array(snap.hourlyTempsC.prefix(24)))
+//                    .frame(height: 150)
+//            }
+//        }
+//        .tileStyle()
+//    }
 
     private func dailyTile(_ snap: WeatherSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("7‑Day Forecast")
+            Text("7-Day Forecast")
                 .font(.headline)
 
             let days = Array(snap.daily.prefix(7))
             ForEach(Array(days.enumerated()), id: \.offset) { idx, day in
-                HStack(spacing: 10) {
-                    Text(shortDay(day.date))
-                        .font(.callout)
-                        .frame(width: 42, alignment: .leading)
+                Button {
+                    selectedDay = day
+                } label: {
+                    HStack(spacing: 10) {
+                        Text(shortDay(day.date))
+                            .font(.callout)
+                            .frame(width: 42, alignment: .leading)
 
-                    Image(systemName: day.symbolName)
-                        .symbolRenderingMode(.hierarchical)
-                        .frame(width: 22)
+                        Image(systemName: day.symbolName)
+                            .symbolRenderingMode(.hierarchical)
+                            .frame(width: 22)
 
-                    Text(day.conditionText)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        Text(day.conditionText)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
 
-                    Spacer()
+                        Spacer()
 
-                    Text("\(day.precipChancePercent)%")
-                        .font(.callout)
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
-                        .frame(width: 44, alignment: .trailing)
+                        Text("\(day.precipChancePercent)%")
+                            .font(.callout)
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .frame(width: 44, alignment: .trailing)
 
-                    Text("\(Int(round(day.highC)))° / \(Int(round(day.lowC)))°")
-                        .font(.callout.weight(.semibold))
-                        .monospacedDigit()
-                        .frame(width: 92, alignment: .trailing)
+                        Text("\(Int(round(day.highC)))° / \(Int(round(day.lowC)))°")
+                            .font(.callout.weight(.semibold))
+                            .monospacedDigit()
+                            .frame(width: 92, alignment: .trailing)
+                    }
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
 
                 if idx != days.count - 1 {
                     Divider().opacity(0.18)
@@ -361,8 +374,16 @@ private extension View {
         self
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.thinMaterial)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(.ultraThinMaterial)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(Color.primary.opacity(0.10), lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(0.10), radius: 10, x: 0, y: 6)
+            .shadow(color: Color.white.opacity(0.08), radius: 1, x: 0, y: 1)
     }
 }
 
@@ -789,6 +810,80 @@ private enum CanadaSearch {
         }
     }
 }
+
+private struct DailyForecastDetailSheet: View {
+    let day: DailyForecastDay
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 14) {
+                HStack(spacing: 10) {
+                    Image(systemName: day.symbolName)
+                        .font(.system(size: 34, weight: .semibold))
+                        .symbolRenderingMode(.hierarchical)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(longDay(day.date))
+                            .font(.title3.weight(.semibold))
+                        Text(day.conditionText)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+
+                Divider().opacity(0.18)
+
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("High")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("\(Int(round(day.highC)))°C")
+                            .font(.title3.weight(.semibold))
+                            .monospacedDigit()
+                    }
+                    Spacer()
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Low")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("\(Int(round(day.lowC)))°C")
+                            .font(.title3.weight(.semibold))
+                            .monospacedDigit()
+                    }
+                    Spacer()
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Precip")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("\(day.precipChancePercent)%")
+                            .font(.title3.weight(.semibold))
+                            .monospacedDigit()
+                    }
+                }
+
+                Spacer(minLength: 0)
+            }
+            .padding(16)
+            .navigationTitle("Forecast")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func longDay(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_CA")
+        f.dateFormat = "EEEE, MMM d"
+        return f.string(from: date)
+    }
+}
+
 
 #Preview {
     ContentView()
