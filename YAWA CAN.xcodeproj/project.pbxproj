@@ -10,22 +10,9 @@
 		A00EA9192F5F754800085232 /* YAWA CAN.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "YAWA CAN.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		A00EA9822F5FA76100085232 /* Exceptions for "YAWA CAN" folder in "YAWA CAN" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				NOAACurrentObservationModels.swift,
-			);
-			target = A00EA9182F5F754800085232 /* YAWA CAN */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A00EA91B2F5F754800085232 /* YAWA CAN */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				A00EA9822F5FA76100085232 /* Exceptions for "YAWA CAN" folder in "YAWA CAN" target */,
-			);
 			path = "YAWA CAN";
 			sourceTree = "<group>";
 		};
