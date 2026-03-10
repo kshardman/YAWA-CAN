@@ -23,7 +23,7 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
             .init(name: "longitude", value: String(coordinate.longitude)),
 
             // current conditions
-            .init(name: "current", value: "temperature_2m,relative_humidity_2m,pressure_msl,wind_speed_10m,weather_code"),
+            .init(name: "current", value: "temperature_2m,relative_humidity_2m,pressure_msl,wind_speed_10m,wind_direction_10m,weather_code"),
 
             // hourly temps for chart
             .init(name: "hourly", value: "temperature_2m"),
@@ -55,6 +55,7 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
         let current = CurrentConditions(
             temperatureC: decoded.current.temperature_2m,
             windSpeedKph: decoded.current.wind_speed_10m,
+            windDirectionDegrees: decoded.current.wind_direction_10m,
             humidityPercent: Double(decoded.current.relative_humidity_2m),
             pressureKPa: pressureKPa,
             conditionText: mapped.text,
@@ -97,6 +98,13 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
     
     // MARK: - Mapping + builders
 
+    private func roundPrecipToNearest10(_ value: Int?) -> Int {
+        let v = value ?? 0
+        // round to nearest 10
+        let rounded = Int((Double(v) / 10.0).rounded() * 10.0)
+        return min(100, max(0, rounded))
+    }
+
     private func makeDaily(_ decoded: OpenMeteoResponse) -> [DailyForecastDay] {
         let times = decoded.daily.time
         let highs = decoded.daily.temperature_2m_max
@@ -106,11 +114,21 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
 
         let count = min(times.count, highs.count, lows.count, pops.count, codes.count)
 
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withFullDate]
+        let tz = TimeZone(identifier: decoded.timezone) ?? .current
+
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "en_US_POSIX")
+        df.timeZone = tz
+        df.dateFormat = "yyyy-MM-dd"
+
+        let cal = Calendar(identifier: .gregorian)
 
         return (0..<count).compactMap { i in
-            guard let date = iso.date(from: times[i]) else { return nil }
+            guard let dayDate = df.date(from: times[i]) else { return nil }
+
+            // Anchor at noon local time to avoid “yesterday” in other zones.
+            let date = cal.date(bySettingHour: 12, minute: 0, second: 0, of: dayDate) ?? dayDate
+
             let mapped = mapWeather(code: codes[i])
 
             return DailyForecastDay(
@@ -167,6 +185,7 @@ private struct OpenMeteoResponse: Decodable {
         let relative_humidity_2m: Int
         let pressure_msl: Double
         let wind_speed_10m: Double
+        let wind_direction_10m: Double
         let weather_code: Int
     }
 

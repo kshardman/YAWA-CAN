@@ -11,10 +11,35 @@ import Foundation
 struct CurrentConditions: Equatable {
     let temperatureC: Double
     let windSpeedKph: Double
+    /// Meteorological wind direction in degrees, where 0/360 = North, 90 = East.
+    let windDirectionDegrees: Double
     let humidityPercent: Double
     let pressureKPa: Double
     let conditionText: String
     let symbolName: String
+
+    /// 16-point compass direction (N, NNE, NE, ...)
+    var windCompass: String {
+        CurrentConditions.compassPoint(fromDegrees: windDirectionDegrees)
+    }
+
+    /// Convenience string used by UI, e.g. "NW 24 km/h".
+    var windDisplay: String {
+        "\(windCompass) \(Int(round(windSpeedKph))) km/h"
+    }
+
+    static func compassPoint(fromDegrees degrees: Double) -> String {
+        // Normalize to 0..<360
+        let d = (degrees.truncatingRemainder(dividingBy: 360) + 360).truncatingRemainder(dividingBy: 360)
+        let dirs = [
+            "N", "NNE", "NE", "ENE",
+            "E", "ESE", "SE", "SSE",
+            "S", "SSW", "SW", "WSW",
+            "W", "WNW", "NW", "NNW"
+        ]
+        let idx = Int((d / 22.5).rounded()) % dirs.count
+        return dirs[idx]
+    }
 }
 
 struct DailyForecastDay: Identifiable, Equatable {

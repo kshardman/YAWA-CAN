@@ -21,37 +21,57 @@ struct ContentView: View {
     
     @State private var selectedDay: DailyForecastDay? = nil
 
+    @Environment(\.colorScheme) private var colorScheme
+
+    // Use the shared YAWA theme background so CAN matches NOAA styling.
+    private var appBackground: Color {
+        YAWATheme.background(for: colorScheme)
+    }
+
+    private var cardBackground: Color {
+        YAWATheme.cardBackground(for: colorScheme)
+    }
+
+    private var cardStroke: Color {
+        YAWATheme.cardStroke(for: colorScheme)
+    }
+
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 14) {
-                    headerButton
+            ZStack {
+                appBackground
+                    .ignoresSafeArea()
 
-                    if viewModel.isLoading {
-                        loadingRow
-                    }
+                ScrollView {
+                    VStack(spacing: 14) {
+                        headerButton
 
-                    if let msg = viewModel.errorMessage {
-                        Text(msg)
-                            .font(.callout)
-                            .foregroundStyle(.red)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
+                        if viewModel.isLoading {
+                            loadingRow
+                        }
 
-                    if let snap = viewModel.snapshot {
-                        currentTile(snap)
+                        if let msg = viewModel.errorMessage {
+                            Text(msg)
+                                .font(.callout)
+                                .foregroundStyle(.red)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+
+                        if let snap = viewModel.snapshot {
+                            currentTile(snap)
 //                        hourlyTile(snap)
-                        dailyTile(snap)
-                        sunTile(snap)
-                    } else if !viewModel.isLoading && viewModel.errorMessage == nil {
-                        Text("No weather loaded yet.")
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
+                            dailyTile(snap)
+                            sunTile(snap)
+                        } else if !viewModel.isLoading && viewModel.errorMessage == nil {
+                            Text("No weather loaded yet.")
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
 
-                    Spacer(minLength: 8)
+                        Spacer(minLength: 8)
+                    }
+                    .padding(16)
                 }
-                .padding(16)
             }
             .navigationTitle("YAWA CAN")
             .navigationBarTitleDisplayMode(.inline)
@@ -61,6 +81,8 @@ struct ContentView: View {
                         showingSettings = true
                     } label: {
                         Image(systemName: "gearshape")
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(YAWATheme.symbolColor("gearshape", scheme: colorScheme))
                     }
                     .accessibilityLabel("Settings")
 
@@ -68,10 +90,15 @@ struct ContentView: View {
                         showingLocations = true
                     } label: {
                         Image(systemName: "location.circle")
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(YAWATheme.symbolColor("location.circle", scheme: colorScheme))
                     }
                     .accessibilityLabel("Locations")
                 }
             }
+            // Make the nav bar match the background.
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(YAWATheme.background(for: colorScheme), for: .navigationBar)
         }
         .task {
             // Initial selection: last-used favorite if present, otherwise Toronto.
@@ -169,10 +196,11 @@ struct ContentView: View {
                         .lineLimit(1)
                 }
                 Spacer()
-                Image(systemName: snap.current.symbolName)
+                let nowSymbol = nowSymbolName(for: snap)
+                Image(systemName: nowSymbol)
                     .font(.title2)
                     .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(YAWATheme.symbolColor(nowSymbol, scheme: colorScheme))
             }
 
             HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -187,11 +215,63 @@ struct ContentView: View {
 
             Divider().opacity(0.25)
 
-            metricRow(label: "Wind", value: "\(Int(round(snap.current.windSpeedKph))) km/h")
+            metricRow(label: "Wind", value: snap.current.windDisplay)
             metricRow(label: "Humidity", value: "\(Int(round(snap.current.humidityPercent)))%")
             metricRow(label: "Pressure", value: String(format: "%.1f kPa", snap.current.pressureKPa))
         }
         .tileStyle()
+    }
+
+    // Swap day/night icons like YAWA NOAA (sun by day, moon by night) using sunrise/sunset.
+    private func nowSymbolName(for snap: WeatherSnapshot) -> String {
+        let base = snap.current.symbolName
+        guard isNight(for: snap) else { return base }
+
+        // Map common “day” symbols to their night equivalents.
+        switch base {
+        case "sun.max.fill", "sun.max":
+            return "moon.stars.fill"
+        case "cloud.sun.fill", "cloud.sun":
+            return "cloud.moon.fill"
+        case "cloud.sun.rain.fill", "cloud.sun.rain":
+            return "cloud.moon.rain.fill"
+        default:
+            // If the service already provides a moon icon (or it's not a day-specific icon), keep it.
+            return base
+        }
+    }
+
+    private func isNight(for snap: WeatherSnapshot) -> Bool {
+        guard let sun = snap.sun else { return false }
+
+        // Use the snapshot time zone when available so day/night matches the selected location.
+        let tz: TimeZone? = {
+            let id = snap.timeZoneID.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !id.isEmpty else { return nil }
+            return TimeZone(identifier: id)
+        }()
+
+        let now = Date()
+        if let tz {
+            // Compare by converting all dates to the same time zone.
+            let cal = Calendar.current
+            let nowComp = cal.dateComponents(in: tz, from: now)
+            let srComp = cal.dateComponents(in: tz, from: sun.sunrise)
+            let ssComp = cal.dateComponents(in: tz, from: sun.sunset)
+
+            // Rebuild comparable Date values anchored in that time zone.
+            guard
+                let nowZ = Calendar(identifier: cal.identifier).date(from: nowComp),
+                let srZ  = Calendar(identifier: cal.identifier).date(from: srComp),
+                let ssZ  = Calendar(identifier: cal.identifier).date(from: ssComp)
+            else {
+                return !(now >= sun.sunrise && now <= sun.sunset)
+            }
+            return !(nowZ >= srZ && nowZ <= ssZ)
+        }
+
+        // Fallback: compare directly.
+        return !(now >= sun.sunrise && now <= sun.sunset)
     }
 
 //    private func hourlyTile(_ snap: WeatherSnapshot) -> some View {
@@ -228,13 +308,14 @@ struct ContentView: View {
                     selectedDay = day
                 } label: {
                     HStack(spacing: 10) {
-                        Text(shortDay(day.date))
+                        Text(shortDay(day.date, timeZoneID: snap.timeZoneID))
                             .font(.callout)
                             .frame(width: 42, alignment: .leading)
 
                         Image(systemName: day.symbolName)
                             .symbolRenderingMode(.hierarchical)
                             .frame(width: 22)
+                            .foregroundStyle(YAWATheme.symbolColor(day.symbolName, scheme: colorScheme))
 
                         Text(day.conditionText)
                             .font(.callout)
@@ -274,6 +355,7 @@ struct ContentView: View {
                 Spacer()
                 Image(systemName: "sun.max.fill")
                     .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(YAWATheme.symbolColor("sun.max.fill", scheme: colorScheme))
             }
 
             if let sun = snap.sun {
@@ -326,9 +408,10 @@ struct ContentView: View {
         .font(.callout)
     }
 
-    private func shortDay(_ date: Date) -> String {
+    private func shortDay(_ date: Date, timeZoneID: String) -> String {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_CA")
+        f.timeZone = TimeZone(identifier: timeZoneID) ?? .current
         f.dateFormat = "EEE"
         return f.string(from: date)
     }
@@ -369,21 +452,33 @@ private struct HourlyTempChart: View {
 
 // MARK: - Styling
 
-private extension View {
-    func tileStyle() -> some View {
-        self
+private struct TileStyleModifier: ViewModifier {
+    @Environment(\.colorScheme) private var scheme
+
+    func body(content: Content) -> some View {
+        content
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(.ultraThinMaterial)
+                    .fill(YAWATheme.cardBackground(for: scheme))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.10), lineWidth: 1)
+                    .strokeBorder(YAWATheme.cardStroke(for: scheme), lineWidth: 1)
             )
-            .shadow(color: Color.black.opacity(0.10), radius: 10, x: 0, y: 6)
-            .shadow(color: Color.white.opacity(0.08), radius: 1, x: 0, y: 1)
+            .shadow(
+                color: Color.black.opacity(scheme == .dark ? 0.18 : 0.10),
+                radius: 12,
+                x: 0,
+                y: 8
+            )
+    }
+}
+
+private extension View {
+    func tileStyle() -> some View {
+        modifier(TileStyleModifier())
     }
 }
 
@@ -813,6 +908,7 @@ private enum CanadaSearch {
 
 private struct DailyForecastDetailSheet: View {
     let day: DailyForecastDay
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -822,6 +918,7 @@ private struct DailyForecastDetailSheet: View {
                     Image(systemName: day.symbolName)
                         .font(.system(size: 34, weight: .semibold))
                         .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(YAWATheme.symbolColor(day.symbolName, scheme: colorScheme))
                     VStack(alignment: .leading, spacing: 2) {
                         Text(longDay(day.date))
                             .font(.title3.weight(.semibold))

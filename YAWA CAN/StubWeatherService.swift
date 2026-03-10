@@ -24,6 +24,7 @@ struct StubWeatherService: WeatherServiceProtocol {
         let current = CurrentConditions(
             temperatureC: 7.0,
             windSpeedKph: 18.0,
+            windDirectionDegrees: 315,
             humidityPercent: 62,
             pressureKPa: 101.6,
             conditionText: "Partly Cloudy",
