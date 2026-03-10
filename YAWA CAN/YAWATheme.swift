@@ -49,19 +49,19 @@ enum YAWATheme {
 
     /// Convenience divider color that matches the current scheme.
     static func divider(for scheme: ColorScheme) -> Color {
-        scheme == .dark ? divider : Color.black.opacity(0.12)
+        scheme == .dark ? divider : Color.black.opacity(0.08)
     }
 
     static func cardFill(for scheme: ColorScheme) -> Color {
         scheme == .dark
-        ? Color.black.opacity(0.22)
-        : Color.black.opacity(0.04)
+        ? Color.white.opacity(0.08)
+        : Color.black.opacity(0.035)   // 👈 Apple Weather-ish
     }
 
     static func cardStroke(for scheme: ColorScheme) -> Color {
         scheme == .dark
         ? Color.white.opacity(0.16)
-        : Color.black.opacity(0.12)
+        : Color.black.opacity(0.08) // softer edge in light mode
     }
 
     // MARK: - SF Symbol Colors (match YAWA NOAA)

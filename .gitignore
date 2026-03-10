@@ -6,3 +6,5 @@ xcuserdata/
 **/xcuserdata/
 *.xcuserstate
 yawa-can-backup.bundle/
+yawa-can-backup.bundle
+YAWA-CAN-Info.plist

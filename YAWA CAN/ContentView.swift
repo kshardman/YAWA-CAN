@@ -188,8 +188,16 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Now")
-                        .font(.headline)
+                    HStack(spacing: 6) {
+                        Image(systemName: "clock")
+                            .font(.subheadline)
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(YAWATheme.symbolColor("clock", scheme: colorScheme))
+                            .opacity(0.9)
+
+                        Text("Now")
+                            .font(.headline)
+                    }
                     Text(snap.current.conditionText)
                         .font(.callout)
                         .foregroundStyle(.secondary)
@@ -203,21 +211,30 @@ struct ContentView: View {
                     .foregroundStyle(YAWATheme.symbolColor(nowSymbol, scheme: colorScheme))
             }
 
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("\(Int(round(snap.current.temperatureC)))")
-                    .font(.system(size: 56, weight: .semibold, design: .rounded))
-                    .monospacedDigit()
-                Text("°C")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Spacer()
+            HStack(alignment: .center, spacing: 12) {
+                // Temperature
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("\(Int(round(snap.current.temperatureC)))")
+                        .font(.system(size: 56, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+
+                    Text("°C")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 12)
+
+                // Supporting metrics (icons right next to values)
+                VStack(alignment: .trailing, spacing: 6) {
+                    metricIconValue(icon: "wind", value: snap.current.windDisplay)
+                    metricIconValue(icon: "drop.fill", value: "\(Int(round(snap.current.humidityPercent)))%")
+                    metricIconValue(icon: "gauge", value: String(format: "%.1f kPa", snap.current.pressureKPa))
+                }
+                .padding(.top, -8)
+                .font(.subheadline)
+                .monospacedDigit()
             }
-
-            Divider().opacity(0.25)
-
-            metricRow(label: "Wind", value: snap.current.windDisplay)
-            metricRow(label: "Humidity", value: "\(Int(round(snap.current.humidityPercent)))%")
-            metricRow(label: "Pressure", value: String(format: "%.1f kPa", snap.current.pressureKPa))
         }
         .tileStyle()
     }
@@ -299,8 +316,18 @@ struct ContentView: View {
 
     private func dailyTile(_ snap: WeatherSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("7-Day Forecast")
-                .font(.headline)
+            HStack(spacing: 6) {
+                Image(systemName: "calendar")
+                    .font(.subheadline)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(YAWATheme.symbolColor("calendar", scheme: colorScheme))
+                    .opacity(0.9)
+
+                Text("7-Day Forecast")
+                    .font(.headline)
+
+                Spacer()
+            }
 
             let days = Array(snap.daily.prefix(7))
             ForEach(Array(days.enumerated()), id: \.offset) { idx, day in
@@ -349,13 +376,17 @@ struct ContentView: View {
     
     private func sunTile(_ snap: WeatherSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
+            HStack(spacing: 6) {
+                Image(systemName: "sun.max")
+                    .font(.subheadline)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(YAWATheme.symbolColor("sun.max", scheme: colorScheme))
+                    .opacity(0.9)
+
                 Text("Sun")
                     .font(.headline)
+
                 Spacer()
-                Image(systemName: "sun.max.fill")
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(YAWATheme.symbolColor("sun.max.fill", scheme: colorScheme))
             }
 
             if let sun = snap.sun {
@@ -407,6 +438,23 @@ struct ContentView: View {
         }
         .font(.callout)
     }
+
+    private func metricIconValue(icon: String, value: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.caption2.weight(.semibold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(YAWATheme.symbolColor(icon, scheme: colorScheme))
+                .opacity(colorScheme == .dark ? 0.90 : 0.82)
+                .frame(width: 14, alignment: .center)
+                .offset(y: 0.5)
+
+            Text(value)
+                .monospacedDigit()
+                .fixedSize(horizontal: true, vertical: false)
+        }
+    }
+    
 
     private func shortDay(_ date: Date, timeZoneID: String) -> String {
         let f = DateFormatter()
@@ -465,13 +513,16 @@ private struct TileStyleModifier: ViewModifier {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(YAWATheme.cardStroke(for: scheme), lineWidth: 1)
+                    .strokeBorder(
+                        YAWATheme.cardStroke(for: scheme),
+                        lineWidth: scheme == .dark ? 1 : 0.8
+                    )
             )
             .shadow(
-                color: Color.black.opacity(scheme == .dark ? 0.18 : 0.10),
-                radius: 12,
+                color: Color.black.opacity(scheme == .dark ? 0.18 : 0.04),
+                radius: scheme == .dark ? 12 : 8,
                 x: 0,
-                y: 8
+                y: scheme == .dark ? 8 : 4
             )
     }
 }
@@ -933,7 +984,8 @@ private struct DailyForecastDetailSheet: View {
 
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("High")
+                        Label("High", systemImage: "arrow.up")
+                            .labelStyle(.titleOnly)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Text("\(Int(round(day.highC)))°C")
@@ -942,7 +994,8 @@ private struct DailyForecastDetailSheet: View {
                     }
                     Spacer()
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Low")
+                        Label("Low", systemImage: "arrow.down")
+                            .labelStyle(.titleOnly)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Text("\(Int(round(day.lowC)))°C")
@@ -951,7 +1004,8 @@ private struct DailyForecastDetailSheet: View {
                     }
                     Spacer()
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Precip")
+                        Label("Precip", systemImage: "drop")
+                            .labelStyle(.titleOnly)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Text("\(day.precipChancePercent)%")
