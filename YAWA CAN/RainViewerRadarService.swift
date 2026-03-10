@@ -1,0 +1,153 @@
+//
+//  RainViewerRadarService.swift
+//
+
+import Foundation
+
+/// RainViewer weather-maps endpoint:
+/// https://api.rainviewer.com/public/weather-maps.json
+final class RainViewerRadarService {
+
+    private let endpoint = URL(string: "https://api.rainviewer.com/public/weather-maps.json")!
+    private let session: URLSession
+
+    struct RadarFreshness: Equatable {
+        /// Seconds between now and the provider's `generated` timestamp.
+        let generatedLagSeconds: Int?
+        /// Seconds between now and the newest frame time found in `past` + `nowcast`.
+        let latestFrameLagSeconds: Int?
+
+        /// True when either lag exceeds the threshold.
+        func isStale(thresholdSeconds: Int) -> Bool {
+            if let g = generatedLagSeconds, g > thresholdSeconds { return true }
+            if let f = latestFrameLagSeconds, f > thresholdSeconds { return true }
+            return false
+        }
+
+        var summary: String {
+            let g = generatedLagSeconds.map { "\($0)s" } ?? "-"
+            let f = latestFrameLagSeconds.map { "\($0)s" } ?? "-"
+            return "generatedLag=\(g) latestFrameLag=\(f)"
+        }
+    }
+
+    /// Computes how stale the provider feed is.
+    /// - Parameter thresholdSeconds: Recommended default: 3600 (1 hour).
+    func radarFreshness(from maps: RainViewerWeatherMapsResponse, now: Int = Int(Date().timeIntervalSince1970)) -> RadarFreshness {
+        let generated = maps.generated
+        let past = maps.radar.past ?? []
+        let nowcast = maps.radar.nowcast ?? []
+        let latest = (past + nowcast).map { $0.time }.max()
+
+        let genLag: Int? = {
+            guard let generated, generated > 0 else { return nil }
+            return max(0, now - generated)
+        }()
+
+        let latestLag: Int? = {
+            guard let latest, latest > 0 else { return nil }
+            return max(0, now - latest)
+        }()
+
+        return RadarFreshness(generatedLagSeconds: genLag, latestFrameLagSeconds: latestLag)
+    }
+
+    /// Convenience helper for UI.
+    func isRadarStale(_ maps: RainViewerWeatherMapsResponse, thresholdSeconds: Int = 3600) -> Bool {
+        radarFreshness(from: maps).isStale(thresholdSeconds: thresholdSeconds)
+    }
+
+    init(session: URLSession = .shared) {
+        self.session = session
+    }
+
+    func fetchWeatherMaps() async throws -> RainViewerWeatherMapsResponse {
+        // Cache-bust the URL so CDNs/proxies are less likely to hand us a stored object.
+        var comps = URLComponents(url: endpoint, resolvingAgainstBaseURL: false)
+        var items = comps?.queryItems ?? []
+        items.append(URLQueryItem(name: "ts", value: String(Int(Date().timeIntervalSince1970))))
+        comps?.queryItems = items
+
+        guard let url = comps?.url else {
+            throw URLError(.badURL)
+        }
+
+        var req = URLRequest(url: url)
+        req.cachePolicy = .reloadIgnoringLocalCacheData
+        req.timeoutInterval = 15
+
+        // Stronger “don’t serve me cached” signals (helps with some CDNs/proxies).
+        req.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        req.setValue("no-cache", forHTTPHeaderField: "Pragma")
+
+        let (data, resp) = try await session.data(for: req)
+
+        guard let http = resp as? HTTPURLResponse else {
+            throw URLError(.badServerResponse)
+        }
+        guard (200...299).contains(http.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .useDefaultKeys
+
+        let decoded = try decoder.decode(RainViewerWeatherMapsResponse.self, from: data)
+
+        #if DEBUG
+        let age = http.value(forHTTPHeaderField: "Age") ?? "-"
+        let date = http.value(forHTTPHeaderField: "Date") ?? "-"
+        let cacheControl = http.value(forHTTPHeaderField: "Cache-Control") ?? "-"
+        let expires = http.value(forHTTPHeaderField: "Expires") ?? "-"
+
+        let generated = decoded.generated ?? 0
+        let now = Int(Date().timeIntervalSince1970)
+        let deltaSec = (generated > 0) ? max(0, now - generated) : 0
+        let deltaHr = Double(deltaSec) / 3600.0
+
+        let past = decoded.radar.past ?? []
+        let nowcast = decoded.radar.nowcast ?? []
+        let latest = (past + nowcast).map { $0.time }.max() ?? 0
+
+        print("[RVAPI] weather-maps.json status=\(http.statusCode) Age=\(age) Date=\(date) Cache-Control=\(cacheControl) Expires=\(expires)")
+        print("[RVAPI] url=\(url.absoluteString)")
+        print("[RVAPI] json version=\(decoded.version ?? "-") generated=\(generated) now=\(now) deltaHr=\(String(format: "%.2f", deltaHr)) latestFrame=\(latest)")
+        let freshness = radarFreshness(from: decoded, now: now)
+        if freshness.isStale(thresholdSeconds: 3600) {
+            print("[RVAPI] ⚠️ STALE FEED (>=1h): \(freshness.summary)")
+        } else {
+            print("[RVAPI] ✅ fresh: \(freshness.summary)")
+        }
+        #endif
+
+        return decoded
+    }
+
+    /// RainViewer sometimes returns empty arrays; pick *something* usable for UI.
+    func pickDefaultFrame(from maps: RainViewerWeatherMapsResponse) -> RainViewerWeatherMapsResponse.Frame? {
+        if let last = maps.radar.past?.last { return last }
+        if let first = maps.radar.past?.first { return first }
+        if let last = maps.radar.nowcast?.last { return last }
+        if let first = maps.radar.nowcast?.first { return first }
+        return nil
+    }
+}
+
+// MARK: - Models
+
+struct RainViewerWeatherMapsResponse: Decodable {
+    let version: String?
+    let generated: Int?
+    let host: String
+    let radar: Radar
+
+    struct Radar: Decodable {
+        let past: [Frame]?
+        let nowcast: [Frame]?
+    }
+
+    struct Frame: Decodable, Equatable {
+        let time: Int
+        let path: String
+    }
+}
