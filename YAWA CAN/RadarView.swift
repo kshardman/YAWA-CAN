@@ -4,7 +4,7 @@ import MapKit
 import UIKit
 
 // Simple value object describing the radar map target (center + title).
-// This existed in the NOAA project and is reused here for YAWA CAN.
+
 struct RadarTarget: Identifiable, Equatable {
     let id: String
     let latitude: Double

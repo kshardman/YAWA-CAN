@@ -53,7 +53,6 @@ final class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCent
 
         Task {
             // Background refresh placeholder.
-            // If you want to prefetch NOAA data later, wire it up here.
             task.setTaskCompleted(success: true)
         }
     }

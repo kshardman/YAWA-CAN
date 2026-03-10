@@ -15,8 +15,6 @@ enum YAWATheme {
     /// Primary branded sky/background used across YAWA.
     static let sky = Color(red: 0.05, green: 0.13, blue: 0.28)
 
-    /// Used in a few places as the “deep surface” color. In NOAA this previously skewed a bit too blue;
-    /// tune it closer to the PWS look (deeper + less saturated).
     static let card2 = Color(red: 0.08, green: 0.14, blue: 0.25)
 
     // MARK: - Surfaces
