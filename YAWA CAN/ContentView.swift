@@ -20,6 +20,8 @@ struct ContentView: View {
     @State private var showingSettings = false
     
     @State private var selectedDay: DailyForecastDay? = nil
+    
+    @State private var sunRefreshToken = Date()
 
     @Environment(\.colorScheme) private var colorScheme
 
@@ -454,32 +456,136 @@ struct ContentView: View {
             }
 
             if let sun = snap.sun {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Sunrise")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text(timeString(sun.sunrise, timeZoneID: snap.timeZoneID))
-                            .font(.title3.weight(.semibold))
+                let tz = TimeZone(identifier: snap.timeZoneID) ?? .current
+                let now = sunRefreshToken
+                let isNight = !(now >= sun.sunrise && now <= sun.sunset)
+                let t = sunProgress(sunrise: sun.sunrise, sunset: sun.sunset, now: now)
+                let progressForArc = isNight ? 0.5 : t
+
+                ZStack(alignment: .top) {
+                    HStack(spacing: 0) {
+                        sunValueColumn(
+                            title: "Sunrise",
+                            value: timeString(sun.sunrise, timeZoneID: snap.timeZoneID)
+                        )
+                        .frame(maxWidth: .infinity)
+
+                        Divider().opacity(0.25)
+
+                        sunValueColumn(
+                            title: "Sunset",
+                            value: timeString(sun.sunset, timeZoneID: snap.timeZoneID)
+                        )
+                        .frame(maxWidth: .infinity)
                     }
 
-                    Spacer()
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Sunset")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Text(timeString(sun.sunset, timeZoneID: snap.timeZoneID))
-                            .font(.title3.weight(.semibold))
-                    }
+                    SunArcView(
+                        progress: progressForArc,
+                        arcRiseFraction: 0.32,
+                        height: 72,
+                        arcLineWidth: 0,
+                        markerSize: 14,
+                        isThemed: (colorScheme == .dark),
+                        isNight: isNight,
+                        showsArc: false,
+                        showsHorizon: true,
+                        horizonLineWidth: 1.5,
+                        horizonYOffset: 35,
+                        horizonEndpointInset: 55,
+                        horizonBaseFraction: 0.75,
+                        showsHorizonTrees: true,
+                        arcEndpointYOffset: 10,
+                        onTapRefresh: { sunRefreshToken = Date() },
+                        enablesTapRefresh: true
+                    )
+                    .id(sunRefreshToken)
+                    .offset(y: -70)
+                    .padding(.top, 2)
                 }
+                .padding(.vertical, 4)
+                .padding(.horizontal, 10)
+
+                Text("Local time: \(localTimeText(timeZone: tz, now: now))")
+                    .font(.caption)
+                    .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
             } else {
                 Text("Sun times unavailable.")
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
             }
         }
         .tileStyle()
+    }
+
+    private func sunValueColumn(title: String, value: String) -> some View {
+        VStack(spacing: 6) {
+            Color.clear
+                .frame(height: 24)
+
+            Text(value)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+
+            Text(title)
+                .font(.caption)
+                .foregroundStyle(YAWATheme.textSecondary(for: colorScheme).opacity(0.85))
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private struct SunCardData {
+        let progressForArc: Double
+        let isNight: Bool
+    }
+
+    private func sunCardData(sun: SunTimes, timeZone: TimeZone, now: Date) -> SunCardData {
+        // Interpret all timestamps in the selected location's time zone.
+        let cal = Calendar.current
+        let nowComp = cal.dateComponents(in: timeZone, from: now)
+        let srComp = cal.dateComponents(in: timeZone, from: sun.sunrise)
+        let ssComp = cal.dateComponents(in: timeZone, from: sun.sunset)
+
+        let cal2 = Calendar(identifier: cal.identifier)
+        let nowZ = cal2.date(from: nowComp) ?? now
+        let srZ  = cal2.date(from: srComp) ?? sun.sunrise
+        let ssZ  = cal2.date(from: ssComp) ?? sun.sunset
+
+        // Night: keep the marker centered (matches the NOAA card vibe).
+        if nowZ < srZ || nowZ > ssZ {
+            return SunCardData(progressForArc: 0.5, isNight: true)
+        }
+
+        let denom = max(ssZ.timeIntervalSince(srZ), 1)
+        let raw = nowZ.timeIntervalSince(srZ) / denom
+        let clamped = min(1.0, max(0.0, raw))
+        return SunCardData(progressForArc: clamped, isNight: false)
+    }
+
+    private func sunValueColumn(icon: String, title: String, value: String) -> some View {
+        VStack(spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.caption)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(YAWATheme.textSecondary(for: colorScheme).opacity(0.9))
+
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(YAWATheme.textSecondary(for: colorScheme).opacity(0.85))
+            }
+            .frame(maxWidth: .infinity)
+
+            Text(value)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private func timeString(_ date: Date, timeZoneID: String?) -> String {
@@ -553,6 +659,19 @@ struct ContentView: View {
         let clamped = max(0, min(100, percent))
         let rounded = Int((Double(clamped) / 10.0).rounded() * 10.0)
         return "\(rounded)%"
+    }
+    
+    private static let sunLocalTimeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = .current
+        f.dateFormat = "h:mm a z"  // 12h with zone
+        return f
+    }()
+
+    private func localTimeText(timeZone: TimeZone, now: Date = Date()) -> String {
+        let f = Self.sunLocalTimeFormatter
+        f.timeZone = timeZone
+        return f.string(from: now)
     }
 
 }
