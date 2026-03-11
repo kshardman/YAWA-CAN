@@ -228,7 +228,7 @@ struct ContentView: View {
                 // Supporting metrics (icons right next to values)
                 VStack(alignment: .trailing, spacing: 6) {
                     metricIconValue(icon: "wind", value: snap.current.windDisplay)
-                    metricIconValue(icon: "drop.fill", value: "\(Int(round(snap.current.humidityPercent)))%")
+                    metricIconValue(icon: "humidity.fill", value: "\(Int(round(snap.current.humidityPercent)))%")
                     metricIconValue(icon: "gauge", value: String(format: "%.1f kPa", snap.current.pressureKPa))
                 }
                 .padding(.top, -8)
@@ -315,63 +315,127 @@ struct ContentView: View {
 //    }
 
     private func dailyTile(_ snap: WeatherSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 9) {
+
+            // Header row
             HStack(spacing: 6) {
                 Image(systemName: "calendar")
                     .font(.subheadline)
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(YAWATheme.symbolColor("calendar", scheme: colorScheme))
-                    .opacity(0.9)
+                    .opacity(0.85)
 
                 Text("7-Day Forecast")
-                    .font(.headline)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
 
                 Spacer()
+
+                // (Optional) If you want CAN to show a spinner while weather is loading:
+                if viewModel.isLoading {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(YAWATheme.textSecondary(for: colorScheme))
+                }
             }
 
-            let days = Array(snap.daily.prefix(7))
+            // Forecast rows
+            let daysToShow = 7
+            let days: [DailyForecastDay] = Array(snap.daily.prefix(daysToShow))
+
             ForEach(Array(days.enumerated()), id: \.offset) { idx, day in
-                Button {
-                    selectedDay = day
-                } label: {
-                    HStack(spacing: 10) {
-                        Text(shortDay(day.date, timeZoneID: snap.timeZoneID))
-                            .font(.callout)
-                            .frame(width: 42, alignment: .leading)
+                let weekdayW: CGFloat = 40
+                let dateW: CGFloat = 32
+                let iconW: CGFloat = 36
 
-                        Image(systemName: day.symbolName)
-                            .symbolRenderingMode(.hierarchical)
-                            .frame(width: 22)
-                            .foregroundStyle(YAWATheme.symbolColor(day.symbolName, scheme: colorScheme))
+                let sym = day.symbolName
+                HStack(spacing: 4) {
+                    // Left block: weekday + date + icon/PoP (fixed width so everything aligns)
+                    HStack(spacing: 4) {
+                        HStack(spacing: 2) {
+                            Text(weekdayLabel(day.date, timeZoneID: snap.timeZoneID))
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
+                                .lineLimit(1)
+                                .frame(width: weekdayW, alignment: .leading)
 
-                        Text(day.conditionText)
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                            Text(dateLabel(day.date, timeZoneID: snap.timeZoneID))
+                                .font(.caption)
+                                .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+                                .monospacedDigit()
+                                .lineLimit(1)
+                                .frame(width: dateW, alignment: .leading)
+                        }
 
-                        Spacer()
+                        let rawPop = day.precipChancePercent
+                        let roundedPop = max(0, min(100, Int((Double(rawPop) / 10.0).rounded() * 10.0)))
+                        let popText: String? = (roundedPop > 0) ? "\(roundedPop)%" : nil
 
-                        Text("\(day.precipChancePercent)%")
-                            .font(.callout)
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
-                            .frame(width: 44, alignment: .trailing)
+                        // Icon + PoP (NOAA-style): keep a stable footprint, and avoid icon/text overlap.
+                        Group {
+                            if let popText {
+                                VStack(spacing: 2) {
+                                    Image(systemName: sym)
+                                        .symbolRenderingMode(.hierarchical)
+                                        .foregroundStyle(YAWATheme.symbolColor(sym, scheme: colorScheme))
+                                        .font(.title3)
+                                        .frame(height: 22, alignment: .center)
 
-                        Text("\(Int(round(day.highC)))° / \(Int(round(day.lowC)))°")
-                            .font(.callout.weight(.semibold))
-                            .monospacedDigit()
-                            .frame(width: 92, alignment: .trailing)
+                                    Text(popText)
+                                        .font(popText == "100%" ? .caption2.weight(.semibold) : .caption2)
+                                        .monospacedDigit()
+                                        .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+                                        .frame(height: 14, alignment: .top)
+                                }
+                            } else {
+                                // No PoP: vertically center the icon within the same footprint.
+                                Image(systemName: sym)
+                                    .symbolRenderingMode(.hierarchical)
+                                    .foregroundStyle(YAWATheme.symbolColor(sym, scheme: colorScheme))
+                                    .font(.title3)
+                                    .frame(maxHeight: .infinity, alignment: .center)
+                            }
+                        }
+                        .frame(width: iconW, height: 40, alignment: .center)
                     }
-                    .contentShape(Rectangle())
+                    .frame(width: weekdayW + dateW + 4 + iconW + 2, alignment: .leading)
+
+                    // Brief forecast text
+                    Text(day.conditionText)
+                        .font(.subheadline)
+                        .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+                        .layoutPriority(2)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+
+                    Spacer(minLength: 8)
+
+                    // Right column (fixed)
+                    Text("H \(tempDisplayC(day.highC))  L \(tempDisplayC(day.lowC))")
+                        .font(.subheadline.weight(.semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
+                        .fixedSize(horizontal: true, vertical: false)
                 }
-                .buttonStyle(.plain)
+                .padding(.vertical, 4)
+                .contentShape(Rectangle())
+                .onTapGesture { selectedDay = day }
 
                 if idx != days.count - 1 {
-                    Divider().opacity(0.18)
+                    Divider().opacity(0.5)
                 }
             }
         }
-        .tileStyle()
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(YAWATheme.cardBackground(for: colorScheme))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(YAWATheme.cardStroke(for: colorScheme), lineWidth: 1)
+        )
     }
     
     private func sunTile(_ snap: WeatherSnapshot) -> some View {
@@ -463,6 +527,34 @@ struct ContentView: View {
         f.dateFormat = "EEE"
         return f.string(from: date)
     }
+    
+    private func weekdayLabel(_ date: Date, timeZoneID: String) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_CA")
+        f.timeZone = TimeZone(identifier: timeZoneID) ?? .current
+        f.dateFormat = "EEE"
+        return f.string(from: date)
+    }
+
+    private func dateLabel(_ date: Date, timeZoneID: String) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_CA")
+        f.timeZone = TimeZone(identifier: timeZoneID) ?? .current
+        f.dateFormat = "M/d"   // matches the small date style you use in NOAA
+        return f.string(from: date)
+    }
+
+    private func tempDisplayC(_ c: Double) -> String {
+        "\(Int(round(c)))°"
+    }
+
+    /// NOAA-ish: round precip to nearest 10 and clamp 0...100
+    private func popTextRoundedTo10(_ percent: Int) -> String {
+        let clamped = max(0, min(100, percent))
+        let rounded = Int((Double(clamped) / 10.0).rounded() * 10.0)
+        return "\(rounded)%"
+    }
+
 }
 
 // MARK: - Chart
@@ -1008,7 +1100,9 @@ private struct DailyForecastDetailSheet: View {
                             .labelStyle(.titleOnly)
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        Text("\(day.precipChancePercent)%")
+                        let clamped = max(0, min(100, day.precipChancePercent))
+                        let rounded = Int((Double(clamped) / 10.0).rounded() * 10.0)
+                        Text("\(rounded)%")
                             .font(.title3.weight(.semibold))
                             .monospacedDigit()
                     }
