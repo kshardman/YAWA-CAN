@@ -3,6 +3,7 @@ import CoreLocation
 import MapKit
 import Charts
 import Combine
+import UIKit
 
 /// YAWA CAN - Main ContentView
 /// Uses `WeatherViewModel` + `WeatherServiceProtocol` (Open-Meteo service) and renders
@@ -18,6 +19,7 @@ struct ContentView: View {
     @State private var selected: SavedLocation? = nil
     @State private var showingNotInCanadaAlert = false
     @State private var showingSettings = false
+    @State private var radarTarget: RadarTarget? = nil
     
     @State private var selectedDay: DailyForecastDay? = nil
     
@@ -63,6 +65,7 @@ struct ContentView: View {
                             currentTile(snap)
 //                        hourlyTile(snap)
                             dailyTile(snap)
+                            radarCard()
                             sunTile(snap)
                         } else if !viewModel.isLoading && viewModel.errorMessage == nil {
                             Text("No weather loaded yet.")
@@ -139,6 +142,11 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showingSettings) {
             SettingsView()
+        }
+        .sheet(item: $radarTarget) { target in
+            RadarView(target: target)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
         }
         .alert("Canada only", isPresented: $showingNotInCanadaAlert) {
             Button("OK", role: .cancel) {}
@@ -439,6 +447,46 @@ struct ContentView: View {
                 .strokeBorder(YAWATheme.cardStroke(for: colorScheme), lineWidth: 1)
         )
     }
+
+    private func radarCard() -> some View {
+        Button {
+            openRadar()           // ✅ sets radarTarget based on selected favorite / current location
+            lightHaptic()         // optional
+        } label: {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 6) {
+                    Image(systemName: "dot.radiowaves.left.and.right")
+                        .font(.subheadline)
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(YAWATheme.symbolColor("dot.radiowaves.left.and.right", scheme: colorScheme))
+                        .opacity(0.85)
+
+                    Text("Radar")
+                        .font(.headline)
+                        .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+                        .opacity(0.9)
+                }
+
+                Text("Tap to view interactive radar")
+                    .font(.callout)
+                    .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+
+                Text("Source: rainviewer.com")
+                    .font(.caption)
+                    .foregroundStyle(YAWATheme.textTertiary(for: colorScheme))
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .tileStyle()
+        .accessibilityLabel("Radar")
+    }
     
     private func sunTile(_ snap: WeatherSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -674,6 +722,32 @@ struct ContentView: View {
         return f.string(from: now)
     }
 
+    private func lightHaptic() {
+        let gen = UIImpactFeedbackGenerator(style: .light)
+        gen.prepare()
+        gen.impactOccurred()
+    }
+    
+    private func openRadar() {
+        // Present RadarView centered on the currently selected YC location.
+        let loc = selected ?? locationStore.selected ?? SavedLocation.toronto
+
+        let newTarget = RadarTarget(
+            latitude: loc.latitude,
+            longitude: loc.longitude,
+            title: loc.displayName
+        )
+
+        // Deterministic presentation: if already shown, dismiss and re-present.
+        Task { @MainActor in
+            if radarTarget != nil {
+                radarTarget = nil
+                try? await Task.sleep(nanoseconds: 80_000_000) // 0.08s
+            }
+            radarTarget = newTarget
+        }
+    }
+    
 }
 
 // MARK: - Chart

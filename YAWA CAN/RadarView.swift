@@ -6,20 +6,13 @@ import UIKit
 // Simple value object describing the radar map target (center + title).
 
 struct RadarTarget: Identifiable, Equatable {
-    let id: String
+    let id: UUID = UUID()
     let latitude: Double
     let longitude: Double
     let title: String
 
     var coordinate: CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
-    }
-
-    init(latitude: Double, longitude: Double, title: String, id: String? = nil) {
-        self.latitude = latitude
-        self.longitude = longitude
-        self.title = title
-        self.id = id ?? "\(latitude),\(longitude)|\(title)"
     }
 }
 
