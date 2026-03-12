@@ -48,49 +48,63 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
-            ZStack {
+            ZStack(alignment: .top) {
                 appBackground
                     .ignoresSafeArea()
 
-                ScrollView {
-                    VStack(spacing: 14) {
-                        headerButton
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(spacing: 14) {
+                            // Scroll-to-top anchor
+                            Color.clear
+                                .frame(height: 0)
+                                .id("top")
 
-                        if viewModel.isLoading {
-                            loadingRow
+                            headerButton
+
+                            if viewModel.isLoading {
+                                loadingRow
+                            }
+
+                            if let msg = viewModel.errorMessage {
+                                Text(msg)
+                                    .font(.callout)
+                                    .foregroundStyle(.red)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+
+                            if let snap = viewModel.snapshot {
+                                currentTile(snap)
+
+        //                        hourlyTile(snap)
+                                dailyTile(snap)
+                                radarCard()
+                                sunTile(snap)
+                                comfortTile(snap)
+                            } else if !viewModel.isLoading && viewModel.errorMessage == nil {
+                                Text("No weather loaded yet.")
+                                    .foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+
+                            Spacer(minLength: 8)
                         }
-
-                        if let msg = viewModel.errorMessage {
-                            Text(msg)
-                                .font(.callout)
-                                .foregroundStyle(.red)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-
-                        if let snap = viewModel.snapshot {
-                            currentTile(snap)
- 
-//                        hourlyTile(snap)
-                            dailyTile(snap)
-                            radarCard()
-                            sunTile(snap)
-                            comfortTile(snap)
-                        } else if !viewModel.isLoading && viewModel.errorMessage == nil {
-                            Text("No weather loaded yet.")
-                                .foregroundStyle(.secondary)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-
-                        Spacer(minLength: 8)
+                        .padding(16)
                     }
-                    .padding(16)
+                    .scrollIndicators(.hidden)
+                    .onChange(of: selected?.id) { _, _ in
+                        // When a new location is selected, jump back to the top so the current card is visible.
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            proxy.scrollTo("top", anchor: .top)
+                        }
+                    }
                 }
-            }
-            .safeAreaInset(edge: .top, spacing: 0) {
+                // Easter egg overlay (drops from the nav bar)
                 if showEasterEgg {
                     easterEggOverlay
                         .padding(.horizontal, 12)
                         .padding(.top, 6)
+                        .zIndex(999)
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
@@ -174,29 +188,22 @@ struct ContentView: View {
     // MARK: - Easter egg overlay
 
     private var easterEggOverlay: some View {
-        HStack {
-            Spacer()
+        VStack {
+            Spacer().frame(height: 10)
+
             Text("Yawa ✨ Yet Another Weather App")
                 .font(.caption.weight(.semibold))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(.thinMaterial)
                 .clipShape(Capsule())
+                .transition(.move(edge: .top).combined(with: .opacity))
+
             Spacer()
         }
+        .frame(maxWidth: .infinity)
         .animation(.easeInOut(duration: 0.2), value: showEasterEgg)
-        .zIndex(10)
         .allowsHitTesting(false)
-        .onAppear {
-            #if DEBUG
-            print("[YC][EASTER] overlay appeared (showEasterEgg=\(showEasterEgg))")
-            #endif
-        }
-        .onDisappear {
-            #if DEBUG
-            print("[YC][EASTER] overlay disappeared (showEasterEgg=\(showEasterEgg))")
-            #endif
-        }
     }
 
     // MARK: - Header
@@ -829,9 +836,6 @@ struct ContentView: View {
         // Count these taps; after 5, show the Easter egg.
 
         sunTapCount += 1
-        #if DEBUG
-        print("[YC][EASTER] sun tap #\(sunTapCount) at \(Date())")
-        #endif
 
         // Keep the visual behavior: tapping refreshes/re-randomizes the SunArcView.
         sunRefreshToken = Date()
@@ -843,30 +847,17 @@ struct ContentView: View {
                 try await Task.sleep(nanoseconds: 3_500_000_000) // 3.5s
             } catch {
                 // Cancelled: do not reset the count.
-                #if DEBUG
-                print("[YC][EASTER] reset task cancelled")
-                #endif
                 return
             }
             guard !Task.isCancelled else {
-                #if DEBUG
-                print("[YC][EASTER] reset task observed cancellation")
-                #endif
                 return
             }
             sunTapCount = 0
-            #if DEBUG
-            print("[YC][EASTER] tap window expired → reset count")
-            #endif
         }
 
         if sunTapCount >= 5 {
             sunTapCount = 0
             sunTapResetTask?.cancel()
-
-            #if DEBUG
-            print("[YC][EASTER] threshold reached → showing overlay")
-            #endif
             withAnimation {
                 showEasterEgg = true
             }
@@ -876,20 +867,11 @@ struct ContentView: View {
                 do {
                     try await Task.sleep(nanoseconds: 4_000_000_000) // 4.0s
                 } catch {
-                    #if DEBUG
-                    print("[YC][EASTER] hide task cancelled")
-                    #endif
                     return
                 }
                 guard !Task.isCancelled else {
-                    #if DEBUG
-                    print("[YC][EASTER] hide task observed cancellation")
-                    #endif
                     return
                 }
-                #if DEBUG
-                print("[YC][EASTER] auto-hide firing → hiding overlay")
-                #endif
                 withAnimation {
                     showEasterEgg = false
                 }
@@ -1033,6 +1015,10 @@ private final class LocationStore: ObservableObject {
 
     init() {
         favorites = Self.loadArray(key: favoritesKey) ?? [SavedLocation.toronto, SavedLocation.vancouver]
+        favorites.sort { a, b in
+            a.displayName.localizedCaseInsensitiveCompare(b.displayName) == .orderedAscending
+        }
+        Self.saveArray(favorites, key: favoritesKey)
         selected = Self.loadOne(key: selectedKey)
     }
 
@@ -1041,14 +1027,20 @@ private final class LocationStore: ObservableObject {
         Self.saveOne(loc, key: selectedKey)
         // Auto-add to favorites if not present.
         if !favorites.contains(where: { $0.displayName == loc.displayName && $0.latitude == loc.latitude && $0.longitude == loc.longitude }) {
-            favorites.insert(loc, at: 0)
+            favorites.append(loc)
+            favorites.sort { a, b in
+                a.displayName.localizedCaseInsensitiveCompare(b.displayName) == .orderedAscending
+            }
             Self.saveArray(favorites, key: favoritesKey)
         }
     }
 
     func addFavorite(_ loc: SavedLocation) {
         guard !favorites.contains(where: { $0.displayName == loc.displayName && $0.latitude == loc.latitude && $0.longitude == loc.longitude }) else { return }
-        favorites.insert(loc, at: 0)
+        favorites.append(loc)
+        favorites.sort { a, b in
+            a.displayName.localizedCaseInsensitiveCompare(b.displayName) == .orderedAscending
+        }
         Self.saveArray(favorites, key: favoritesKey)
     }
 
@@ -1275,22 +1267,44 @@ private struct LocationPickerView: View {
                     Section("Results") {
                         ForEach(results) { loc in
                             Button {
+                                store.setSelected(loc)
                                 onSelect(loc)
                                 dismiss()
                             } label: {
-                                Text(loc.displayName)
+                                HStack {
+                                    Text(loc.displayName)
+                                    Spacer()
+                                    if store.selected == loc {
+                                        Image(systemName: "checkmark")
+                                            .font(.subheadline.weight(.semibold))
+                                            .foregroundStyle(.tint)
+                                    }
+                                }
                             }
                         }
                     }
                 }
 
                 Section("Favorites") {
-                    ForEach(store.favorites) { loc in
+                    let favoritesSorted = store.favorites.sorted { a, b in
+                        a.displayName.localizedCaseInsensitiveCompare(b.displayName) == .orderedAscending
+                    }
+
+                    ForEach(favoritesSorted) { loc in
                         Button {
+                            store.setSelected(loc)
                             onSelect(loc)
                             dismiss()
                         } label: {
-                            Text(loc.displayName)
+                            HStack {
+                                Text(loc.displayName)
+                                Spacer()
+                                if store.selected == loc {
+                                    Image(systemName: "checkmark")
+                                        .font(.subheadline.weight(.semibold))
+                                        .foregroundStyle(.tint)
+                                }
+                            }
                         }
                     }
                     .onDelete(perform: store.removeFavorites)
