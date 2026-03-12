@@ -5,16 +5,27 @@
 //  Created by Keith Sharman on 3/9/26.
 //
 
-
 import Foundation
 
 struct CurrentConditions: Equatable {
     let temperatureC: Double
+
+    /// “Feels like” temperature (Open-Meteo: `apparent_temperature`).
+    let apparentTemperatureC: Double
+
     let windSpeedKph: Double
     /// Meteorological wind direction in degrees, where 0/360 = North, 90 = East.
     let windDirectionDegrees: Double
+
+    /// Relative humidity (0–100).
     let humidityPercent: Double
+
+    /// Sea-level pressure.
     let pressureKPa: Double
+
+    /// Dew point (Open-Meteo: `dew_point_2m`).
+    let dewPointC: Double
+
     let conditionText: String
     let symbolName: String
 
@@ -26,6 +37,35 @@ struct CurrentConditions: Equatable {
     /// Convenience string used by UI, e.g. "NW 24 km/h".
     var windDisplay: String {
         "\(windCompass) \(Int(round(windSpeedKph))) km/h"
+    }
+
+    /// Convenience string used by UI, e.g. "Feels like 3°".
+    var feelsLikeDisplay: String {
+        "\(Int(round(apparentTemperatureC)))°"
+    }
+
+    /// Dew point as a simple comfort bucket (Apple Weather-ish).
+    /// Source: common meteorological comfort ranges.
+    var comfortText: String {
+        switch dewPointC {
+        case ..<0:
+            return "Dry"
+        case 0..<10:
+            return "Comfortable"
+        case 10..<16:
+            return "Slightly humid"
+        case 16..<20:
+            return "Humid"
+        case 20..<24:
+            return "Very humid"
+        default:
+            return "Oppressive"
+        }
+    }
+
+    /// Convenience string used by UI, e.g. "Dew 12° • Humid".
+    var comfortDisplay: String {
+        "Dew \(Int(round(dewPointC)))° • \(comfortText)"
     }
 
     static func compassPoint(fromDegrees degrees: Double) -> String {
@@ -56,5 +96,3 @@ struct SunTimes: Equatable {
     let sunrise: Date
     let sunset: Date
 }
-
-

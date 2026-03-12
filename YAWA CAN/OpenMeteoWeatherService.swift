@@ -23,7 +23,7 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
             .init(name: "longitude", value: String(coordinate.longitude)),
 
             // current conditions
-            .init(name: "current", value: "temperature_2m,relative_humidity_2m,pressure_msl,wind_speed_10m,wind_direction_10m,weather_code"),
+            .init(name: "current", value: "temperature_2m,apparent_temperature,dew_point_2m,relative_humidity_2m,pressure_msl,wind_speed_10m,wind_direction_10m,weather_code"),
 
             // hourly temps for chart
             .init(name: "hourly", value: "temperature_2m"),
@@ -54,10 +54,12 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
 
         let current = CurrentConditions(
             temperatureC: decoded.current.temperature_2m,
+            apparentTemperatureC: decoded.current.apparent_temperature,
             windSpeedKph: decoded.current.wind_speed_10m,
             windDirectionDegrees: decoded.current.wind_direction_10m,
             humidityPercent: Double(decoded.current.relative_humidity_2m),
             pressureKPa: pressureKPa,
+            dewPointC: decoded.current.dew_point_2m,
             conditionText: mapped.text,
             symbolName: mapped.symbol
         )
@@ -135,7 +137,7 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
                 date: date,
                 highC: highs[i],
                 lowC: lows[i],
-                precipChancePercent: pops[i] ?? 0,
+                precipChancePercent: roundPrecipToNearest10(pops[i]),
                 symbolName: mapped.symbol,
                 conditionText: mapped.text
             )
@@ -182,6 +184,8 @@ private struct OpenMeteoResponse: Decodable {
 
     struct Current: Decodable {
         let temperature_2m: Double
+        let apparent_temperature: Double
+        let dew_point_2m: Double
         let relative_humidity_2m: Int
         let pressure_msl: Double
         let wind_speed_10m: Double

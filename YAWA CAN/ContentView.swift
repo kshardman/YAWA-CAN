@@ -63,10 +63,12 @@ struct ContentView: View {
 
                         if let snap = viewModel.snapshot {
                             currentTile(snap)
+ 
 //                        hourlyTile(snap)
                             dailyTile(snap)
                             radarCard()
                             sunTile(snap)
+                            comfortTile(snap)
                         } else if !viewModel.isLoading && viewModel.errorMessage == nil {
                             Text("No weather loaded yet.")
                                 .foregroundStyle(.secondary)
@@ -245,6 +247,59 @@ struct ContentView: View {
                 .font(.subheadline)
                 .monospacedDigit()
             }
+        }
+        .tileStyle()
+    }
+
+    private func comfortTile(_ snap: WeatherSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "figure.walk")
+                    .font(.subheadline)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(YAWATheme.symbolColor("figure.walk", scheme: colorScheme))
+                    .opacity(0.9)
+
+                Text("Comfort")
+                    .font(.headline)
+
+                Spacer()
+            }
+
+            // Align the big value baseline with the “Feels like” label.
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Image(systemName: "thermometer")
+                        .font(.subheadline.weight(.semibold))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(YAWATheme.symbolColor("thermometer", scheme: colorScheme))
+                        .opacity(colorScheme == .dark ? 0.90 : 0.82)
+                        // Images don’t have a text baseline; pin to bottom so it participates nicely.
+                        .alignmentGuide(.firstTextBaseline) { d in d[.bottom] }
+
+                    Text("Feels like")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
+                }
+
+                Spacer()
+
+                Text("\(Int(round(snap.current.apparentTemperatureC)))°C")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
+                    .monospacedDigit()
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(feelsLikeSubtitleText(for: snap.current))
+                    .font(.callout)
+                    .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+
+                Text(dewPointComfortSubtitleText(for: snap.current))
+                    .font(.callout)
+                    .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+            }
+            .padding(.top, 2)
         }
         .tileStyle()
     }
@@ -1327,3 +1382,73 @@ private struct DailyForecastDetailSheet: View {
     ContentView()
 }
 
+
+    // MARK: - Comfort / Feels Like (YN-style, but metric)
+
+    private enum FeelsLikeMode {
+        case windChill
+        case heatIndex
+        case actual
+    }
+
+    private func feelsLikeSubtitleText(for current: CurrentConditions) -> String {
+        let actualC = current.temperatureC
+        let feelsC = current.apparentTemperatureC
+        let rh = current.humidityPercent
+        let windKph = current.windSpeedKph
+
+        let mode = computeFeelsLikeMode(tempC: actualC, windKph: windKph, relativeHumidity: rh)
+
+        switch mode {
+        case .windChill:
+            return "Colder due to wind"
+        case .heatIndex:
+            return "Hotter due to humidity"
+        case .actual:
+            // Deadband so tiny diffs don’t flip message.
+            // YN uses ~2°F; use ~1°C here.
+            if feelsC <= actualC - 1.0 { return "Colder due to wind" }
+            if feelsC >= actualC + 1.0 { return "Hotter due to humidity" }
+            return "Feels like actual temperature"
+        }
+    }
+
+    private func computeFeelsLikeMode(tempC: Double, windKph: Double, relativeHumidity: Double?) -> FeelsLikeMode {
+        // Wind chill only applies at/under 10°C (50°F) and with meaningful wind.
+        if tempC <= 10.0, windKph >= 5.0 {
+            return .windChill
+        }
+
+        // Heat index applies at/above ~26.7°C (80°F) with sufficient humidity.
+        if tempC >= 26.7, let rh = relativeHumidity, rh >= 40.0 {
+            return .heatIndex
+        }
+
+        return .actual
+    }
+
+    // MARK: - Dew Point / Comfort helpers (YN-style, but metric)
+
+    private func dewPointComfortSubtitleText(for current: CurrentConditions) -> String {
+        let dpC = current.dewPointC
+
+        // Convert the YN bands (°F) into approximate °C thresholds.
+        // 50°F≈10.0°C, 55°F≈12.8°C, 60°F≈15.6°C, 65°F≈18.3°C,
+        // 70°F≈21.1°C, 75°F≈23.9°C
+        switch dpC {
+        case ..<10.0:
+            return "Dry air"
+        case 10.0..<12.8:
+            return "Comfortable"
+        case 12.8..<15.6:
+            return "Pleasant"
+        case 15.6..<18.3:
+            return "Slightly humid"
+        case 18.3..<21.1:
+            return "Humid"
+        case 21.1..<23.9:
+            return "Very humid"
+        default:
+            return "Oppressive humidity"
+        }
+    }
