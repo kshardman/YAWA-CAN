@@ -25,6 +25,12 @@ struct ContentView: View {
     
     @State private var sunRefreshToken = Date()
 
+    // MARK: - Easter egg (tap Sun card 5x)
+    @State private var showEasterEgg: Bool = false
+    @State private var sunTapCount: Int = 0
+    @State private var sunTapResetTask: Task<Void, Never>? = nil
+    @State private var easterEggHideTask: Task<Void, Never>? = nil
+
     @Environment(\.colorScheme) private var colorScheme
 
     // Use the shared YAWA theme background so CAN matches NOAA styling.
@@ -78,6 +84,14 @@ struct ContentView: View {
                         Spacer(minLength: 8)
                     }
                     .padding(16)
+                }
+            }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if showEasterEgg {
+                    easterEggOverlay
+                        .padding(.horizontal, 12)
+                        .padding(.top, 6)
+                        .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
             .navigationTitle("YAWA CAN")
@@ -154,6 +168,34 @@ struct ContentView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text("Outside Canada. Try: Vancouver, BC • Calgary, AB • Montréal, QC.")
+        }
+    }
+
+    // MARK: - Easter egg overlay
+
+    private var easterEggOverlay: some View {
+        HStack {
+            Spacer()
+            Text("Yawa ✨ Yet Another Weather App")
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(.thinMaterial)
+                .clipShape(Capsule())
+            Spacer()
+        }
+        .animation(.easeInOut(duration: 0.2), value: showEasterEgg)
+        .zIndex(10)
+        .allowsHitTesting(false)
+        .onAppear {
+            #if DEBUG
+            print("[YC][EASTER] overlay appeared (showEasterEgg=\(showEasterEgg))")
+            #endif
+        }
+        .onDisappear {
+            #if DEBUG
+            print("[YC][EASTER] overlay disappeared (showEasterEgg=\(showEasterEgg))")
+            #endif
         }
     }
 
@@ -598,13 +640,15 @@ struct ContentView: View {
                         horizonBaseFraction: 0.75,
                         showsHorizonTrees: true,
                         arcEndpointYOffset: 10,
-                        onTapRefresh: { sunRefreshToken = Date() },
+                        onTapRefresh: { handleSunArcTap() },
                         enablesTapRefresh: true
                     )
                     .id(sunRefreshToken)
                     .offset(y: -70)
                     .padding(.top, 2)
                 }
+                .contentShape(Rectangle())
+                .onTapGesture { handleSunArcTap() }
                 .padding(.vertical, 4)
                 .padding(.horizontal, 10)
 
@@ -775,6 +819,82 @@ struct ContentView: View {
         let f = Self.sunLocalTimeFormatter
         f.timeZone = timeZone
         return f.string(from: now)
+    }
+
+    // MARK: - Sun card tap (tree refresh) + Easter egg
+
+    @MainActor
+    private func handleSunArcTap() {
+        // This is the same tap that regenerates the trees (SunArcView tap refresh).
+        // Count these taps; after 5, show the Easter egg.
+
+        sunTapCount += 1
+        #if DEBUG
+        print("[YC][EASTER] sun tap #\(sunTapCount) at \(Date())")
+        #endif
+
+        // Keep the visual behavior: tapping refreshes/re-randomizes the SunArcView.
+        sunRefreshToken = Date()
+
+        // Reset the counter if the user pauses too long between taps.
+        sunTapResetTask?.cancel()
+        sunTapResetTask = Task { @MainActor in
+            do {
+                try await Task.sleep(nanoseconds: 3_500_000_000) // 3.5s
+            } catch {
+                // Cancelled: do not reset the count.
+                #if DEBUG
+                print("[YC][EASTER] reset task cancelled")
+                #endif
+                return
+            }
+            guard !Task.isCancelled else {
+                #if DEBUG
+                print("[YC][EASTER] reset task observed cancellation")
+                #endif
+                return
+            }
+            sunTapCount = 0
+            #if DEBUG
+            print("[YC][EASTER] tap window expired → reset count")
+            #endif
+        }
+
+        if sunTapCount >= 5 {
+            sunTapCount = 0
+            sunTapResetTask?.cancel()
+
+            #if DEBUG
+            print("[YC][EASTER] threshold reached → showing overlay")
+            #endif
+            withAnimation {
+                showEasterEgg = true
+            }
+
+            easterEggHideTask?.cancel()
+            easterEggHideTask = Task { @MainActor in
+                do {
+                    try await Task.sleep(nanoseconds: 4_000_000_000) // 4.0s
+                } catch {
+                    #if DEBUG
+                    print("[YC][EASTER] hide task cancelled")
+                    #endif
+                    return
+                }
+                guard !Task.isCancelled else {
+                    #if DEBUG
+                    print("[YC][EASTER] hide task observed cancellation")
+                    #endif
+                    return
+                }
+                #if DEBUG
+                print("[YC][EASTER] auto-hide firing → hiding overlay")
+                #endif
+                withAnimation {
+                    showEasterEgg = false
+                }
+            }
+        }
     }
 
     private func lightHaptic() {
