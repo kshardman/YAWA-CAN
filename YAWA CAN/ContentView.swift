@@ -25,6 +25,9 @@ struct ContentView: View {
     
     @State private var sunRefreshToken = Date()
 
+    // Settings: how many forecast days to show (7 or 10)
+    @AppStorage("forecastDaysToShow") private var forecastDaysToShow: Int = 7
+
     // MARK: - Easter egg (tap Sun card 5x)
     @State private var showEasterEgg: Bool = false
     @State private var sunTapCount: Int = 0
@@ -139,7 +142,16 @@ struct ContentView: View {
             // Initial selection: last-used favorite if present, otherwise Toronto.
             let initial = locationStore.selected ?? SavedLocation.toronto
             selected = initial
-            await viewModel.load(for: initial.coordinate, locationName: initial.displayName)
+            let days = max(1, min(forecastDaysToShow, 10))
+            await viewModel.load(for: initial.coordinate, locationName: initial.displayName, forecastDays: days)
+        }
+        .onChange(of: forecastDaysToShow) { _, newValue in
+            // Re-fetch so the snapshot contains the requested number of days.
+            let loc = selected ?? locationStore.selected ?? SavedLocation.toronto
+            let days = max(1, min(newValue, 10))
+            Task {
+                await viewModel.load(for: loc.coordinate, locationName: loc.displayName, forecastDays: days)
+            }
         }
         .sheet(item: $selectedDay) { day in
             DailyForecastDetailSheet(day: day)
@@ -157,7 +169,8 @@ struct ContentView: View {
                     }
                     selected = loc
                     locationStore.setSelected(loc)
-                    Task { await viewModel.load(for: loc.coordinate, locationName: loc.displayName) }
+                    let days = max(1, min(forecastDaysToShow, 10))
+                    Task { await viewModel.load(for: loc.coordinate, locationName: loc.displayName, forecastDays: days) }
                 },
                 onSelectCurrentLocation: { loc in
                     guard loc.countryCode == "CA" else {
@@ -166,7 +179,8 @@ struct ContentView: View {
                     }
                     selected = loc
                     locationStore.setSelected(loc)
-                    Task { await viewModel.load(for: loc.coordinate, locationName: loc.displayName) }
+                    let days = max(1, min(forecastDaysToShow, 10))
+                    Task { await viewModel.load(for: loc.coordinate, locationName: loc.displayName, forecastDays: days) }
                 }
             )
         }
@@ -439,7 +453,7 @@ struct ContentView: View {
                     .foregroundStyle(YAWATheme.symbolColor("calendar", scheme: colorScheme))
                     .opacity(0.85)
 
-                Text("7-Day Forecast")
+                Text("\(max(1, min(forecastDaysToShow, 10)))-Day Forecast")
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
@@ -455,7 +469,7 @@ struct ContentView: View {
             }
 
             // Forecast rows
-            let daysToShow = 7
+            let daysToShow = max(1, min(forecastDaysToShow, 10))
             let days: [DailyForecastDay] = Array(snap.daily.prefix(daysToShow))
 
             ForEach(Array(days.enumerated()), id: \.offset) { idx, day in

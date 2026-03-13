@@ -12,11 +12,13 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
 
     func fetchWeather(
         coordinate: CLLocationCoordinate2D,
-        locationName: String?
+        locationName: String?,
+        forecastDays: Int = 7
     ) async throws -> WeatherSnapshot {
 
         // Open-Meteo forecast endpoint (free)
         // Units: °C, km/h, precipitation mm (default), pressure comes back as hPa -> convert to kPa
+        let days = (forecastDays >= 10) ? 10 : 7
         var comps = URLComponents(string: "https://api.open-meteo.com/v1/forecast")!
         comps.queryItems = [
             .init(name: "latitude", value: String(coordinate.latitude)),
@@ -31,7 +33,7 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
             // daily forecast
             .init(name: "daily", value: "sunrise,sunset,temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code"),
 
-            .init(name: "forecast_days", value: "7"),
+            .init(name: "forecast_days", value: String(days)),
             .init(name: "timezone", value: "auto"),
 
             // enforce units
@@ -64,8 +66,8 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
             symbolName: mapped.symbol
         )
 
-        // Daily (7)
-        let daily = makeDaily(decoded)
+        // Daily (7/10)
+        let daily = makeDaily(decoded, maxDays: days)
 
         // Hourly temps: pick next 24 (simple + works well for now)
         let hourlyTemps = Array(decoded.hourly.temperature_2m.prefix(24))
@@ -107,14 +109,15 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
         return min(100, max(0, rounded))
     }
 
-    private func makeDaily(_ decoded: OpenMeteoResponse) -> [DailyForecastDay] {
+    private func makeDaily(_ decoded: OpenMeteoResponse, maxDays: Int) -> [DailyForecastDay] {
         let times = decoded.daily.time
         let highs = decoded.daily.temperature_2m_max
         let lows  = decoded.daily.temperature_2m_min
         let pops  = decoded.daily.precipitation_probability_max
         let codes = decoded.daily.weather_code
 
-        let count = min(times.count, highs.count, lows.count, pops.count, codes.count)
+        let available = min(times.count, highs.count, lows.count, pops.count, codes.count)
+        let count = min(available, max(1, maxDays))
 
         let tz = TimeZone(identifier: decoded.timezone) ?? .current
 

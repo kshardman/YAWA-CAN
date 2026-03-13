@@ -11,9 +11,19 @@ import CoreLocation
 
 struct StubWeatherService: WeatherServiceProtocol {
 
+    // Convenience overload (keeps older call sites working if any exist).
     func fetchWeather(
         coordinate: CLLocationCoordinate2D,
         locationName: String?
+    ) async throws -> WeatherSnapshot {
+        try await fetchWeather(coordinate: coordinate, locationName: locationName, forecastDays: 7)
+    }
+
+    // Protocol requirement (supports 7- and 10-day settings).
+    func fetchWeather(
+        coordinate: CLLocationCoordinate2D,
+        locationName: String?,
+        forecastDays: Int
     ) async throws -> WeatherSnapshot {
 
         // Simulate network latency so loading states are testable
@@ -36,12 +46,14 @@ struct StubWeatherService: WeatherServiceProtocol {
         let cal = Calendar.current
         let today = cal.startOfDay(for: Date())
 
-        let daily: [DailyForecastDay] = (0..<7).map { offset in
+        let daysToReturn = max(1, min(10, forecastDays))
+        let daily: [DailyForecastDay] = (0..<daysToReturn).map { offset in
             let date = cal.date(byAdding: .day, value: offset, to: today)!
             // simple believable pattern
             let high = 6.0 + Double((offset % 4) * 2)
             let low  = high - 6.0
-            let pop  = [10, 20, 40, 60, 30, 15, 25][offset % 7]
+            let pops = [10, 20, 40, 60, 30, 15, 25, 0, 10, 20]
+            let pop  = pops[offset % pops.count]
             let sym  = pop >= 50 ? "cloud.rain.fill" : (offset % 2 == 0 ? "sun.max.fill" : "cloud.sun.fill")
             let text = pop >= 50 ? "Rain" : (sym == "sun.max.fill" ? "Sunny" : "Partly Cloudy")
 

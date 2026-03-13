@@ -12,6 +12,7 @@ import CoreLocation
 protocol WeatherServiceProtocol {
     func fetchWeather(
         coordinate: CLLocationCoordinate2D,
-        locationName: String?
+        locationName: String?,
+        forecastDays: Int
     ) async throws -> WeatherSnapshot
 }

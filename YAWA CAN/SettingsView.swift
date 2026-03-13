@@ -87,10 +87,13 @@ struct SettingsView: View {
         AnyShapeStyle(YAWATheme.textSecondary(for: colorScheme))
     }
 
-    @AppStorage("forecastDaysToShow") private var forecastDaysToShow: Int = 7
+
 
     // Dashboard style for the home screen (tiles vs gauges)
     @AppStorage("dashboardStyle") private var dashboardStyleRaw: String = DashboardStyle.dashboard.rawValue
+
+    // Forecast length for the home screen (7 or 10)
+    @AppStorage("forecastDaysToShow") private var forecastDaysToShow: Int = 7
 
     private var dashboardStyle: DashboardStyle {
         DashboardStyle(rawValue: dashboardStyleRaw) ?? .dashboard
@@ -255,10 +258,16 @@ private extension SettingsView {
     var forecastSection: some View {
         Section {
             Picker("Days", selection: $forecastDaysToShow) {
-                Text("5").tag(5)
                 Text("7").tag(7)
+                Text("10").tag(10)
             }
             .pickerStyle(.segmented)
+            .onAppear {
+                // Guard against old/invalid stored values.
+                if forecastDaysToShow != 7 && forecastDaysToShow != 10 {
+                    forecastDaysToShow = 7
+                }
+            }
 
             Text("Choose how many days to show on the home screen forecast card.")
                 .font(.caption)

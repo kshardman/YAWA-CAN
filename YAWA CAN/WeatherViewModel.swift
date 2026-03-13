@@ -26,11 +26,19 @@ final class WeatherViewModel: ObservableObject {
         self.service = service
     }
 
-    func load(for coordinate: CLLocationCoordinate2D, locationName: String? = nil) async {
+    func load(
+        for coordinate: CLLocationCoordinate2D,
+        locationName: String? = nil,
+        forecastDays: Int
+    ) async {
         isLoading = true
         errorMessage = nil
         do {
-            let snap = try await service.fetchWeather(coordinate: coordinate, locationName: locationName)
+            let snap = try await service.fetchWeather(
+                coordinate: coordinate,
+                locationName: locationName,
+                forecastDays: forecastDays
+            )
             snapshot = snap
             isLoading = false
         } catch {
