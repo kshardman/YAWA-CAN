@@ -443,7 +443,7 @@ struct ContentView: View {
 //    }
 
     private func dailyTile(_ snap: WeatherSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: 6) {
 
             // Header row
             HStack(spacing: 6) {
@@ -508,13 +508,13 @@ struct ContentView: View {
                                         .symbolRenderingMode(.hierarchical)
                                         .foregroundStyle(YAWATheme.symbolColor(sym, scheme: colorScheme))
                                         .font(.title3)
-                                        .frame(height: 22, alignment: .center)
+                                        .frame(height: 18, alignment: .center)
 
                                     Text(popText)
                                         .font(popText == "100%" ? .caption2.weight(.semibold) : .caption2)
                                         .monospacedDigit()
                                         .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
-                                        .frame(height: 14, alignment: .top)
+                                        .frame(height: 10, alignment: .top)
                                 }
                             } else {
                                 // No PoP: vertically center the icon within the same footprint.
@@ -525,7 +525,7 @@ struct ContentView: View {
                                     .frame(maxHeight: .infinity, alignment: .center)
                             }
                         }
-                        .frame(width: iconW, height: 40, alignment: .center)
+                        .frame(width: iconW, height: 34, alignment: .center)
                     }
                     .frame(width: weekdayW + dateW + 4 + iconW + 2, alignment: .leading)
 
@@ -546,7 +546,7 @@ struct ContentView: View {
                         .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
                         .fixedSize(horizontal: true, vertical: false)
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, 3)
                 .contentShape(Rectangle())
                 .onTapGesture { selectedDay = day }
 
@@ -554,6 +554,12 @@ struct ContentView: View {
                     Divider().opacity(0.5)
                 }
             }
+
+            // Attribution
+            Text("Source: Open-Meteo")
+                .font(.caption)
+                .foregroundStyle(YAWATheme.textSecondary(for: colorScheme).opacity(0.9))
+                .padding(.top, 8)
         }
         .padding(14)
         .background(
