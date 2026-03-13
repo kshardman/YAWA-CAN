@@ -302,9 +302,9 @@ struct ContentView: View {
 
                 // Supporting metrics (icons right next to values)
                 VStack(alignment: .trailing, spacing: 6) {
-                    metricIconValue(icon: "wind", value: snap.current.windDisplay)
+                    metricIconValue(icon: "wind", value: windValueOnly(snap.current.windDisplay))
                     metricIconValue(icon: "humidity.fill", value: "\(Int(round(snap.current.humidityPercent)))%")
-                    metricIconValue(icon: "gauge", value: String(format: "%.1f kPa", snap.current.pressureKPa))
+                    metricIconValue(icon: "gauge", value: pressureValueOnly(snap.current.pressureKPa))
                 }
                 .padding(.top, -8)
                 .font(.subheadline)
@@ -797,6 +797,16 @@ struct ContentView: View {
                 .monospacedDigit()
                 .fixedSize(horizontal: true, vertical: false)
         }
+    }
+
+    private func windValueOnly(_ display: String) -> String {
+        let parts = display.split(separator: " ", omittingEmptySubsequences: true)
+        guard parts.count >= 2 else { return display }
+        return parts[0] + " " + parts[1]
+    }
+
+    private func pressureValueOnly(_ value: Double) -> String {
+        String(format: "%.1f", value)
     }
     
 
@@ -1458,57 +1468,73 @@ private struct DailyForecastDetailSheet: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 14) {
+            VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {
                     Image(systemName: day.symbolName)
-                        .font(.system(size: 34, weight: .semibold))
+                        .font(.system(size: 30, weight: .semibold))
                         .symbolRenderingMode(.hierarchical)
                         .foregroundStyle(YAWATheme.symbolColor(day.symbolName, scheme: colorScheme))
-                    VStack(alignment: .leading, spacing: 2) {
+
+                    VStack(alignment: .leading, spacing: 1) {
                         Text(longDay(day.date))
-                            .font(.title3.weight(.semibold))
+                            .font(.headline.weight(.semibold))
                         Text(day.conditionText)
-                            .font(.callout)
+                            .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
+
                     Spacer()
                 }
 
                 Divider().opacity(0.18)
 
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Label("High", systemImage: "arrow.up")
-                            .labelStyle(.titleOnly)
-                            .font(.caption)
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("High")
+                            .font(.caption2)
                             .foregroundStyle(.secondary)
                         Text("\(Int(round(day.highC)))°C")
                             .font(.title3.weight(.semibold))
                             .monospacedDigit()
                     }
-                    Spacer()
-                    VStack(alignment: .leading, spacing: 4) {
-                        Label("Low", systemImage: "arrow.down")
-                            .labelStyle(.titleOnly)
-                            .font(.caption)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Low")
+                            .font(.caption2)
                             .foregroundStyle(.secondary)
                         Text("\(Int(round(day.lowC)))°C")
                             .font(.title3.weight(.semibold))
                             .monospacedDigit()
                     }
-                    Spacer()
-                    VStack(alignment: .leading, spacing: 4) {
-                        Label("Precip", systemImage: "drop")
-                            .labelStyle(.titleOnly)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        let clamped = max(0, min(100, day.precipChancePercent))
-                        let rounded = Int((Double(clamped) / 10.0).rounded() * 10.0)
-                        Text("\(rounded)%")
-                            .font(.title3.weight(.semibold))
-                            .monospacedDigit()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                    if roundedPrecipChance > 0 {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Precip")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            Text("\(roundedPrecipChance)%")
+                                .font(.title3.weight(.semibold))
+                                .monospacedDigit()
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
+
+                Divider().opacity(0.18)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Discussion")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+
+                    Text(forecastSummary)
+                        .font(.body)
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 Spacer(minLength: 0)
             }
@@ -1521,6 +1547,43 @@ private struct DailyForecastDetailSheet: View {
                 }
             }
         }
+    }
+
+    private var roundedPrecipChance: Int {
+        let clamped = max(0, min(100, day.precipChancePercent))
+        return Int((Double(clamped) / 10.0).rounded() * 10.0)
+    }
+
+    private var forecastSummary: String {
+        let high = Int(round(day.highC))
+        let low = Int(round(day.lowC))
+
+        var sentences: [String] = [
+            "\(normalizedConditionText(day.conditionText)) expected, with a high of \(formattedTemp(high)) and a low of \(formattedTemp(low))."
+        ]
+
+        if roundedPrecipChance > 0 {
+            if roundedPrecipChance <= 20 {
+                sentences.append("A slight chance of precipitation is expected.")
+            } else if roundedPrecipChance <= 50 {
+                sentences.append("There is a moderate chance of precipitation.")
+            } else {
+                sentences.append("Precipitation is likely at times.")
+            }
+        } else {
+            sentences.append("Dry conditions are expected.")
+        }
+
+        return sentences.joined(separator: " ")
+    }
+
+    private func normalizedConditionText(_ text: String) -> String {
+        guard let first = text.first else { return "Forecast conditions" }
+        return first.isLowercase ? first.uppercased() + text.dropFirst() : text
+    }
+
+    private func formattedTemp(_ value: Int) -> String {
+        value > 0 ? "+\(value)°C" : "\(value)°C"
     }
 
     private func longDay(_ date: Date) -> String {
