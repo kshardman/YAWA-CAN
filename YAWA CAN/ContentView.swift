@@ -21,7 +21,7 @@ struct ContentView: View {
     @State private var showingSettings = false
     @State private var radarTarget: RadarTarget? = nil
     
-    @State private var selectedDay: DailyForecastDay? = nil
+    @State private var selectedDaySelection: ForecastDetailSelection? = nil
     
     @State private var sunRefreshToken = Date()
     @State private var temperatureAnimationKey = UUID()
@@ -79,8 +79,6 @@ struct ContentView: View {
 
                             if let snap = viewModel.snapshot {
                                 currentTile(snap)
-
-        //                        hourlyTile(snap)
                                 dailyTile(snap)
                                 radarCard()
                                 sunTile(snap)
@@ -162,10 +160,15 @@ struct ContentView: View {
                 }
             }
         }
-        .sheet(item: $selectedDay) { day in
-            DailyForecastDetailSheet(day: day, usesUSUnits: usesUSUnits)
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
+        .sheet(item: $selectedDaySelection) { selection in
+            DailyForecastDetailSheet(
+                day: selection.day,
+                hourlyTempsC: selection.hourlyTempsC,
+                dayIndex: selection.dayIndex,
+                usesUSUnits: usesUSUnits
+            )
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showingLocations) {
             LocationPickerView(
@@ -429,28 +432,6 @@ struct ContentView: View {
         return !(now >= sun.sunrise && now <= sun.sunset)
     }
 
-//    private func hourlyTile(_ snap: WeatherSnapshot) -> some View {
-//        VStack(alignment: .leading, spacing: 10) {
-//            HStack {
-//                Text("Hourly")
-//                    .font(.headline)
-//                Spacer()
-//                Text("Temp (°C)")
-//                    .font(.caption)
-//                    .foregroundStyle(.secondary)
-//            }
-//
-//            if snap.hourlyTempsC.isEmpty {
-//                Text("No hourly data.")
-//                    .font(.callout)
-//                    .foregroundStyle(.secondary)
-//            } else {
-//                HourlyTempChart(tempsC: Array(snap.hourlyTempsC.prefix(24)))
-//                    .frame(height: 150)
-//            }
-//        }
-//        .tileStyle()
-//    }
 
     private func dailyTile(_ snap: WeatherSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -489,7 +470,11 @@ struct ContentView: View {
 
                 let sym = day.symbolName
                 Button {
-                    selectedDay = day
+                    selectedDaySelection = ForecastDetailSelection(
+                        day: day,
+                        dayIndex: idx,
+                        hourlyTempsC: snap.hourlyTempsC
+                    )
                 } label: {
                     HStack(spacing: 4) {
                         // Left block: weekday + date + icon/PoP (fixed width so everything aligns)
@@ -990,34 +975,82 @@ struct ContentView: View {
 // MARK: - Chart
 
 private struct HourlyTempChart: View {
-    let tempsC: [Double]
+    let temps: [Double]
+    let usesUSUnits: Bool
+    let showCurrentHourMarker: Bool
+    let currentHourIndex: Int?
+
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Chart {
-            ForEach(Array(tempsC.enumerated()), id: \.offset) { idx, t in
+            if showCurrentHourMarker, let currentHourIndex {
+                RuleMark(x: .value("Current Hour", currentHourIndex))
+                    .foregroundStyle(Color.cyan.opacity(colorScheme == .dark ? 0.32 : 0.22))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+            }
+
+            ForEach(Array(temps.enumerated()), id: \.offset) { idx, t in
+                AreaMark(
+                    x: .value("Hour", idx),
+                    yStart: .value("Baseline", temps.min() ?? t),
+                    yEnd: .value("Temp", t)
+                )
+                .interpolationMethod(.catmullRom)
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [
+                            Color.cyan.opacity(colorScheme == .dark ? 0.22 : 0.16),
+                            Color.cyan.opacity(0.02)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+
                 LineMark(
                     x: .value("Hour", idx),
                     y: .value("Temp", t)
                 )
-                PointMark(
-                    x: .value("Hour", idx),
-                    y: .value("Temp", t)
-                )
+                .interpolationMethod(.catmullRom)
+                .foregroundStyle(Color.cyan)
+                .lineStyle(StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
             }
         }
         .chartXAxis {
             AxisMarks(values: .stride(by: 6)) { value in
                 if let idx = value.as(Int.self) {
-                    AxisValueLabel("\(idx)h")
+                    let hour = idx % 24
+                    let suffix = hour < 12 ? "a" : "p"
+                    let display = hour % 12 == 0 ? 12 : hour % 12
+                    AxisValueLabel("\(display)\(suffix)")
                 }
                 AxisGridLine()
+                    .foregroundStyle(Color.white.opacity(colorScheme == .dark ? 0.10 : 0.06))
                 AxisTick()
+                    .foregroundStyle(Color.white.opacity(colorScheme == .dark ? 0.18 : 0.10))
             }
         }
         .chartYAxis {
-            AxisMarks(position: .trailing)
+            AxisMarks(position: .trailing) { value in
+                AxisGridLine()
+                    .foregroundStyle(Color.white.opacity(colorScheme == .dark ? 0.08 : 0.05))
+                AxisTick()
+                    .foregroundStyle(Color.white.opacity(colorScheme == .dark ? 0.16 : 0.10))
+                if let temp = value.as(Double.self) {
+                    AxisValueLabel("\(Int(round(temp)))°")
+                }
+            }
         }
+        .animation(.easeInOut(duration: 0.25), value: temps)
     }
+}
+private struct ForecastDetailSelection: Identifiable {
+    let day: DailyForecastDay
+    let dayIndex: Int
+    let hourlyTempsC: [Double]
+
+    var id: Date { day.date }
 }
 
 // MARK: - Styling
@@ -1526,13 +1559,16 @@ private enum LocationSearch {
 
 private struct DailyForecastDetailSheet: View {
     let day: DailyForecastDay
+    let hourlyTempsC: [Double]
+    let dayIndex: Int
     let usesUSUnits: Bool
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
-            VStack(alignment: .leading, spacing: 12) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 10) {
                     Image(systemName: day.symbolName)
                         .font(.system(size: 30, weight: .semibold))
@@ -1600,22 +1636,99 @@ private struct DailyForecastDetailSheet: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                Spacer(minLength: 0)
-            }
-            .padding(16)
-            .navigationTitle("Forecast")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
+                if !hourlyTempsForDay.isEmpty {
+                    Divider().opacity(0.18)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Hourly")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+
+                        HourlyTempChart(
+                            temps: hourlyTempsForDay,
+                            usesUSUnits: usesUSUnits,
+                            showCurrentHourMarker: isToday,
+                            currentHourIndex: currentHourIndex
+                        )
+                        .frame(height: 170)
+                        .padding(.top, 4)
+
+                        Text("24-hour temperature trend")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
+
+                // Spacer(minLength: 0) -- removed for inner card to hug content
             }
+                .padding(.horizontal, 22)
+                .padding(.bottom, 18)
+                .padding(.top, 10)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .background(innerCard)
+                .padding(.horizontal, 20)
+                .padding(.top, 18)
+                .padding(.bottom, 12)
+            }
+            .background(sheetBackground)
+            .scrollIndicators(.hidden)
+            .mask(
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0.0),
+                        .init(color: .black, location: 0.03),
+                        .init(color: .black, location: 0.97),
+                        .init(color: .clear, location: 1.0)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
         }
     }
 
     private var roundedPrecipChance: Int {
         let clamped = max(0, min(100, day.precipChancePercent))
         return Int((Double(clamped) / 10.0).rounded() * 10.0)
+    }
+
+    private var sheetBackground: some View {
+        Color.clear
+            .ignoresSafeArea()
+    }
+    
+    private var innerCard: some View {
+        RoundedRectangle(cornerRadius: 20, style: .continuous)
+            .fill(
+                colorScheme == .dark
+                ? Color(red: 0.05, green: 0.07, blue: 0.12).opacity(0.95)
+                : Color(.systemBackground)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder(
+                        colorScheme == .dark
+                        ? Color.white.opacity(0.05)
+                        : Color.black.opacity(0.04),
+                        lineWidth: 1
+                    )
+            )
+            .shadow(
+                color: Color.black.opacity(colorScheme == .dark ? 0.22 : 0.05),
+                radius: 10,
+                y: 4
+            )
+    }
+    
+    
+    private var isToday: Bool {
+        Calendar.current.isDateInToday(day.date)
+    }
+
+    private var currentHourIndex: Int? {
+        guard isToday else { return nil }
+        return Calendar.current.component(.hour, from: Date())
     }
 
     private var forecastSummary: String {
@@ -1663,6 +1776,18 @@ private struct DailyForecastDetailSheet: View {
         f.dateFormat = "EEEE, MMM d"
         return f.string(from: date)
     }
+    
+    private var hourlyTempsForDay: [Double] {
+        let start = dayIndex * 24
+        guard start < hourlyTempsC.count else { return [] }
+        let slice = Array(hourlyTempsC.dropFirst(start).prefix(24))
+        if usesUSUnits {
+            return slice.map { ($0 * 9.0 / 5.0) + 32.0 }
+        } else {
+            return slice
+        }
+    }
+
 }
 
 private struct ForecastRowPressStyle: ButtonStyle {
@@ -1748,3 +1873,4 @@ private struct ForecastRowPressStyle: ButtonStyle {
 #Preview {
     ContentView()
 }
+

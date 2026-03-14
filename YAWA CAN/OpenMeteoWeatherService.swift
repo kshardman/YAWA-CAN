@@ -69,8 +69,8 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
         // Daily (7/10)
         let daily = makeDaily(decoded, maxDays: days)
 
-        // Hourly temps: pick next 24 (simple + works well for now)
-        let hourlyTemps = Array(decoded.hourly.temperature_2m.prefix(24))
+        // Hourly temps: keep the full hourly forecast range so the UI can slice by day.
+        let hourlyTemps = decoded.hourly.temperature_2m
 
         let sun: SunTimes? = {
             guard
