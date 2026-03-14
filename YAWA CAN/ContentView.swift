@@ -17,7 +17,7 @@ struct ContentView: View {
 
     @State private var showingLocations = false
     @State private var selected: SavedLocation? = nil
-    @State private var showingNotInCanadaAlert = false
+    @State private var displayedLocation: SavedLocation? = nil
     @State private var showingSettings = false
     @State private var radarTarget: RadarTarget? = nil
     
@@ -111,7 +111,7 @@ struct ContentView: View {
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
-            .navigationTitle("YAWA CAN")
+            .navigationTitle(navigationTitleText)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
@@ -144,6 +144,9 @@ struct ContentView: View {
             selected = initial
             let days = max(1, min(forecastDaysToShow, 10))
             await viewModel.load(for: initial.coordinate, locationName: initial.displayName, forecastDays: days)
+            if viewModel.snapshot != nil {
+                displayedLocation = initial
+            }
         }
         .onChange(of: forecastDaysToShow) { _, newValue in
             // Re-fetch so the snapshot contains the requested number of days.
@@ -151,10 +154,13 @@ struct ContentView: View {
             let days = max(1, min(newValue, 10))
             Task {
                 await viewModel.load(for: loc.coordinate, locationName: loc.displayName, forecastDays: days)
+                if viewModel.snapshot != nil {
+                    displayedLocation = loc
+                }
             }
         }
         .sheet(item: $selectedDay) { day in
-            DailyForecastDetailSheet(day: day)
+            DailyForecastDetailSheet(day: day, usesUSUnits: usesUSUnits)
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
@@ -162,25 +168,26 @@ struct ContentView: View {
             LocationPickerView(
                 store: locationStore,
                 onSelect: { loc in
-                    // Enforce Canada-only.
-                    guard loc.countryCode == "CA" else {
-                        showingNotInCanadaAlert = true
-                        return
-                    }
                     selected = loc
                     locationStore.setSelected(loc)
                     let days = max(1, min(forecastDaysToShow, 10))
-                    Task { await viewModel.load(for: loc.coordinate, locationName: loc.displayName, forecastDays: days) }
+                    Task {
+                        await viewModel.load(for: loc.coordinate, locationName: loc.displayName, forecastDays: days)
+                        if viewModel.snapshot != nil {
+                            displayedLocation = loc
+                        }
+                    }
                 },
                 onSelectCurrentLocation: { loc in
-                    guard loc.countryCode == "CA" else {
-                        showingNotInCanadaAlert = true
-                        return
-                    }
                     selected = loc
                     locationStore.setSelected(loc)
                     let days = max(1, min(forecastDaysToShow, 10))
-                    Task { await viewModel.load(for: loc.coordinate, locationName: loc.displayName, forecastDays: days) }
+                    Task {
+                        await viewModel.load(for: loc.coordinate, locationName: loc.displayName, forecastDays: days)
+                        if viewModel.snapshot != nil {
+                            displayedLocation = loc
+                        }
+                    }
                 }
             )
         }
@@ -191,11 +198,6 @@ struct ContentView: View {
             RadarView(target: target)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
-        }
-        .alert("Canada only", isPresented: $showingNotInCanadaAlert) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text("Outside Canada. Try: Vancouver, BC • Calgary, AB • Montréal, QC.")
         }
     }
 
@@ -230,7 +232,7 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(selected?.displayName ?? "–")
                         .font(.title2.weight(.semibold))
-                    Text("Canada • °C • km/h • kPa")
+                    Text(locationUnitsSubtitle)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -289,11 +291,11 @@ struct ContentView: View {
             HStack(alignment: .center, spacing: 12) {
                 // Temperature
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text("\(Int(round(snap.current.temperatureC)))")
+                    Text(currentTemperatureValueText(snap.current.temperatureC))
                         .font(.system(size: 56, weight: .semibold, design: .rounded))
                         .monospacedDigit()
 
-                    Text("°C")
+                    Text(temperatureUnitLabel)
                         .font(.title3.weight(.semibold))
                         .foregroundStyle(.secondary)
                 }
@@ -302,9 +304,9 @@ struct ContentView: View {
 
                 // Supporting metrics (icons right next to values)
                 VStack(alignment: .trailing, spacing: 6) {
-                    metricIconValue(icon: "wind", value: windValueOnly(snap.current.windDisplay))
+                    metricIconValue(icon: "wind", value: windValueText(for: snap.current))
                     metricIconValue(icon: "humidity.fill", value: "\(Int(round(snap.current.humidityPercent)))%")
-                    metricIconValue(icon: "gauge", value: pressureValueOnly(snap.current.pressureKPa))
+                    metricIconValue(icon: "gauge", value: pressureValueText(for: snap.current.pressureKPa))
                 }
                 .padding(.top, -8)
                 .font(.subheadline)
@@ -347,7 +349,7 @@ struct ContentView: View {
 
                 Spacer()
 
-                Text("\(Int(round(snap.current.apparentTemperatureC)))°C")
+                Text(apparentTemperatureText(snap.current.apparentTemperatureC))
                     .font(.title2.weight(.semibold))
                     .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
                     .monospacedDigit()
@@ -478,77 +480,81 @@ struct ContentView: View {
                 let iconW: CGFloat = 36
 
                 let sym = day.symbolName
-                HStack(spacing: 4) {
-                    // Left block: weekday + date + icon/PoP (fixed width so everything aligns)
+                Button {
+                    selectedDay = day
+                } label: {
                     HStack(spacing: 4) {
-                        HStack(spacing: 2) {
-                            Text(weekdayLabel(day.date, timeZoneID: snap.timeZoneID))
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
-                                .lineLimit(1)
-                                .frame(width: weekdayW, alignment: .leading)
+                        // Left block: weekday + date + icon/PoP (fixed width so everything aligns)
+                        HStack(spacing: 4) {
+                            HStack(spacing: 2) {
+                                Text(weekdayLabel(day.date, timeZoneID: snap.timeZoneID))
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
+                                    .lineLimit(1)
+                                    .frame(width: weekdayW, alignment: .leading)
 
-                            Text(dateLabel(day.date, timeZoneID: snap.timeZoneID))
-                                .font(.caption)
-                                .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
-                                .monospacedDigit()
-                                .lineLimit(1)
-                                .frame(width: dateW, alignment: .leading)
-                        }
+                                Text(dateLabel(day.date, timeZoneID: snap.timeZoneID))
+                                    .font(.caption)
+                                    .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+                                    .monospacedDigit()
+                                    .lineLimit(1)
+                                    .frame(width: dateW, alignment: .leading)
+                            }
 
-                        let rawPop = day.precipChancePercent
-                        let roundedPop = max(0, min(100, Int((Double(rawPop) / 10.0).rounded() * 10.0)))
-                        let popText: String? = (roundedPop > 0) ? "\(roundedPop)%" : nil
+                            let rawPop = day.precipChancePercent
+                            let roundedPop = max(0, min(100, Int((Double(rawPop) / 10.0).rounded() * 10.0)))
+                            let popText: String? = (roundedPop > 0) ? "\(roundedPop)%" : nil
 
-                        // Icon + PoP (NOAA-style): keep a stable footprint, and avoid icon/text overlap.
-                        Group {
-                            if let popText {
-                                VStack(spacing: 2) {
+                            // Icon + PoP (NOAA-style): keep a stable footprint, and avoid icon/text overlap.
+                            Group {
+                                if let popText {
+                                    VStack(spacing: 2) {
+                                        Image(systemName: sym)
+                                            .symbolRenderingMode(.hierarchical)
+                                            .foregroundStyle(YAWATheme.symbolColor(sym, scheme: colorScheme))
+                                            .font(.title3)
+                                            .frame(height: 18, alignment: .center)
+
+                                        Text(popText)
+                                            .font(popText == "100%" ? .caption2.weight(.semibold) : .caption2)
+                                            .monospacedDigit()
+                                            .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+                                            .frame(height: 10, alignment: .top)
+                                    }
+                                } else {
+                                    // No PoP: vertically center the icon within the same footprint.
                                     Image(systemName: sym)
                                         .symbolRenderingMode(.hierarchical)
                                         .foregroundStyle(YAWATheme.symbolColor(sym, scheme: colorScheme))
                                         .font(.title3)
-                                        .frame(height: 18, alignment: .center)
-
-                                    Text(popText)
-                                        .font(popText == "100%" ? .caption2.weight(.semibold) : .caption2)
-                                        .monospacedDigit()
-                                        .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
-                                        .frame(height: 10, alignment: .top)
+                                        .frame(maxHeight: .infinity, alignment: .center)
                                 }
-                            } else {
-                                // No PoP: vertically center the icon within the same footprint.
-                                Image(systemName: sym)
-                                    .symbolRenderingMode(.hierarchical)
-                                    .foregroundStyle(YAWATheme.symbolColor(sym, scheme: colorScheme))
-                                    .font(.title3)
-                                    .frame(maxHeight: .infinity, alignment: .center)
                             }
+                            .frame(width: iconW, height: 34, alignment: .center)
                         }
-                        .frame(width: iconW, height: 34, alignment: .center)
+                        .frame(width: weekdayW + dateW + 4 + iconW + 2, alignment: .leading)
+
+                        // Brief forecast text
+                        Text(day.conditionText)
+                            .font(.subheadline)
+                            .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+                            .layoutPriority(2)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+
+                        Spacer(minLength: 8)
+
+                        // Right column (fixed)
+                        Text("H \(tempDisplay(day.highC))  L \(tempDisplay(day.lowC))")
+                            .font(.subheadline.weight(.semibold))
+                            .monospacedDigit()
+                            .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
+                            .fixedSize(horizontal: true, vertical: false)
                     }
-                    .frame(width: weekdayW + dateW + 4 + iconW + 2, alignment: .leading)
-
-                    // Brief forecast text
-                    Text(day.conditionText)
-                        .font(.subheadline)
-                        .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
-                        .layoutPriority(2)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
-
-                    Spacer(minLength: 8)
-
-                    // Right column (fixed)
-                    Text("H \(tempDisplayC(day.highC))  L \(tempDisplayC(day.lowC))")
-                        .font(.subheadline.weight(.semibold))
-                        .monospacedDigit()
-                        .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
-                        .fixedSize(horizontal: true, vertical: false)
+                    .padding(.vertical, 3)
+                    .contentShape(Rectangle())
                 }
-                .padding(.vertical, 3)
-                .contentShape(Rectangle())
-                .onTapGesture { selectedDay = day }
+                .buttonStyle(ForecastRowPressStyle())
 
                 if idx != days.count - 1 {
                     Divider().opacity(0.5)
@@ -795,18 +801,61 @@ struct ContentView: View {
 
             Text(value)
                 .monospacedDigit()
-                .fixedSize(horizontal: true, vertical: false)
+                .frame(width: 72, alignment: .trailing)
+        }
+        .frame(width: 92, alignment: .trailing)
+    }
+
+
+    private var usesUSUnits: Bool {
+        (displayedLocation?.countryCode ?? selected?.countryCode ?? locationStore.selected?.countryCode ?? "CA") == "US"
+    }
+
+    private var temperatureUnitLabel: String {
+        usesUSUnits ? "°F" : "°C"
+    }
+
+    private var locationUnitsSubtitle: String {
+        usesUSUnits ? "United States • °F • mph • inHg" : "Canada • °C • km/h • kPa"
+    }
+
+    private var navigationTitleText: String {
+        usesUSUnits ? "YAWA US" : "YAWA CAN"
+    }
+    
+    private func currentTemperatureValueText(_ celsius: Double) -> String {
+        let value = usesUSUnits ? cToF(celsius) : celsius
+        return "\(Int(round(value)))"
+    }
+
+    private func apparentTemperatureText(_ celsius: Double) -> String {
+        let value = usesUSUnits ? cToF(celsius) : celsius
+        return "\(Int(round(value)))\(temperatureUnitLabel)"
+    }
+
+    private func windValueText(for current: CurrentConditions) -> String {
+        let direction = windDirectionPrefix(from: current.windDisplay)
+        let speedValue = usesUSUnits ? current.windSpeedKph * 0.621371 : current.windSpeedKph
+        return "\(direction) \(Int(round(speedValue)))"
+    }
+
+    private func pressureValueText(for pressureKPa: Double) -> String {
+        if usesUSUnits {
+            let inHg = pressureKPa * 0.2953
+            return String(format: "%.2f", inHg)
+        } else {
+            return String(format: "%.1f", pressureKPa)
         }
     }
 
-    private func windValueOnly(_ display: String) -> String {
+    private func windDirectionPrefix(from display: String) -> String {
         let parts = display.split(separator: " ", omittingEmptySubsequences: true)
-        guard parts.count >= 2 else { return display }
-        return parts[0] + " " + parts[1]
+        guard let first = parts.first else { return display }
+        return String(first)
     }
 
-    private func pressureValueOnly(_ value: Double) -> String {
-        String(format: "%.1f", value)
+    private func cToF(_ celsius: Double) -> Double {
+        (celsius * 9.0 / 5.0) + 32.0
     }
     
 
@@ -834,8 +883,9 @@ struct ContentView: View {
         return f.string(from: date)
     }
 
-    private func tempDisplayC(_ c: Double) -> String {
-        "\(Int(round(c)))°"
+    private func tempDisplay(_ celsius: Double) -> String {
+        let value = usesUSUnits ? cToF(celsius) : celsius
+        return "\(Int(round(value)))°"
     }
 
     /// NOAA-ish: round precip to nearest 10 and clamp 0...100
@@ -1254,7 +1304,7 @@ private struct LocationPickerView: View {
                     HStack {
                         Image(systemName: "magnifyingglass")
                             .foregroundStyle(.secondary)
-                        TextField("Search city, province", text: $query)
+                        TextField("Search city, state, province", text: $query)
                             .textInputAutocapitalization(.words)
                             .autocorrectionDisabled()
                             .onSubmit { Task { await runSearch(expectedQuery: query.trimmingCharacters(in: .whitespacesAndNewlines), generation: searchGeneration) } }
@@ -1393,7 +1443,7 @@ private struct LocationPickerView: View {
             guard query.trimmingCharacters(in: .whitespacesAndNewlines) == expectedQuery else { return }
 
             results = found
-            searchError = found.isEmpty ? "No Canadian matches found." : nil
+            searchError = found.isEmpty ? "No matches found." : nil
         } catch {
             // Ignore errors from cancelled/stale searches.
             guard generation == searchGeneration else { return }
@@ -1463,6 +1513,7 @@ private enum CanadaSearch {
 
 private struct DailyForecastDetailSheet: View {
     let day: DailyForecastDay
+    let usesUSUnits: Bool
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
 
@@ -1493,7 +1544,7 @@ private struct DailyForecastDetailSheet: View {
                         Text("High")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
-                        Text("\(Int(round(day.highC)))°C")
+                        Text(temperatureText(day.highC))
                             .font(.title3.weight(.semibold))
                             .monospacedDigit()
                     }
@@ -1503,7 +1554,7 @@ private struct DailyForecastDetailSheet: View {
                         Text("Low")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
-                        Text("\(Int(round(day.lowC)))°C")
+                        Text(temperatureText(day.lowC))
                             .font(.title3.weight(.semibold))
                             .monospacedDigit()
                     }
@@ -1555,11 +1606,8 @@ private struct DailyForecastDetailSheet: View {
     }
 
     private var forecastSummary: String {
-        let high = Int(round(day.highC))
-        let low = Int(round(day.lowC))
-
         var sentences: [String] = [
-            "\(normalizedConditionText(day.conditionText)) expected, with a high of \(formattedTemp(high)) and a low of \(formattedTemp(low))."
+            "\(normalizedConditionText(day.conditionText)) expected, with a high of \(formattedTemp(day.highC)) and a low of \(formattedTemp(day.lowC))."
         ]
 
         if roundedPrecipChance > 0 {
@@ -1582,8 +1630,18 @@ private struct DailyForecastDetailSheet: View {
         return first.isLowercase ? first.uppercased() + text.dropFirst() : text
     }
 
-    private func formattedTemp(_ value: Int) -> String {
-        value > 0 ? "+\(value)°C" : "\(value)°C"
+    private func formattedTemp(_ celsius: Double) -> String {
+        let value = usesUSUnits ? ((celsius * 9.0 / 5.0) + 32.0) : celsius
+        let rounded = Int(round(value))
+        let unit = usesUSUnits ? "°F" : "°C"
+        return rounded > 0 ? "+\(rounded)\(unit)" : "\(rounded)\(unit)"
+    }
+
+    private func temperatureText(_ celsius: Double) -> String {
+        let value = usesUSUnits ? ((celsius * 9.0 / 5.0) + 32.0) : celsius
+        let rounded = Int(round(value))
+        let unit = usesUSUnits ? "°F" : "°C"
+        return "\(rounded)\(unit)"
     }
 
     private func longDay(_ date: Date) -> String {
@@ -1594,9 +1652,13 @@ private struct DailyForecastDetailSheet: View {
     }
 }
 
-
-#Preview {
-    ContentView()
+private struct ForecastRowPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.985 : 1.0)
+            .opacity(configuration.isPressed ? 0.82 : 1.0)
+            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+    }
 }
 
 
@@ -1669,3 +1731,7 @@ private struct DailyForecastDetailSheet: View {
             return "Oppressive humidity"
         }
     }
+
+#Preview {
+    ContentView()
+}
