@@ -10,7 +10,7 @@ import UIKit
 /// the core YAWA UX: current tile, hourly temp chart, and 7‑day forecast.
 ///
 /// - Loads the last-selected location (or Toronto by default) and updates when the user selects a favorite/current location.
-/// - All units are Canada defaults: °C, km/h, kPa, mm, km.
+/// - Units adapt by selected country: Canada uses °C / km/h / kPa, U.S. uses °F / mph / inHg.
 struct ContentView: View {
     @StateObject private var viewModel = WeatherViewModel(service: OpenMeteoWeatherService())
     @StateObject private var locationStore = LocationStore()
@@ -24,6 +24,7 @@ struct ContentView: View {
     @State private var selectedDay: DailyForecastDay? = nil
     
     @State private var sunRefreshToken = Date()
+    @State private var temperatureAnimationKey = UUID()
 
     // Settings: how many forecast days to show (7 or 10)
     @AppStorage("forecastDaysToShow") private var forecastDaysToShow: Int = 7
@@ -57,7 +58,7 @@ struct ContentView: View {
 
                 ScrollViewReader { proxy in
                     ScrollView {
-                        VStack(spacing: 14) {
+                        VStack(spacing: 12) {
                             // Scroll-to-top anchor
                             Color.clear
                                 .frame(height: 0)
@@ -146,6 +147,7 @@ struct ContentView: View {
             await viewModel.load(for: initial.coordinate, locationName: initial.displayName, forecastDays: days)
             if viewModel.snapshot != nil {
                 displayedLocation = initial
+                temperatureAnimationKey = UUID()
             }
         }
         .onChange(of: forecastDaysToShow) { _, newValue in
@@ -156,6 +158,7 @@ struct ContentView: View {
                 await viewModel.load(for: loc.coordinate, locationName: loc.displayName, forecastDays: days)
                 if viewModel.snapshot != nil {
                     displayedLocation = loc
+                    temperatureAnimationKey = UUID()
                 }
             }
         }
@@ -175,6 +178,7 @@ struct ContentView: View {
                         await viewModel.load(for: loc.coordinate, locationName: loc.displayName, forecastDays: days)
                         if viewModel.snapshot != nil {
                             displayedLocation = loc
+                            temperatureAnimationKey = UUID()
                         }
                     }
                 },
@@ -186,6 +190,7 @@ struct ContentView: View {
                         await viewModel.load(for: loc.coordinate, locationName: loc.displayName, forecastDays: days)
                         if viewModel.snapshot != nil {
                             displayedLocation = loc
+                            temperatureAnimationKey = UUID()
                         }
                     }
                 }
@@ -294,10 +299,13 @@ struct ContentView: View {
                     Text(currentTemperatureValueText(snap.current.temperatureC))
                         .font(.system(size: 56, weight: .semibold, design: .rounded))
                         .monospacedDigit()
+                        .contentTransition(.numericText())
+                        .animation(.easeInOut(duration: 0.22), value: temperatureAnimationKey)
 
                     Text(temperatureUnitLabel)
                         .font(.title3.weight(.semibold))
                         .foregroundStyle(.secondary)
+                        .animation(.easeInOut(duration: 0.22), value: temperatureAnimationKey)
                 }
 
                 Spacer(minLength: 12)
@@ -567,15 +575,7 @@ struct ContentView: View {
                 .foregroundStyle(YAWATheme.textSecondary(for: colorScheme).opacity(0.9))
                 .padding(.top, 8)
         }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(YAWATheme.cardBackground(for: colorScheme))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(YAWATheme.cardStroke(for: colorScheme), lineWidth: 1)
-        )
+        .tileStyle()
     }
 
     private func radarCard() -> some View {
@@ -1022,6 +1022,7 @@ private struct HourlyTempChart: View {
 
 // MARK: - Styling
 
+
 private struct TileStyleModifier: ViewModifier {
     @Environment(\.colorScheme) private var scheme
 
@@ -1036,7 +1037,19 @@ private struct TileStyleModifier: ViewModifier {
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .strokeBorder(
-                        YAWATheme.cardStroke(for: scheme),
+                        scheme == .dark
+                        ? AnyShapeStyle(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(0.16),
+                                    Color.white.opacity(0.06),
+                                    Color.white.opacity(0.02)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        : AnyShapeStyle(YAWATheme.cardStroke(for: scheme)),
                         lineWidth: scheme == .dark ? 1 : 0.8
                     )
             )
@@ -1055,7 +1068,7 @@ private extension View {
     }
 }
 
-// MARK: - Canada-only Locations
+// MARK: - Locations
 
 private struct SavedLocation: Identifiable, Codable, Equatable {
     let id: UUID
@@ -1154,7 +1167,7 @@ private final class LocationStore: ObservableObject {
 }
 
 @MainActor
-private final class CanadaLocationResolver: NSObject, ObservableObject, CLLocationManagerDelegate {
+private final class LocationResolver: NSObject, ObservableObject, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
     @Published var authorization: CLAuthorizationStatus = .notDetermined
 
@@ -1286,7 +1299,7 @@ private struct LocationPickerView: View {
     let onSelectCurrentLocation: (SavedLocation) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var resolver = CanadaLocationResolver()
+    @StateObject private var resolver = LocationResolver()
 
     @State private var query: String = ""
     @State private var results: [SavedLocation] = []
@@ -1436,7 +1449,7 @@ private struct LocationPickerView: View {
         searchError = nil
 
         do {
-            let found = try await CanadaSearch.searchCities(query: expectedQuery)
+            let found = try await LocationSearch.searchCities(query: expectedQuery)
 
             // Ignore results from stale searches.
             guard generation == searchGeneration else { return }
@@ -1460,16 +1473,16 @@ private struct LocationPickerView: View {
     }
 }
 
-private enum CanadaSearch {
+private enum LocationSearch {
     static func searchCities(query: String) async throws -> [SavedLocation] {
-        // Use MKLocalSearch and post-filter to CA.
+        // Use MKLocalSearch and return both Canadian and U.S. matches.
         let request = MKLocalSearch.Request()
         request.naturalLanguageQuery = query
 
-        // Center roughly on Canada to bias results.
+        // Center roughly on North America to bias Canada/U.S. results.
         request.region = MKCoordinateRegion(
-            center: CLLocationCoordinate2D(latitude: 56.1304, longitude: -106.3468),
-            span: MKCoordinateSpan(latitudeDelta: 50, longitudeDelta: 70)
+            center: CLLocationCoordinate2D(latitude: 45.0, longitude: -98.0),
+            span: MKCoordinateSpan(latitudeDelta: 38, longitudeDelta: 58)
         )
 
         let search = MKLocalSearch(request: request)

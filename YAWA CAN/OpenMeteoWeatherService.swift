@@ -135,14 +135,25 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
             let date = cal.date(bySettingHour: 12, minute: 0, second: 0, of: dayDate) ?? dayDate
 
             let mapped = mapWeather(code: codes[i])
+            let precipChance = roundPrecipToNearest10(pops[i])
+
+            let softenedConditionText: String
+            switch codes[i] {
+            case 51, 53, 55, 56, 57, 61, 63:
+                softenedConditionText = precipChance < 30 ? "Mostly cloudy" : mapped.text
+            case 80:
+                softenedConditionText = precipChance < 30 ? "Partly cloudy" : mapped.text
+            default:
+                softenedConditionText = mapped.text
+            }
 
             return DailyForecastDay(
                 date: date,
                 highC: highs[i],
                 lowC: lows[i],
-                precipChancePercent: roundPrecipToNearest10(pops[i]),
+                precipChancePercent: precipChance,
                 symbolName: mapped.symbol,
-                conditionText: mapped.text
+                conditionText: softenedConditionText
             )
         }
     }
@@ -153,7 +164,7 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
         case 0: return ("sun.max.fill", "Clear")
         case 1: return ("sun.max.fill", "Mostly clear")
         case 2: return ("cloud.sun.fill", "Partly cloudy")
-        case 3: return ("cloud.fill", "Overcast")
+        case 3: return ("cloud.fill", "Mostly cloudy")
 
         case 45, 48: return ("cloud.fog.fill", "Fog")
 

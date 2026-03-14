@@ -19,9 +19,9 @@ enum YAWATheme {
 
     // MARK: - Surfaces
 
-    static let card    = Color.white.opacity(0.06)
-    static let divider = Color.white.opacity(0.18)
-    static let cardStroke = Color.white.opacity(0.16)
+    static let card    = Color(red: 0.02, green: 0.06, blue: 0.13).opacity(0.88)
+    static let divider = Color.white.opacity(0.10)
+    static let cardStroke = Color.white.opacity(0.22)
 
     // MARK: - Text (default for themed/dark)
 
@@ -54,13 +54,13 @@ enum YAWATheme {
 
     static func cardFill(for scheme: ColorScheme) -> Color {
         scheme == .dark
-        ? Color.white.opacity(0.08)
+        ? Color(red: 0.02, green: 0.06, blue: 0.13).opacity(0.88)
         : Color.black.opacity(0.035)   // 👈 Apple Weather-ish
     }
 
     static func cardStroke(for scheme: ColorScheme) -> Color {
         scheme == .dark
-        ? Color.white.opacity(0.16)
+        ? Color.white.opacity(0.22)
         : Color.black.opacity(0.08) // softer edge in light mode
     }
 
@@ -143,10 +143,10 @@ enum YAWATheme {
     }
 
     static func textSecondary(for scheme: ColorScheme) -> Color {
-        scheme == .dark ? Color.white.opacity(0.80) : Color.secondary
+        scheme == .dark ? Color.white.opacity(0.84) : Color.secondary
     }
 
     static func textTertiary(for scheme: ColorScheme) -> Color {
-        scheme == .dark ? Color.white.opacity(0.65) : Color.secondary.opacity(0.85)
+        scheme == .dark ? Color.white.opacity(0.70) : Color.secondary.opacity(0.85)
     }
 }
