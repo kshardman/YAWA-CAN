@@ -22,6 +22,7 @@ struct ContentView: View {
     @State private var radarTarget: RadarTarget? = nil
     
     @State private var selectedDaySelection: ForecastDetailSelection? = nil
+    @State private var forecastDetailDetent: PresentationDetent = .fraction(0.78)
     
     @State private var sunRefreshToken = Date()
     @State private var temperatureAnimationKey = UUID()
@@ -162,13 +163,16 @@ struct ContentView: View {
         }
         .sheet(item: $selectedDaySelection) { selection in
             DailyForecastDetailSheet(
-                day: selection.day,
+                days: selection.days,
+                initialIndex: selection.initialIndex,
                 hourlyTempsC: selection.hourlyTempsC,
-                dayIndex: selection.dayIndex,
                 usesUSUnits: usesUSUnits
             )
-            .presentationDetents([.medium, .large])
+            .presentationDetents([.fraction(0.78), .large], selection: $forecastDetailDetent)
             .presentationDragIndicator(.visible)
+            .onAppear {
+                forecastDetailDetent = .fraction(0.78)
+            }
         }
         .sheet(isPresented: $showingLocations) {
             LocationPickerView(
@@ -471,8 +475,8 @@ struct ContentView: View {
                 let sym = day.symbolName
                 Button {
                     selectedDaySelection = ForecastDetailSelection(
-                        day: day,
-                        dayIndex: idx,
+                        days: days,
+                        initialIndex: idx,
                         hourlyTempsC: snap.hourlyTempsC
                     )
                 } label: {
@@ -777,11 +781,11 @@ struct ContentView: View {
     private func metricIconValue(icon: String, value: String) -> some View {
         HStack(spacing: 6) {
             Image(systemName: icon)
-                .font(.caption2.weight(.semibold))
+                .font(.subheadline.weight(.semibold))
                 .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(YAWATheme.symbolColor(icon, scheme: colorScheme))
                 .opacity(colorScheme == .dark ? 0.90 : 0.82)
-                .frame(width: 14, alignment: .center)
+                .frame(width: 18, alignment: .center)
                 .offset(y: 0.5)
 
             Text(value)
@@ -1046,11 +1050,14 @@ private struct HourlyTempChart: View {
     }
 }
 private struct ForecastDetailSelection: Identifiable {
-    let day: DailyForecastDay
-    let dayIndex: Int
+    let days: [DailyForecastDay]
+    let initialIndex: Int
     let hourlyTempsC: [Double]
 
-    var id: Date { day.date }
+    var id: String {
+        guard days.indices.contains(initialIndex) else { return UUID().uuidString }
+        return "\(days[initialIndex].date.timeIntervalSince1970)-\(initialIndex)"
+    }
 }
 
 // MARK: - Styling
@@ -1558,110 +1565,159 @@ private enum LocationSearch {
 }
 
 private struct DailyForecastDetailSheet: View {
-    let day: DailyForecastDay
+    let days: [DailyForecastDay]
     let hourlyTempsC: [Double]
-    let dayIndex: Int
     let usesUSUnits: Bool
+
+    @State private var currentIndex: Int
     @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.dismiss) private var dismiss
+
+    init(days: [DailyForecastDay], initialIndex: Int, hourlyTempsC: [Double], usesUSUnits: Bool) {
+        self.days = days
+        self.hourlyTempsC = hourlyTempsC
+        self.usesUSUnits = usesUSUnits
+        _currentIndex = State(initialValue: min(max(initialIndex, 0), max(days.count - 1, 0)))
+    }
+    private var day: DailyForecastDay {
+        days[currentIndex]
+    }
+
+    private var canGoPrevious: Bool {
+        currentIndex > 0
+    }
+
+    private var canGoNext: Bool {
+        currentIndex < days.count - 1
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 10) {
-                    Image(systemName: day.symbolName)
-                        .font(.system(size: 30, weight: .semibold))
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(YAWATheme.symbolColor(day.symbolName, scheme: colorScheme))
+                    if days.count > 1 {
+                        HStack(spacing: 6) {
+                            Spacer()
+                            ForEach(Array(days.enumerated()), id: \.offset) { idx, _ in
+                                Circle()
+                                    .fill(idx == currentIndex ? Color.primary.opacity(0.9) : Color.secondary.opacity(0.28))
+                                    .frame(width: idx == currentIndex ? 8 : 6, height: idx == currentIndex ? 8 : 6)
+                            }
+                            Spacer()
+                        }
+                        .padding(.bottom, 2)
+                    }
+                    HStack(spacing: 10) {
+                        Image(systemName: day.symbolName)
+                            .font(.system(size: 30, weight: .semibold))
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(YAWATheme.symbolColor(day.symbolName, scheme: colorScheme))
 
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(longDay(day.date))
-                            .font(.headline.weight(.semibold))
-                        Text(day.conditionText)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(longDay(day.date))
+                                .font(.headline.weight(.semibold))
+                            Text(day.conditionText)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer()
                     }
 
-                    Spacer()
-                }
+                    Divider().opacity(0.18)
 
-                Divider().opacity(0.18)
-
-                HStack(alignment: .firstTextBaseline, spacing: 0) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("High")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                        Text(temperatureText(day.highC))
-                            .font(.title3.weight(.semibold))
-                            .monospacedDigit()
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Low")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                        Text(temperatureText(day.lowC))
-                            .font(.title3.weight(.semibold))
-                            .monospacedDigit()
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    if roundedPrecipChance > 0 {
+                    HStack(alignment: .firstTextBaseline, spacing: 0) {
                         VStack(alignment: .leading, spacing: 3) {
-                            Text("Precip")
+                            Text("High")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
-                            Text("\(roundedPrecipChance)%")
+                            Text(temperatureText(day.highC))
                                 .font(.title3.weight(.semibold))
                                 .monospacedDigit()
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Low")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                            Text(temperatureText(day.lowC))
+                                .font(.title3.weight(.semibold))
+                                .monospacedDigit()
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                        if roundedPrecipChance > 0 {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Precip")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                Text("\(roundedPrecipChance)%")
+                                    .font(.title3.weight(.semibold))
+                                    .monospacedDigit()
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                     }
-                }
 
-                Divider().opacity(0.18)
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Discussion")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-
-                    Text(forecastSummary)
-                        .font(.body)
-                        .foregroundStyle(.primary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                if !hourlyTempsForDay.isEmpty {
                     Divider().opacity(0.18)
 
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Hourly")
+                        Text("Discussion")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
 
-                        HourlyTempChart(
-                            temps: hourlyTempsForDay,
-                            usesUSUnits: usesUSUnits,
-                            showCurrentHourMarker: isToday,
-                            currentHourIndex: currentHourIndex
-                        )
-                        .frame(height: 170)
-                        .padding(.top, 4)
-
-                        Text("24-hour temperature trend")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                        Text(forecastSummary)
+                            .font(.body)
+                            .foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                }
 
-                // Spacer(minLength: 0) -- removed for inner card to hug content
-            }
+                    if !hourlyTempsForDay.isEmpty {
+                        Divider().opacity(0.18)
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Hourly")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+
+                            HourlyTempChart(
+                                temps: hourlyTempsForDay,
+                                usesUSUnits: usesUSUnits,
+                                showCurrentHourMarker: isToday,
+                                currentHourIndex: currentHourIndex
+                            )
+                            .frame(height: 170)
+                            .padding(.top, 4)
+
+                            Text("24-hour temperature trend")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+
+                    // Spacer(minLength: 0) -- removed for inner card to hug content
+                }
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 20)
+                        .onEnded { value in
+                            let horizontal = value.translation.width
+                            let vertical = value.translation.height
+                            guard abs(horizontal) > abs(vertical) else { return }
+
+                            if horizontal < -40, canGoNext {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    currentIndex += 1
+                                }
+                            } else if horizontal > 40, canGoPrevious {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    currentIndex -= 1
+                                }
+                            }
+                        }
+                )
                 .padding(.horizontal, 22)
                 .padding(.bottom, 18)
                 .padding(.top, 10)
@@ -1733,19 +1789,19 @@ private struct DailyForecastDetailSheet: View {
 
     private var forecastSummary: String {
         var sentences: [String] = [
-            "\(normalizedConditionText(day.conditionText)) expected, with a high of \(formattedTemp(day.highC)) and a low of \(formattedTemp(day.lowC))."
+            "\(normalizedConditionText(day.conditionText)), with a high of \(formattedTemp(day.highC)) and a low of \(formattedTemp(day.lowC))."
         ]
 
         if roundedPrecipChance > 0 {
             if roundedPrecipChance <= 20 {
-                sentences.append("A slight chance of precipitation is expected.")
+                sentences.append("A slight chance of precipitation.")
             } else if roundedPrecipChance <= 50 {
                 sentences.append("There is a moderate chance of precipitation.")
             } else {
-                sentences.append("Precipitation is likely at times.")
+                sentences.append("Periods of precipitation are likely.")
             }
         } else {
-            sentences.append("Dry conditions are expected.")
+            sentences.append("Dry conditions.")
         }
 
         return sentences.joined(separator: " ")
@@ -1760,7 +1816,7 @@ private struct DailyForecastDetailSheet: View {
         let value = usesUSUnits ? ((celsius * 9.0 / 5.0) + 32.0) : celsius
         let rounded = Int(round(value))
         let unit = usesUSUnits ? "°F" : "°C"
-        return rounded > 0 ? "+\(rounded)\(unit)" : "\(rounded)\(unit)"
+        return rounded > 0 ? "\(rounded)\(unit)" : "\(rounded)\(unit)"
     }
 
     private func temperatureText(_ celsius: Double) -> String {
@@ -1778,7 +1834,7 @@ private struct DailyForecastDetailSheet: View {
     }
     
     private var hourlyTempsForDay: [Double] {
-        let start = dayIndex * 24
+        let start = currentIndex * 24
         guard start < hourlyTempsC.count else { return [] }
         let slice = Array(hourlyTempsC.dropFirst(start).prefix(24))
         if usesUSUnits {
