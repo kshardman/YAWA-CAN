@@ -25,13 +25,13 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
             .init(name: "longitude", value: String(coordinate.longitude)),
 
             // current conditions
-            .init(name: "current", value: "temperature_2m,apparent_temperature,dew_point_2m,relative_humidity_2m,pressure_msl,wind_speed_10m,wind_direction_10m,weather_code"),
+            .init(name: "current", value: "temperature_2m,apparent_temperature,dew_point_2m,relative_humidity_2m,pressure_msl,wind_speed_10m,wind_direction_10m,weather_code,cloud_cover"),
 
             // hourly temps for chart
             .init(name: "hourly", value: "temperature_2m,precipitation_probability"),
 
             // daily forecast
-            .init(name: "daily", value: "sunrise,sunset,temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code"),
+            .init(name: "daily", value: "sunrise,sunset,temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code,cloud_cover_mean"),
 
             .init(name: "forecast_days", value: String(days)),
             .init(name: "timezone", value: "auto"),
@@ -51,6 +51,11 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
         // Current
         let code = decoded.current.weather_code
         let mapped = mapWeather(code: code)
+        let refinedCurrent = refineCurrentSky(
+            mapped: mapped,
+            weatherCode: code,
+            cloudCoverPercent: decoded.current.cloud_cover
+        )
 
         let pressureKPa = decoded.current.pressure_msl / 10.0 // hPa -> kPa
 
@@ -62,8 +67,8 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
             humidityPercent: Double(decoded.current.relative_humidity_2m),
             pressureKPa: pressureKPa,
             dewPointC: decoded.current.dew_point_2m,
-            conditionText: mapped.text,
-            symbolName: mapped.symbol
+            conditionText: refinedCurrent.text,
+            symbolName: refinedCurrent.symbol
         )
 
         // Daily (7/10)
@@ -119,8 +124,9 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
         let lows  = decoded.daily.temperature_2m_min
         let pops  = decoded.daily.precipitation_probability_max
         let codes = decoded.daily.weather_code
+        let clouds = decoded.daily.cloud_cover_mean
 
-        let available = min(times.count, highs.count, lows.count, pops.count, codes.count)
+        let available = min(times.count, highs.count, lows.count, pops.count, codes.count, clouds.count)
         let count = min(available, max(1, maxDays))
 
         let tz = TimeZone(identifier: decoded.timezone) ?? .current
@@ -146,25 +152,90 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
 
             let mapped = mapWeather(code: codes[i])
             let precipChance = roundPrecipToNearest10(pops[i])
-
-            let softenedConditionText: String
-            switch codes[i] {
-            case 51, 53, 55, 56, 57, 61, 63:
-                softenedConditionText = precipChance < 30 ? "Mostly cloudy" : mapped.text
-            case 80:
-                softenedConditionText = precipChance < 30 ? "Partly cloudy" : mapped.text
-            default:
-                softenedConditionText = mapped.text
-            }
+            let refinedDaily = refineDailySky(
+                mapped: mapped,
+                weatherCode: codes[i],
+                precipChancePercent: precipChance,
+                cloudCoverPercent: Int(clouds[i].rounded())
+            )
 
             return DailyForecastDay(
                 date: date,
                 highC: highs[i],
                 lowC: lows[i],
                 precipChancePercent: precipChance,
-                symbolName: mapped.symbol,
-                conditionText: softenedConditionText
+                symbolName: refinedDaily.symbol,
+                conditionText: refinedDaily.text
             )
+        }
+    }
+
+    private func refineCurrentSky(
+        mapped: (symbol: String, text: String),
+        weatherCode: Int,
+        cloudCoverPercent: Int?
+    ) -> (symbol: String, text: String) {
+        // Only refine basic sky states. If precip/fog/thunder is active,
+        // keep the weather-code wording.
+        switch weatherCode {
+        case 0, 1, 2, 3:
+            guard let cloud = cloudCoverPercent else { return mapped }
+
+            if cloud <= 15 {
+                return ("sun.max.fill", "Clear")
+            } else if cloud <= 40 {
+                return ("sun.max.fill", "Mostly clear")
+            } else if cloud <= 70 {
+                return ("cloud.sun.fill", "Partly cloudy")
+            } else {
+                return ("cloud.fill", "Mostly cloudy")
+            }
+
+        default:
+            return mapped
+        }
+    }
+
+    private func refineDailySky(
+        mapped: (symbol: String, text: String),
+        weatherCode: Int,
+        precipChancePercent: Int,
+        cloudCoverPercent: Int?
+    ) -> (symbol: String, text: String) {
+        // Keep active precip/fog/thunder wording when conditions are meaningful.
+        switch weatherCode {
+        case 45, 48, 56, 57, 66, 67, 71, 73, 75, 77, 85, 86, 95, 96, 99:
+            return mapped
+
+        case 51, 53, 55, 61, 63, 65, 80, 81, 82:
+            // If precip chance is low, let cloud cover soften overly pessimistic sky wording.
+            guard precipChancePercent < 30, let cloud = cloudCoverPercent else { return mapped }
+
+            if cloud <= 15 {
+                return ("sun.max.fill", "Clear")
+            } else if cloud <= 40 {
+                return ("sun.max.fill", "Mostly clear")
+            } else if cloud <= 70 {
+                return ("cloud.sun.fill", "Partly cloudy")
+            } else {
+                return ("cloud.fill", "Mostly cloudy")
+            }
+
+        case 0, 1, 2, 3:
+            guard let cloud = cloudCoverPercent else { return mapped }
+
+            if cloud <= 12 {
+                return ("sun.max.fill", "Clear")
+            } else if cloud <= 37 {
+                return ("sun.max.fill", "Mostly clear")
+            } else if cloud <= 62 {
+                return ("cloud.sun.fill", "Partly cloudy")
+            } else {
+                return ("cloud.fill", "Mostly cloudy")
+            }
+
+        default:
+            return mapped
         }
     }
 
@@ -215,6 +286,7 @@ private struct OpenMeteoResponse: Decodable {
         let wind_speed_10m: Double
         let wind_direction_10m: Double
         let weather_code: Int
+        let cloud_cover: Int?
     }
 
     struct Hourly: Decodable {
@@ -231,5 +303,6 @@ private struct OpenMeteoResponse: Decodable {
         let temperature_2m_min: [Double]
         let precipitation_probability_max: [Int?]
         let weather_code: [Int]
+        let cloud_cover_mean: [Double]
     }
 }

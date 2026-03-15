@@ -547,7 +547,7 @@ struct ContentView: View {
                         .frame(width: weekdayW + dateW + 4 + iconW + 2, alignment: .leading)
 
                         // Brief forecast text
-                        Text(day.conditionText)
+                        Text(refinedDailyRowConditionText(for: day))
                             .font(.subheadline)
                             .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
                             .layoutPriority(2)
@@ -580,6 +580,41 @@ struct ContentView: View {
                 .padding(.top, 8)
         }
         .tileStyle()
+    }
+
+    private func refinedDailyRowConditionText(for day: DailyForecastDay) -> String {
+        let raw = day.conditionText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = raw.lowercased()
+
+        // Keep explicit precip/fog/thunder wording untouched.
+        if lower.contains("rain") || lower.contains("drizzle") || lower.contains("snow") ||
+            lower.contains("shower") || lower.contains("thunder") || lower.contains("fog") ||
+            lower.contains("ice") || lower.contains("sleet") || lower.contains("mix") {
+            return raw
+        }
+
+        switch day.symbolName {
+        case "sun.max.fill", "sun.max":
+            if lower == "mostly cloudy" || lower == "cloudy" {
+                return "Mostly clear"
+            }
+            return raw
+
+        case "cloud.sun.fill", "cloud.sun":
+            if lower == "mostly cloudy" || lower == "cloudy" || lower == "mostly clear" {
+                return "Partly cloudy"
+            }
+            return raw
+
+        case "cloud.fill":
+            if lower == "mostly clear" || lower == "partly cloudy" {
+                return "Mostly cloudy"
+            }
+            return raw
+
+        default:
+            return raw
+        }
     }
 
     private func radarCard() -> some View {
