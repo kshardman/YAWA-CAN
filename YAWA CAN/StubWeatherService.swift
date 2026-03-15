@@ -76,6 +76,16 @@ struct StubWeatherService: WeatherServiceProtocol {
             return (t * 10).rounded() / 10
         }
 
+        let hourlyPrecipChancePercent: [Double] = (0..<24).map { h in
+            switch h {
+            case 0..<6: return 10
+            case 6..<10: return 20
+            case 10..<16: return 35
+            case 16..<20: return 25
+            default: return 15
+            }
+        }
+
         // Demo sunrise/sunset for the Sun card.
         let sunrise = cal.date(bySettingHour: 7, minute: 19, second: 0, of: today) ?? today.addingTimeInterval(7 * 3600)
         let sunset  = cal.date(bySettingHour: 18, minute: 55, second: 0, of: today) ?? today.addingTimeInterval(19 * 3600)
@@ -87,6 +97,7 @@ struct StubWeatherService: WeatherServiceProtocol {
             current: current,
             daily: daily,
             hourlyTempsC: hourlyTempsC,
+            hourlyPrecipChancePercent: hourlyPrecipChancePercent,
             sun: sun
         )
     }

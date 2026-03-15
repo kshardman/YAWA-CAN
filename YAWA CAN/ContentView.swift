@@ -22,7 +22,7 @@ struct ContentView: View {
     @State private var radarTarget: RadarTarget? = nil
     
     @State private var selectedDaySelection: ForecastDetailSelection? = nil
-    @State private var forecastDetailDetent: PresentationDetent = .fraction(0.78)
+    @State private var forecastDetailDetent: PresentationDetent = .fraction(0.7)
     
     @State private var sunRefreshToken = Date()
     @State private var temperatureAnimationKey = UUID()
@@ -111,6 +111,7 @@ struct ContentView: View {
                         .transition(.move(edge: .top).combined(with: .opacity))
                 }
             }
+            .fontDesign(.rounded)
             .navigationTitle(navigationTitleText)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -166,12 +167,13 @@ struct ContentView: View {
                 days: selection.days,
                 initialIndex: selection.initialIndex,
                 hourlyTempsC: selection.hourlyTempsC,
+                hourlyPrecipChancePercent: selection.hourlyPrecipChancePercent,
                 usesUSUnits: usesUSUnits
             )
-            .presentationDetents([.fraction(0.78), .large], selection: $forecastDetailDetent)
+            .presentationDetents([.fraction(0.70), .large], selection: $forecastDetailDetent)
             .presentationDragIndicator(.visible)
             .onAppear {
-                forecastDetailDetent = .fraction(0.78)
+                forecastDetailDetent = .fraction(0.70)
             }
         }
         .sheet(isPresented: $showingLocations) {
@@ -477,7 +479,8 @@ struct ContentView: View {
                     selectedDaySelection = ForecastDetailSelection(
                         days: days,
                         initialIndex: idx,
-                        hourlyTempsC: snap.hourlyTempsC
+                        hourlyTempsC: snap.hourlyTempsC,
+                        hourlyPrecipChancePercent: snap.hourlyPrecipChancePercent
                     )
                 } label: {
                     HStack(spacing: 4) {
@@ -980,79 +983,225 @@ struct ContentView: View {
 
 private struct HourlyTempChart: View {
     let temps: [Double]
+    let precipChancePercent: [Double]
     let usesUSUnits: Bool
     let showCurrentHourMarker: Bool
     let currentHourIndex: Int?
 
     @Environment(\.colorScheme) private var colorScheme
 
+    private var temperatureLineColor: Color {
+        Color.cyan
+    }
+
+    private var precipBarColor: Color {
+        Color.cyan.opacity(colorScheme == .dark ? 0.34 : 0.44)
+    }
+
+    private var chartTempMin: Double {
+        temps.min() ?? 0
+    }
+
+    private var chartTempMax: Double {
+        temps.max() ?? 0
+    }
+
+    private var tempChartPadding: Double {
+        let range = max(chartTempMax - chartTempMin, 1.0)
+        return max(2.0, range * 0.22)
+    }
+
+    private var tempChartLowerBound: Double {
+        chartTempMin - tempChartPadding
+    }
+
+    private var tempChartUpperBound: Double {
+        chartTempMax + tempChartPadding
+    }
+
+    private var tempAxisValues: [Double] {
+        let step = usesUSUnits ? 10.0 : 5.0
+        let start = floor(tempChartLowerBound / step) * step
+        let end = ceil(tempChartUpperBound / step) * step
+
+        var values: [Double] = []
+        var tick = start
+        while tick <= end {
+            values.append(tick)
+            tick += step
+        }
+
+        if values.isEmpty {
+            values = [chartTempMin, chartTempMax]
+        }
+
+        return values
+    }
+
+    private var precipAxisValues: [Double] {
+        [0, 50, 100]
+    }
+
+    private func hourLabel(for index: Int) -> String {
+        let hour = index % 24
+        let suffix = hour < 12 ? "a" : "p"
+        let display = hour % 12 == 0 ? 12 : hour % 12
+        return "\(display)\(suffix)"
+    }
+
+    private func precipValue(at index: Int) -> Double {
+        guard precipChancePercent.indices.contains(index) else { return 0 }
+        return max(0, min(100, precipChancePercent[index]))
+    }
+
     var body: some View {
-        Chart {
-            if showCurrentHourMarker, let currentHourIndex {
-                RuleMark(x: .value("Current Hour", currentHourIndex))
-                    .foregroundStyle(Color.cyan.opacity(colorScheme == .dark ? 0.32 : 0.22))
-                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
-            }
+        VStack(spacing: 0) {
+            Chart {
+                if showCurrentHourMarker, let currentHourIndex {
+                    RuleMark(x: .value("Current Hour", currentHourIndex))
+                        .foregroundStyle(Color.cyan.opacity(colorScheme == .dark ? 0.55 : 0.45))
+                        .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
+                }
 
-            ForEach(Array(temps.enumerated()), id: \.offset) { idx, t in
-                AreaMark(
-                    x: .value("Hour", idx),
-                    yStart: .value("Baseline", temps.min() ?? t),
-                    yEnd: .value("Temp", t)
-                )
-                .interpolationMethod(.catmullRom)
-                .foregroundStyle(
-                    LinearGradient(
-                        colors: [
-                            Color.cyan.opacity(colorScheme == .dark ? 0.22 : 0.16),
-                            Color.cyan.opacity(0.02)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
+                ForEach(Array(temps.enumerated()), id: \.offset) { idx, temp in
+                    AreaMark(
+                        x: .value("Hour", idx),
+                        yStart: .value("Baseline", tempChartLowerBound),
+                        yEnd: .value("Temp", temp)
                     )
-                )
+                    .interpolationMethod(.catmullRom)
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [
+                                Color.cyan.opacity(colorScheme == .dark ? 0.22 : 0.16),
+                                Color.cyan.opacity(0.02)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                    )
 
-                LineMark(
-                    x: .value("Hour", idx),
-                    y: .value("Temp", t)
-                )
-                .interpolationMethod(.catmullRom)
-                .foregroundStyle(Color.cyan)
-                .lineStyle(StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
-            }
-        }
-        .chartXAxis {
-            AxisMarks(values: .stride(by: 6)) { value in
-                if let idx = value.as(Int.self) {
-                    let hour = idx % 24
-                    let suffix = hour < 12 ? "a" : "p"
-                    let display = hour % 12 == 0 ? 12 : hour % 12
-                    AxisValueLabel("\(display)\(suffix)")
-                }
-                AxisGridLine()
-                    .foregroundStyle(Color.white.opacity(colorScheme == .dark ? 0.10 : 0.06))
-                AxisTick()
-                    .foregroundStyle(Color.white.opacity(colorScheme == .dark ? 0.18 : 0.10))
-            }
-        }
-        .chartYAxis {
-            AxisMarks(position: .trailing) { value in
-                AxisGridLine()
-                    .foregroundStyle(Color.white.opacity(colorScheme == .dark ? 0.08 : 0.05))
-                AxisTick()
-                    .foregroundStyle(Color.white.opacity(colorScheme == .dark ? 0.16 : 0.10))
-                if let temp = value.as(Double.self) {
-                    AxisValueLabel("\(Int(round(temp)))°")
+                    LineMark(
+                        x: .value("Hour", idx),
+                        y: .value("Temp", temp)
+                    )
+                    .interpolationMethod(.catmullRom)
+                    .foregroundStyle(temperatureLineColor)
+                    .lineStyle(StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
                 }
             }
+            .chartXScale(domain: 0...23)
+            .chartYScale(domain: tempChartLowerBound...tempChartUpperBound)
+            .chartXAxis(.hidden)
+            .chartYAxis {
+                AxisMarks(position: .leading, values: precipAxisValues) { value in
+                    AxisTick()
+                        .foregroundStyle(.clear)
+
+                    if let v = value.as(Double.self) {
+                        AxisValueLabel("\(Int(round(v)))%")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.clear)
+                    }
+                }
+
+                AxisMarks(position: .trailing, values: tempAxisValues) { value in
+                    AxisGridLine()
+                        .foregroundStyle(Color.white.opacity(colorScheme == .dark ? 0.08 : 0.05))
+
+                    AxisTick()
+                        .foregroundStyle(Color.white.opacity(colorScheme == .dark ? 0.16 : 0.10))
+
+                    if let v = value.as(Double.self) {
+                        AxisValueLabel("\(Int(round(v)))°")
+                    }
+                }
+            }
+            .frame(height: 126)
+
+            Chart {
+                if showCurrentHourMarker, let currentHourIndex {
+                    RuleMark(x: .value("Current Hour", currentHourIndex))
+                        .foregroundStyle(Color.cyan.opacity(colorScheme == .dark ? 0.55 : 0.45))
+                        .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
+                }
+
+                RuleMark(y: .value("Precip Mid", 50))
+                    .foregroundStyle(Color.cyan.opacity(colorScheme == .dark ? 0.14 : 0.12))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 4]))
+
+                ForEach(Array(precipChancePercent.enumerated()), id: \.offset) { idx, _ in
+                    let precip = precipValue(at: idx)
+                    if precip > 0 {
+                        BarMark(
+                            x: .value("Hour", idx),
+                            yStart: .value("Precip Base", 0),
+                            yEnd: .value("Precip", precip),
+                            width: 6
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [
+                                    precipBarColor.opacity(0.55),
+                                    precipBarColor.opacity(0.95)
+                                ],
+                                startPoint: .bottom,
+                                endPoint: .top
+                            )
+                        )
+                        .opacity(0.92)
+                    }
+                }
+            }
+            .chartXScale(domain: 0...23)
+            .chartYScale(domain: 0...100)
+            .chartXAxis {
+                AxisMarks(values: [0, 6, 12, 18]) { value in
+                    if let idx = value.as(Int.self) {
+                        AxisValueLabel(hourLabel(for: idx))
+                    }
+                    AxisGridLine()
+                        .foregroundStyle(Color.white.opacity(colorScheme == .dark ? 0.10 : 0.06))
+                    AxisTick()
+                        .foregroundStyle(Color.white.opacity(colorScheme == .dark ? 0.18 : 0.10))
+                }
+            }
+            .chartYAxis {
+                AxisMarks(position: .leading, values: precipAxisValues) { value in
+                    AxisTick()
+                        .foregroundStyle(Color.cyan.opacity(colorScheme == .dark ? 0.65 : 0.55))
+
+                    if let v = value.as(Double.self) {
+                        AxisValueLabel("\(Int(round(v)))%")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(Color.cyan.opacity(colorScheme == .dark ? 0.95 : 0.90))
+                    }
+                }
+
+                AxisMarks(position: .trailing, values: tempAxisValues) { value in
+                    AxisTick()
+                        .foregroundStyle(.clear)
+
+                    if let v = value.as(Double.self) {
+                        AxisValueLabel("\(Int(round(v)))°")
+                            .font(.caption2)
+                            .foregroundStyle(.clear)
+                    }
+                }
+            }
+            .frame(height: 48)
+            .offset(y: -2)
         }
         .animation(.easeInOut(duration: 0.25), value: temps)
+        .animation(.easeInOut(duration: 0.25), value: precipChancePercent)
     }
 }
 private struct ForecastDetailSelection: Identifiable {
     let days: [DailyForecastDay]
     let initialIndex: Int
     let hourlyTempsC: [Double]
+    let hourlyPrecipChancePercent: [Double]
 
     var id: String {
         guard days.indices.contains(initialIndex) else { return UUID().uuidString }
@@ -1451,6 +1600,7 @@ private struct LocationPickerView: View {
                 }
             }
         }
+        .fontDesign(.rounded)
         .task {
             results = []
         }
@@ -1567,14 +1717,16 @@ private enum LocationSearch {
 private struct DailyForecastDetailSheet: View {
     let days: [DailyForecastDay]
     let hourlyTempsC: [Double]
+    let hourlyPrecipChancePercent: [Double]
     let usesUSUnits: Bool
 
     @State private var currentIndex: Int
     @Environment(\.colorScheme) private var colorScheme
 
-    init(days: [DailyForecastDay], initialIndex: Int, hourlyTempsC: [Double], usesUSUnits: Bool) {
+    init(days: [DailyForecastDay], initialIndex: Int, hourlyTempsC: [Double], hourlyPrecipChancePercent: [Double], usesUSUnits: Bool) {
         self.days = days
         self.hourlyTempsC = hourlyTempsC
+        self.hourlyPrecipChancePercent = hourlyPrecipChancePercent
         self.usesUSUnits = usesUSUnits
         _currentIndex = State(initialValue: min(max(initialIndex, 0), max(days.count - 1, 0)))
     }
@@ -1676,24 +1828,32 @@ private struct DailyForecastDetailSheet: View {
                     if !hourlyTempsForDay.isEmpty {
                         Divider().opacity(0.18)
 
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Hourly")
-                                .font(.caption.weight(.semibold))
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Hourly")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+
+                        HStack(spacing: 6) {
+                            Image(systemName: "chart.bar")
+                                .font(.caption2.weight(.semibold))
+                                .symbolRenderingMode(.hierarchical)
                                 .foregroundStyle(.secondary)
 
-                            HourlyTempChart(
-                                temps: hourlyTempsForDay,
-                                usesUSUnits: usesUSUnits,
-                                showCurrentHourMarker: isToday,
-                                currentHourIndex: currentHourIndex
-                            )
-                            .frame(height: 170)
-                            .padding(.top, 4)
-
-                            Text("24-hour temperature trend")
+                            Text("Temperature trend and precipitation chance")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
+
+                        HourlyTempChart(
+                            temps: hourlyTempsForDay,
+                            precipChancePercent: hourlyPrecipForDay,
+                            usesUSUnits: usesUSUnits,
+                            showCurrentHourMarker: isToday,
+                            currentHourIndex: currentHourIndex
+                        )
+                        .frame(height: 180, alignment: .top)
+                        .padding(.top, 4)
+                    }
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
@@ -1742,6 +1902,7 @@ private struct DailyForecastDetailSheet: View {
                 )
             )
         }
+        .fontDesign(.rounded)
     }
 
     private var roundedPrecipChance: Int {
@@ -1792,16 +1953,66 @@ private struct DailyForecastDetailSheet: View {
             "\(normalizedConditionText(day.conditionText)), with a high of \(formattedTemp(day.highC)) and a low of \(formattedTemp(day.lowC))."
         ]
 
+        let condition = day.conditionText.lowercased()
+
         if roundedPrecipChance > 0 {
-            if roundedPrecipChance <= 20 {
-                sentences.append("A slight chance of precipitation.")
-            } else if roundedPrecipChance <= 50 {
-                sentences.append("There is a moderate chance of precipitation.")
+            let hasThunder = condition.contains("thunder") || condition.contains("storm")
+            let hasIce = condition.contains("freezing rain") || condition.contains("ice") || condition.contains("icy")
+            let hasMix = condition.contains("sleet") || condition.contains("mix") || condition.contains("mixed")
+            let hasSnow = condition.contains("snow")
+            let hasRain = condition.contains("rain") || condition.contains("drizzle") || condition.contains("showers")
+
+            if hasThunder {
+                if roundedPrecipChance <= 20 {
+                    sentences.append("Thunderstorms are possible.")
+                } else if roundedPrecipChance <= 50 {
+                    sentences.append("There is a moderate chance of thunderstorms.")
+                } else {
+                    sentences.append("Thunderstorms are likely at times.")
+                }
+            } else if hasIce {
+                if roundedPrecipChance <= 20 {
+                    sentences.append("A slight chance of freezing rain or icy conditions.")
+                } else if roundedPrecipChance <= 50 {
+                    sentences.append("There is a moderate chance of freezing rain or icy conditions.")
+                } else {
+                    sentences.append("Freezing rain or icy conditions are likely at times.")
+                }
+            } else if hasMix {
+                if roundedPrecipChance <= 20 {
+                    sentences.append("A slight chance of mixed precipitation.")
+                } else if roundedPrecipChance <= 50 {
+                    sentences.append("There is a moderate chance of mixed precipitation.")
+                } else {
+                    sentences.append("Mixed precipitation is likely at times.")
+                }
+            } else if hasSnow {
+                if roundedPrecipChance <= 20 {
+                    sentences.append("Light snow possible.")
+                } else if roundedPrecipChance <= 50 {
+                    sentences.append("There is a moderate chance of snow.")
+                } else {
+                    sentences.append("Accumulating snow likely.")
+                }
+            } else if hasRain {
+                if roundedPrecipChance <= 20 {
+                    sentences.append("A slight chance of rain.")
+                } else if roundedPrecipChance <= 50 {
+                    sentences.append("There is a moderate chance of rain.")
+                } else {
+                    sentences.append("Periods of rain are likely.")
+                }
             } else {
-                sentences.append("Periods of precipitation are likely.")
+                if roundedPrecipChance <= 20 {
+                    sentences.append("A slight chance of precipitation.")
+                } else if roundedPrecipChance <= 50 {
+                    sentences.append("There is a moderate chance of precipitation.")
+                } else {
+                    sentences.append("Periods of precipitation are likely.")
+                }
             }
         } else {
-            sentences.append("Dry conditions.")
+            sentences.append("Dry conditions expected.")
         }
 
         return sentences.joined(separator: " ")
@@ -1842,6 +2053,12 @@ private struct DailyForecastDetailSheet: View {
         } else {
             return slice
         }
+    }
+
+    private var hourlyPrecipForDay: [Double] {
+        let start = currentIndex * 24
+        guard start < hourlyPrecipChancePercent.count else { return [] }
+        return Array(hourlyPrecipChancePercent.dropFirst(start).prefix(24))
     }
 
 }

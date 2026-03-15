@@ -28,7 +28,7 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
             .init(name: "current", value: "temperature_2m,apparent_temperature,dew_point_2m,relative_humidity_2m,pressure_msl,wind_speed_10m,wind_direction_10m,weather_code"),
 
             // hourly temps for chart
-            .init(name: "hourly", value: "temperature_2m"),
+            .init(name: "hourly", value: "temperature_2m,precipitation_probability"),
 
             // daily forecast
             .init(name: "daily", value: "sunrise,sunset,temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code"),
@@ -71,6 +71,7 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
 
         // Hourly temps: keep the full hourly forecast range so the UI can slice by day.
         let hourlyTemps = decoded.hourly.temperature_2m
+        let hourlyPrecip = decoded.hourly.precipitation_probability
 
         let sun: SunTimes? = {
             guard
@@ -88,6 +89,7 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
             current: current,
             daily: daily,
             hourlyTempsC: hourlyTemps,
+            hourlyPrecipChancePercent: hourlyPrecip,
             sun: sun
         )
     }
@@ -121,18 +123,24 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
 
         let tz = TimeZone(identifier: decoded.timezone) ?? .current
 
-        let df = DateFormatter()
-        df.locale = Locale(identifier: "en_US_POSIX")
-        df.timeZone = tz
-        df.dateFormat = "yyyy-MM-dd"
-
-        let cal = Calendar(identifier: .gregorian)
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = tz
 
         return (0..<count).compactMap { i in
-            guard let dayDate = df.date(from: times[i]) else { return nil }
+            let parts = times[i].split(separator: "-").compactMap { Int($0) }
+            guard parts.count == 3 else { return nil }
 
-            // Anchor at noon local time to avoid “yesterday” in other zones.
-            let date = cal.date(bySettingHour: 12, minute: 0, second: 0, of: dayDate) ?? dayDate
+            var comps = DateComponents()
+            comps.calendar = cal
+            comps.timeZone = tz
+            comps.year = parts[0]
+            comps.month = parts[1]
+            comps.day = parts[2]
+            comps.hour = 12
+            comps.minute = 0
+            comps.second = 0
+
+            guard let date = cal.date(from: comps) else { return nil }
 
             let mapped = mapWeather(code: codes[i])
             let precipChance = roundPrecipToNearest10(pops[i])
@@ -210,6 +218,7 @@ private struct OpenMeteoResponse: Decodable {
     struct Hourly: Decodable {
         let time: [String]
         let temperature_2m: [Double]
+        let precipitation_probability: [Double]
     }
 
     struct Daily: Decodable {
