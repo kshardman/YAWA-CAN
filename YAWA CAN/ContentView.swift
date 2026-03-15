@@ -5,12 +5,14 @@ import Charts
 import Combine
 import UIKit
 
-/// YAWA CAN - Main ContentView
+// YAWA CAN - Main ContentView
 /// Uses `WeatherViewModel` + `WeatherServiceProtocol` (Open-Meteo service) and renders
 /// the core YAWA UX: current tile, hourly temp chart, and 7‑day forecast.
-///
-/// - Loads the last-selected location (or Toronto by default) and updates when the user selects a favorite/current location.
+//
+/// - Loads the last-selected location, otherwise the first saved favorite.
+/// - Toronto is used only as a final fallback if no locations exist.
 /// - Units adapt by selected country: Canada uses °C / km/h / kPa, U.S. uses °F / mph / inHg.
+
 struct ContentView: View {
     @StateObject private var viewModel = WeatherViewModel(service: OpenMeteoWeatherService())
     @StateObject private var locationStore = LocationStore()
@@ -23,6 +25,21 @@ struct ContentView: View {
     
     @State private var selectedDaySelection: ForecastDetailSelection? = nil
     @State private var forecastDetailDetent: PresentationDetent = .fraction(0.7)
+    
+    @MainActor
+    private func refreshWeather() async {
+        let fallback = locationStore.favorites.first ?? SavedLocation.toronto
+        let loc = displayedLocation ?? selected ?? locationStore.selected ?? fallback
+        selected = loc
+
+        let days = max(1, min(forecastDaysToShow, 10))
+        await viewModel.load(for: loc.coordinate, locationName: loc.displayName, forecastDays: days)
+        if viewModel.snapshot != nil {
+            displayedLocation = loc
+            temperatureAnimationKey = UUID()
+            sunRefreshToken = Date()
+        }
+    }
     
     @State private var sunRefreshToken = Date()
     @State private var temperatureAnimationKey = UUID()
@@ -71,8 +88,8 @@ struct ContentView: View {
                                 loadingRow
                             }
 
-                            if let msg = viewModel.errorMessage {
-                                Text(msg)
+                            if let message = viewModel.errorMessage, viewModel.snapshot == nil {
+                                Text(message)
                                     .font(.callout)
                                     .foregroundStyle(.red)
                                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -95,6 +112,9 @@ struct ContentView: View {
                         .padding(16)
                     }
                     .scrollIndicators(.hidden)
+                    .refreshable {
+                        await refreshWeather()
+                    }
                     .onChange(of: selected?.id) { _, _ in
                         // When a new location is selected, jump back to the top so the current card is visible.
                         withAnimation(.easeInOut(duration: 0.25)) {
@@ -140,26 +160,14 @@ struct ContentView: View {
             .toolbarBackground(YAWATheme.background(for: colorScheme), for: .navigationBar)
         }
         .task {
-            // Initial selection: last-used favorite if present, otherwise Toronto.
-            let initial = locationStore.selected ?? SavedLocation.toronto
+            // Initial selection: whatever the user last chose in Locations, otherwise the first saved favorite.
+            let initial = locationStore.selected ?? locationStore.favorites.first ?? SavedLocation.toronto
             selected = initial
-            let days = max(1, min(forecastDaysToShow, 10))
-            await viewModel.load(for: initial.coordinate, locationName: initial.displayName, forecastDays: days)
-            if viewModel.snapshot != nil {
-                displayedLocation = initial
-                temperatureAnimationKey = UUID()
-            }
+            await refreshWeather()
         }
-        .onChange(of: forecastDaysToShow) { _, newValue in
-            // Re-fetch so the snapshot contains the requested number of days.
-            let loc = selected ?? locationStore.selected ?? SavedLocation.toronto
-            let days = max(1, min(newValue, 10))
+        .onChange(of: forecastDaysToShow) { _, _ in
             Task {
-                await viewModel.load(for: loc.coordinate, locationName: loc.displayName, forecastDays: days)
-                if viewModel.snapshot != nil {
-                    displayedLocation = loc
-                    temperatureAnimationKey = UUID()
-                }
+                await refreshWeather()
             }
         }
         .sheet(item: $selectedDaySelection) { selection in
