@@ -75,6 +75,14 @@ struct StubWeatherService: WeatherServiceProtocol {
             let t = base + swing * sin(Double(h) / 24.0 * 2.0 * Double.pi - Double.pi/2)
             return (t * 10).rounded() / 10
         }
+        let isoFormatter: ISO8601DateFormatter = {
+            let f = ISO8601DateFormatter()
+            f.formatOptions = [.withInternetDateTime, .withDashSeparatorInDate, .withColonSeparatorInTime]
+            return f
+        }()
+        let hourlyTimeISO: [String] = (0..<24).compactMap { h in
+            cal.date(byAdding: .hour, value: h, to: today).map { isoFormatter.string(from: $0) }
+        }
 
         let hourlyPrecipChancePercent: [Double] = (0..<24).map { h in
             switch h {
@@ -97,6 +105,7 @@ struct StubWeatherService: WeatherServiceProtocol {
             current: current,
             daily: daily,
             hourlyTempsC: hourlyTempsC,
+            hourlyTimeISO: hourlyTimeISO,
             hourlyPrecipChancePercent: hourlyPrecipChancePercent,
             sun: sun
         )

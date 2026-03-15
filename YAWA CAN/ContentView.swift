@@ -175,7 +175,9 @@ struct ContentView: View {
                 days: selection.days,
                 initialIndex: selection.initialIndex,
                 hourlyTempsC: selection.hourlyTempsC,
+                hourlyTimeISO: selection.hourlyTimeISO,
                 hourlyPrecipChancePercent: selection.hourlyPrecipChancePercent,
+                timeZoneID: selection.timeZoneID,
                 usesUSUnits: usesUSUnits
             )
             .presentationDetents([.fraction(0.70), .large], selection: $forecastDetailDetent)
@@ -488,7 +490,9 @@ struct ContentView: View {
                         days: days,
                         initialIndex: idx,
                         hourlyTempsC: snap.hourlyTempsC,
-                        hourlyPrecipChancePercent: snap.hourlyPrecipChancePercent
+                        hourlyTimeISO: snap.hourlyTimeISO,
+                        hourlyPrecipChancePercent: snap.hourlyPrecipChancePercent,
+                        timeZoneID: snap.timeZoneID
                     )
                 } label: {
                     HStack(spacing: 4) {
@@ -992,14 +996,15 @@ struct ContentView: View {
 private struct HourlyTempChart: View {
     let temps: [Double]
     let precipChancePercent: [Double]
+    let hourPositions: [Double]
     let usesUSUnits: Bool
     let showCurrentHourMarker: Bool
-    let currentHourIndex: Int?
+    let currentHourIndex: Double?
 
     @Environment(\.colorScheme) private var colorScheme
 
     private var temperatureLineColor: Color {
-        Color.cyan
+        colorScheme == .dark ? Color(red: 0.20, green: 0.78, blue: 0.98) : Color(red: 0.29, green: 0.69, blue: 0.91)
     }
 
     private var precipBarColor: Color {
@@ -1057,9 +1062,23 @@ private struct HourlyTempChart: View {
         return "\(display)\(suffix)"
     }
 
+    private func shortNowLabel(for fractionalHour: Double) -> String {
+        let totalMinutes = Int((fractionalHour * 60.0).rounded())
+        let hour24 = max(0, min(23, totalMinutes / 60))
+        let minute = max(0, min(59, totalMinutes % 60))
+        let suffix = hour24 < 12 ? "AM" : "PM"
+        let hour12 = hour24 % 12 == 0 ? 12 : hour24 % 12
+        return String(format: "%d:%02d %@", hour12, minute, suffix)
+    }
+
     private func precipValue(at index: Int) -> Double {
         guard precipChancePercent.indices.contains(index) else { return 0 }
         return max(0, min(100, precipChancePercent[index]))
+    }
+
+    private func hourPosition(at index: Int) -> Double {
+        guard hourPositions.indices.contains(index) else { return Double(index) }
+        return hourPositions[index]
     }
 
     var body: some View {
@@ -1069,11 +1088,27 @@ private struct HourlyTempChart: View {
                     RuleMark(x: .value("Current Hour", currentHourIndex))
                         .foregroundStyle(Color.cyan.opacity(colorScheme == .dark ? 0.55 : 0.45))
                         .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
+                        .annotation(position: .top, alignment: .center, spacing: 0) {
+                            Text(shortNowLabel(for: currentHourIndex))
+                                .font(.caption2)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 2)
+                                .background(
+                                    Capsule()
+                                        .fill(Color.cyan.opacity(colorScheme == .dark ? 0.12 : 0.10))
+                                )
+                                .foregroundStyle(Color.cyan.opacity(colorScheme == .dark ? 0.95 : 0.85))
+                        }
+                }
+                if showCurrentHourMarker, let currentHourIndex {
+                    RuleMark(x: .value("Current Hour Gap", currentHourIndex), yStart: .value("Gap Bottom", tempChartUpperBound - tempChartPadding * 0.55), yEnd: .value("Gap Top", tempChartUpperBound))
+                        .foregroundStyle(colorScheme == .dark ? Color(red: 0.05, green: 0.07, blue: 0.12) : Color(.systemBackground))
+                        .lineStyle(StrokeStyle(lineWidth: 4))
                 }
 
                 ForEach(Array(temps.enumerated()), id: \.offset) { idx, temp in
                     AreaMark(
-                        x: .value("Hour", idx),
+                        x: .value("Hour", hourPosition(at: idx)),
                         yStart: .value("Baseline", tempChartLowerBound),
                         yEnd: .value("Temp", temp)
                     )
@@ -1090,7 +1125,7 @@ private struct HourlyTempChart: View {
                     )
 
                     LineMark(
-                        x: .value("Hour", idx),
+                        x: .value("Hour", hourPosition(at: idx)),
                         y: .value("Temp", temp)
                     )
                     .interpolationMethod(.catmullRom)
@@ -1130,7 +1165,7 @@ private struct HourlyTempChart: View {
             Chart {
                 if showCurrentHourMarker, let currentHourIndex {
                     RuleMark(x: .value("Current Hour", currentHourIndex))
-                        .foregroundStyle(Color.cyan.opacity(colorScheme == .dark ? 0.55 : 0.45))
+                        .foregroundStyle(Color.cyan.opacity(colorScheme == .dark ? 0.50 : 0.40))
                         .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
                 }
 
@@ -1142,7 +1177,7 @@ private struct HourlyTempChart: View {
                     let precip = precipValue(at: idx)
                     if precip > 0 {
                         BarMark(
-                            x: .value("Hour", idx),
+                            x: .value("Hour", hourPosition(at: idx)),
                             yStart: .value("Precip Base", 0),
                             yEnd: .value("Precip", precip),
                             width: 6
@@ -1165,7 +1200,7 @@ private struct HourlyTempChart: View {
             .chartXScale(domain: 0...23)
             .chartYScale(domain: 0...100)
             .chartXAxis {
-                AxisMarks(values: [0, 6, 12, 18]) { value in
+                AxisMarks(values: [0, 3, 6, 9, 12, 15, 18, 21]) { value in
                     if let idx = value.as(Int.self) {
                         AxisValueLabel(hourLabel(for: idx))
                     }
@@ -1209,7 +1244,9 @@ private struct ForecastDetailSelection: Identifiable {
     let days: [DailyForecastDay]
     let initialIndex: Int
     let hourlyTempsC: [Double]
+    let hourlyTimeISO: [String]
     let hourlyPrecipChancePercent: [Double]
+    let timeZoneID: String
 
     var id: String {
         guard days.indices.contains(initialIndex) else { return UUID().uuidString }
@@ -1725,16 +1762,20 @@ private enum LocationSearch {
 private struct DailyForecastDetailSheet: View {
     let days: [DailyForecastDay]
     let hourlyTempsC: [Double]
+    let hourlyTimeISO: [String]
     let hourlyPrecipChancePercent: [Double]
+    let timeZoneID: String
     let usesUSUnits: Bool
 
     @State private var currentIndex: Int
     @Environment(\.colorScheme) private var colorScheme
 
-    init(days: [DailyForecastDay], initialIndex: Int, hourlyTempsC: [Double], hourlyPrecipChancePercent: [Double], usesUSUnits: Bool) {
+    init(days: [DailyForecastDay], initialIndex: Int, hourlyTempsC: [Double], hourlyTimeISO: [String], hourlyPrecipChancePercent: [Double], timeZoneID: String, usesUSUnits: Bool) {
         self.days = days
         self.hourlyTempsC = hourlyTempsC
+        self.hourlyTimeISO = hourlyTimeISO
         self.hourlyPrecipChancePercent = hourlyPrecipChancePercent
+        self.timeZoneID = timeZoneID
         self.usesUSUnits = usesUSUnits
         _currentIndex = State(initialValue: min(max(initialIndex, 0), max(days.count - 1, 0)))
     }
@@ -1855,12 +1896,13 @@ private struct DailyForecastDetailSheet: View {
                         HourlyTempChart(
                             temps: hourlyTempsForDay,
                             precipChancePercent: hourlyPrecipForDay,
+                            hourPositions: hourlyHoursForDay.map(Double.init),
                             usesUSUnits: usesUSUnits,
                             showCurrentHourMarker: isToday,
                             currentHourIndex: currentHourIndex
                         )
-                        .frame(height: 180, alignment: .top)
-                        .padding(.top, 4)
+                        .frame(height: 210, alignment: .top)
+                        .padding(.top, 12)
                     }
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -1951,9 +1993,17 @@ private struct DailyForecastDetailSheet: View {
         Calendar.current.isDateInToday(day.date)
     }
 
-    private var currentHourIndex: Int? {
+    private var currentHourIndex: Double? {
         guard isToday else { return nil }
-        return Calendar.current.component(.hour, from: Date())
+
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: timeZoneID) ?? .current
+
+        let now = Date()
+        let startOfDay = cal.startOfDay(for: day.date)
+
+        let hours = now.timeIntervalSince(startOfDay) / 3600.0
+        return max(0.0, min(23.999, hours))
     }
 
     private var forecastSummary: String {
@@ -2048,14 +2098,48 @@ private struct DailyForecastDetailSheet: View {
     private func longDay(_ date: Date) -> String {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_CA")
+        f.timeZone = TimeZone(identifier: timeZoneID) ?? .current
         f.dateFormat = "EEEE, MMM d"
         return f.string(from: date)
     }
     
+    private struct HourlyPoint: Identifiable {
+        let id: String
+        let date: Date
+        let tempC: Double
+        let precip: Double
+    }
+
+    private var hourlyDateFormatter: DateFormatter {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: timeZoneID) ?? .current
+        f.dateFormat = "yyyy-MM-dd'T'HH:mm"
+        return f
+    }
+
+    private var hourlyPointsForDay: [HourlyPoint] {
+        let tz = TimeZone(identifier: timeZoneID) ?? .current
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = tz
+
+        return Array(zip(hourlyTimeISO.indices, hourlyTimeISO)).compactMap { idx, iso in
+            guard idx < hourlyTempsC.count, idx < hourlyPrecipChancePercent.count else { return nil }
+            guard let date = hourlyDateFormatter.date(from: iso) else { return nil }
+            guard cal.isDate(date, inSameDayAs: day.date) else { return nil }
+
+            return HourlyPoint(
+                id: iso,
+                date: date,
+                tempC: hourlyTempsC[idx],
+                precip: hourlyPrecipChancePercent[idx]
+            )
+        }
+        .sorted { $0.date < $1.date }
+    }
+
     private var hourlyTempsForDay: [Double] {
-        let start = currentIndex * 24
-        guard start < hourlyTempsC.count else { return [] }
-        let slice = Array(hourlyTempsC.dropFirst(start).prefix(24))
+        let slice = hourlyPointsForDay.map(\.tempC)
         if usesUSUnits {
             return slice.map { ($0 * 9.0 / 5.0) + 32.0 }
         } else {
@@ -2064,9 +2148,14 @@ private struct DailyForecastDetailSheet: View {
     }
 
     private var hourlyPrecipForDay: [Double] {
-        let start = currentIndex * 24
-        guard start < hourlyPrecipChancePercent.count else { return [] }
-        return Array(hourlyPrecipChancePercent.dropFirst(start).prefix(24))
+        hourlyPointsForDay.map(\.precip)
+    }
+
+    private var hourlyHoursForDay: [Int] {
+        let tz = TimeZone(identifier: timeZoneID) ?? .current
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = tz
+        return hourlyPointsForDay.map { cal.component(.hour, from: $0.date) }
     }
 
 }

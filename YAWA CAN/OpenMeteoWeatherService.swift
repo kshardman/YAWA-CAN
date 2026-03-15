@@ -69,7 +69,8 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
         // Daily (7/10)
         let daily = makeDaily(decoded, maxDays: days)
 
-        // Hourly temps: keep the full hourly forecast range so the UI can slice by day.
+        // Hourly data: keep the full hourly forecast range so the UI can slice by day.
+        let hourlyTimes = decoded.hourly.time
         let hourlyTemps = decoded.hourly.temperature_2m
         let hourlyPrecip = decoded.hourly.precipitation_probability
 
@@ -89,6 +90,7 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
             current: current,
             daily: daily,
             hourlyTempsC: hourlyTemps,
+            hourlyTimeISO: hourlyTimes,
             hourlyPrecipChancePercent: hourlyPrecip,
             sun: sun
         )

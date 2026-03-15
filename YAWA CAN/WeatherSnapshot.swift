@@ -15,6 +15,7 @@ struct WeatherSnapshot: Equatable {
     let current: CurrentConditions
     let daily: [DailyForecastDay]
     let hourlyTempsC: [Double]
+    let hourlyTimeISO: [String]
     let hourlyPrecipChancePercent: [Double]
 
     /// Sunrise/sunset for the day (when available from the data source).
