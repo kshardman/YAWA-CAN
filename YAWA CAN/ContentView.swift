@@ -26,6 +26,8 @@ struct ContentView: View {
     @State private var selectedDaySelection: ForecastDetailSelection? = nil
     @State private var forecastDetailDetent: PresentationDetent = .fraction(0.7)
     
+    @AppStorage("yawa.can.isCurrentLocationSelected") private var isCurrentLocationSelected: Bool = false
+    
     @MainActor
     private func refreshWeather() async {
         let fallback = locationStore.favorites.first ?? SavedLocation.toronto
@@ -191,6 +193,7 @@ struct ContentView: View {
                 store: locationStore,
                 onSelect: { loc in
                     selected = loc
+                    isCurrentLocationSelected = false
                     locationStore.setSelected(loc)
                     let days = max(1, min(forecastDaysToShow, 10))
                     Task {
@@ -203,7 +206,8 @@ struct ContentView: View {
                 },
                 onSelectCurrentLocation: { loc in
                     selected = loc
-                    locationStore.setSelected(loc)
+                    isCurrentLocationSelected = true
+                    locationStore.setSelectedCurrentLocation(loc)
                     let days = max(1, min(forecastDaysToShow, 10))
                     Task {
                         await viewModel.load(for: loc.coordinate, locationName: loc.displayName, forecastDays: days)
@@ -1387,8 +1391,19 @@ private final class LocationStore: ObservableObject {
     func setSelected(_ loc: SavedLocation) {
         selected = loc
         Self.saveOne(loc, key: selectedKey)
-        // Auto-add to favorites if not present.
-        if !favorites.contains(where: { $0.displayName == loc.displayName && $0.latitude == loc.latitude && $0.longitude == loc.longitude }) {
+
+        // Auto-add to favorites only for searched/saved places.
+        // Do not auto-add a current-location selection, because its coordinates can
+        // vary slightly from one request to the next and create duplicate rows.
+        let normalizedName = loc.displayName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let isCurrentLocationSelection = normalizedName == "current location"
+
+        guard !isCurrentLocationSelection else { return }
+
+        if !favorites.contains(where: {
+            $0.displayName.caseInsensitiveCompare(loc.displayName) == .orderedSame &&
+            $0.countryCode == loc.countryCode
+        }) {
             favorites.append(loc)
             favorites.sort { a, b in
                 a.displayName.localizedCaseInsensitiveCompare(b.displayName) == .orderedAscending
@@ -1397,8 +1412,17 @@ private final class LocationStore: ObservableObject {
         }
     }
 
+    func setSelectedCurrentLocation(_ loc: SavedLocation) {
+        selected = loc
+        Self.saveOne(loc, key: selectedKey)
+    }
+
     func addFavorite(_ loc: SavedLocation) {
-        guard !favorites.contains(where: { $0.displayName == loc.displayName && $0.latitude == loc.latitude && $0.longitude == loc.longitude }) else { return }
+        guard !favorites.contains(where: {
+            $0.displayName.caseInsensitiveCompare(loc.displayName) == .orderedSame &&
+            $0.countryCode == loc.countryCode
+        }) else { return }
+
         favorites.append(loc)
         favorites.sort { a, b in
             a.displayName.localizedCaseInsensitiveCompare(b.displayName) == .orderedAscending
@@ -1569,6 +1593,7 @@ private struct LocationPickerView: View {
 
     @Environment(\.dismiss) private var dismiss
     @StateObject private var resolver = LocationResolver()
+    @AppStorage("yawa.can.isCurrentLocationSelected") private var isCurrentLocationSelected: Bool = false
 
     @State private var query: String = ""
     @State private var results: [SavedLocation] = []
@@ -1603,7 +1628,15 @@ private struct LocationPickerView: View {
                             }
                         }
                     } label: {
-                        Label("Current Location", systemImage: "location")
+                        HStack {
+                            Label("Current Location", systemImage: "location")
+                            Spacer()
+                            if isCurrentLocationSelected {
+                                Image(systemName: "checkmark")
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(.tint)
+                            }
+                        }
                     }
                 }
 
