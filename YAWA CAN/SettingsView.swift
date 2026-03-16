@@ -124,17 +124,6 @@ struct SettingsView: View {
 
     @Environment(\.dismiss) private var dismiss
 
-//    @AppStorage("currentConditionsSource")
-//    private var sourceRaw: String = CurrentConditionsSource.noaa.rawValue
-//
-//    private var source: CurrentConditionsSource {
-//        get { CurrentConditionsSource(rawValue: sourceRaw) ?? .noaa }
-//        set { sourceRaw = newValue.rawValue }
-//    }
-
-    // @ObservedObject private var notifications = NotificationsManager.shared
-//    @EnvironmentObject private var locationManager: LocationManager
-
     var body: some View {
         NavigationStack {
             ZStack {
@@ -143,7 +132,6 @@ struct SettingsView: View {
 
                 List {
                     appearanceSection
-                    dashboardStyleSection
                     forecastSection
                     radarSection
 //                    homeSection
@@ -198,62 +186,6 @@ struct SettingsView: View {
 // MARK: - Sections
 
 private extension SettingsView {
-
-    var dashboardStyleSection: some View {
-        Section {
-            ForEach(DashboardStyle.allCases) { style in
-                HStack(spacing: 12) {
-                    Image(systemName: style.symbolName)
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(secondaryText)
-                        .font(.title3)
-                        .frame(width: 28)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(style.title)
-                            .foregroundStyle(primaryText)
-                            .font(.subheadline.weight(.semibold))
-
-                        Text(style.subtitle)
-                            .foregroundStyle(secondaryText)
-                            .font(.caption)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.85)
-                    }
-
-                    Spacer()
-
-                    if dashboardStyle == style {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                            .font(.title3)
-                    } else {
-                        Image(systemName: "circle")
-                            .foregroundStyle(AnyShapeStyle(YAWATheme.textSecondary(for: colorScheme).opacity(0.6)))
-                            .font(.title3)
-                    }
-                }
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    dashboardStyleRaw = style.rawValue
-                }
-                .accessibilityElement(children: .combine)
-                .accessibilityAddTraits(.isButton)
-            }
-
-            Text("Choose how the top card is displayed on the home screen.")
-                .font(.caption)
-                .foregroundStyle(secondaryText)
-                .fixedSize(horizontal: false, vertical: true)
-        } header: {
-            Text("Dashboard Style")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(primaryText)
-        }
-        .textCase(nil)
-        .listRowBackground(rowBackgroundView)
-        .listRowSeparator(.hidden)
-    }
 
     var forecastSection: some View {
         Section {

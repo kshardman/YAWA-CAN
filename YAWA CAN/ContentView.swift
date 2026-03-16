@@ -258,8 +258,21 @@ struct ContentView: View {
         } label: {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(selected?.displayName ?? "–")
-                        .font(.title2.weight(.semibold))
+                    HStack(spacing: 6) {
+                        Text(selected?.displayName ?? "–")
+                            .font(.title2.weight(.semibold))
+
+                        if isCurrentLocationSelected {
+                            Image(systemName: "location.circle.fill")
+                                .font(.system(size: 18, weight: .semibold))
+                                .symbolRenderingMode(.hierarchical)
+                                .foregroundStyle(YAWATheme.textSecondary(for: colorScheme).opacity(0.9))
+                                .offset(y: 0.5)
+                                .padding(.trailing, 1)
+                                .accessibilityHidden(true)
+                        }
+                    }
+
                     Text(locationUnitsSubtitle)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -276,7 +289,6 @@ struct ContentView: View {
         .buttonStyle(.plain)
         .accessibilityLabel("Choose location")
     }
-
     private var loadingRow: some View {
         HStack(spacing: 10) {
             ProgressView()
@@ -386,14 +398,14 @@ struct ContentView: View {
                     .monospacedDigit()
             }
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(feelsLikeSubtitleText(for: snap.current))
-                    .font(.callout)
+                    .font(.callout.weight(.medium))
                     .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
 
-                Text(dewPointComfortSubtitleText(for: snap.current))
-                    .font(.callout)
-                    .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+                Text(comfortSummaryText(for: snap.current))
+                    .font(.caption)
+                    .foregroundStyle(YAWATheme.textTertiary(for: colorScheme))
             }
             .padding(.top, 2)
         }
@@ -832,8 +844,8 @@ struct ContentView: View {
         .font(.callout)
     }
 
-    private func metricIconValue(icon: String, value: String) -> some View {
-        HStack(spacing: 6) {
+private func metricIconValue(icon: String, value: String) -> some View {
+        HStack(spacing: 5) {
             Image(systemName: icon)
                 .font(.subheadline.weight(.semibold))
                 .symbolRenderingMode(.hierarchical)
@@ -843,10 +855,14 @@ struct ContentView: View {
                 .offset(y: 0.5)
 
             Text(value)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
                 .monospacedDigit()
-                .frame(width: 72, alignment: .trailing)
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
+                .frame(width: 84, alignment: .trailing)
         }
-        .frame(width: 92, alignment: .trailing)
+        .frame(width: 104, alignment: .trailing)
     }
 
 
@@ -2246,27 +2262,6 @@ private struct ForecastRowPressStyle: ButtonStyle {
         case actual
     }
 
-    private func feelsLikeSubtitleText(for current: CurrentConditions) -> String {
-        let actualC = current.temperatureC
-        let feelsC = current.apparentTemperatureC
-        let rh = current.humidityPercent
-        let windKph = current.windSpeedKph
-
-        let mode = computeFeelsLikeMode(tempC: actualC, windKph: windKph, relativeHumidity: rh)
-
-        switch mode {
-        case .windChill:
-            return "Colder due to wind"
-        case .heatIndex:
-            return "Hotter due to humidity"
-        case .actual:
-            // Deadband so tiny diffs don’t flip message.
-            // YN uses ~2°F; use ~1°C here.
-            if feelsC <= actualC - 1.0 { return "Colder due to wind" }
-            if feelsC >= actualC + 1.0 { return "Hotter due to humidity" }
-            return "Feels like actual temperature"
-        }
-    }
 
     private func computeFeelsLikeMode(tempC: Double, windKph: Double, relativeHumidity: Double?) -> FeelsLikeMode {
         // Wind chill only applies at/under 10°C (50°F) and with meaningful wind.
@@ -2307,6 +2302,94 @@ private struct ForecastRowPressStyle: ButtonStyle {
             return "Oppressive humidity"
         }
     }
+private func feelsLikeSubtitleText(for current: CurrentConditions) -> String {
+    let actualC = current.temperatureC
+    let apparentC = current.apparentTemperatureC
+
+    if apparentC <= actualC - 1.0 {
+        return "Colder due to wind"
+    }
+    if apparentC >= actualC + 1.0 {
+        return "Hotter due to humidity"
+    }
+    return "Feels close to actual temperature"
+}
+
+private func isCurrentlyWet(for current: CurrentConditions) -> Bool {
+    let conditions = current.conditionText.lowercased()
+
+    let wetTerms = [
+        "drizzle", "rain", "shower", "showers",
+        "snow", "snow shower", "snow showers",
+        "sleet", "freezing rain", "freezing drizzle",
+        "ice", "icy", "wintry mix",
+        "mist", "fog", "patchy fog", "dense fog",
+        "storm", "thunder", "thunderstorm", "thunderstorms"
+    ]
+
+    return wetTerms.contains { conditions.contains($0) }
+}
+
+private func comfortSummaryText(for current: CurrentConditions) -> String {
+    let dewPointC = current.dewPointC
+    let actualC = current.temperatureC
+    let apparentC = current.apparentTemperatureC
+
+    let feelsLikeMode: String = {
+        if apparentC <= actualC - 1.0 { return "windChill" }
+        if apparentC >= actualC + 1.0 { return "heatIndex" }
+        return "actual"
+    }()
+
+    let baseComfort: String = {
+        switch dewPointC {
+        case ..<10.0:
+            return "Dry and comfortable"
+        case 10.0..<15.6:
+            return "Comfortable"
+        case 15.6..<18.3:
+            return "Slightly humid"
+        case 18.3..<21.1:
+            return "Humid"
+        case 21.1..<23.9:
+            return "Very humid"
+        default:
+            return "Oppressive humidity"
+        }
+    }()
+
+    switch feelsLikeMode {
+        
+        case "windChill":
+            if isCurrentlyWet(for: current) { return "Cool and damp" }
+
+            if current.humidityPercent >= 80 {
+                return "Cool and damp"
+            }
+
+            return dewPointC < 15.6 ? "Cool and dry" : "Cool and humid"
+            
+    case "heatIndex":
+        if isCurrentlyWet(for: current) {
+            if dewPointC >= 23.9 { return "Hot and oppressive" }
+            if dewPointC >= 21.1 { return "Hot and muggy" }
+            return "Warm and damp"
+        }
+
+        if dewPointC >= 23.9 { return "Hot and oppressive" }
+        if dewPointC >= 21.1 { return "Hot and muggy" }
+        return "Warm and humid"
+
+    default:
+        if isCurrentlyWet(for: current) {
+            if dewPointC < 15.6 { return "Cool and damp" }
+            if dewPointC < 21.1 { return "Mild and damp" }
+            return "Humid and damp"
+        }
+        return baseComfort
+    }
+}
+
 
 #Preview {
     ContentView()
