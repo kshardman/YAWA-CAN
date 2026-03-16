@@ -16,6 +16,8 @@ import UIKit
 struct ContentView: View {
     @StateObject private var viewModel = WeatherViewModel(service: OpenMeteoWeatherService())
     @StateObject private var locationStore = LocationStore()
+    @StateObject private var locationResolver = LocationResolver()
+    
 
     @State private var showingLocations = false
     @State private var selected: SavedLocation? = nil
@@ -31,8 +33,21 @@ struct ContentView: View {
     @MainActor
     private func refreshWeather() async {
         let fallback = locationStore.favorites.first ?? SavedLocation.toronto
-        let loc = displayedLocation ?? selected ?? locationStore.selected ?? fallback
-        selected = loc
+        var loc = displayedLocation ?? selected ?? locationStore.selected ?? fallback
+
+        if isCurrentLocationSelected {
+            do {
+                let currentLoc = try await locationResolver.requestOneShotLocation()
+                locationStore.setSelectedCurrentLocation(currentLoc)
+                selected = currentLoc
+                displayedLocation = currentLoc
+                loc = currentLoc
+            } catch {
+                // If GPS refresh fails, keep using the last known location.
+            }
+        } else {
+            selected = loc
+        }
 
         let days = max(1, min(forecastDaysToShow, 10))
         await viewModel.load(for: loc.coordinate, locationName: loc.displayName, forecastDays: days)
@@ -40,11 +55,26 @@ struct ContentView: View {
             displayedLocation = loc
             temperatureAnimationKey = UUID()
             sunRefreshToken = Date()
+            lastUpdatedAt = Date()
         }
+    }
+    
+    @MainActor
+    private func refreshOnForegroundIfNeeded() async {
+        let now = Date()
+
+        if let last = lastForegroundRefreshAt,
+           now.timeIntervalSince(last) < 20 {
+            return
+        }
+
+        lastForegroundRefreshAt = now
+        await refreshWeather()
     }
     
     @State private var sunRefreshToken = Date()
     @State private var temperatureAnimationKey = UUID()
+    @State private var lastUpdatedAt: Date? = nil
 
     // Settings: how many forecast days to show (7 or 10)
     @AppStorage("forecastDaysToShow") private var forecastDaysToShow: Int = 7
@@ -56,6 +86,9 @@ struct ContentView: View {
     @State private var easterEggHideTask: Task<Void, Never>? = nil
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) private var scenePhase
+    
+    @State private var lastForegroundRefreshAt: Date? = nil
 
     // Use the shared YAWA theme background so CAN matches NOAA styling.
     private var appBackground: Color {
@@ -86,7 +119,7 @@ struct ContentView: View {
 
                             headerButton
 
-                            if viewModel.isLoading {
+                            if viewModel.isLoading && viewModel.snapshot == nil {
                                 loadingRow
                             }
 
@@ -170,6 +203,12 @@ struct ContentView: View {
         .onChange(of: forecastDaysToShow) { _, _ in
             Task {
                 await refreshWeather()
+            }
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase == .active else { return }
+            Task { @MainActor in
+                await refreshOnForegroundIfNeeded()
             }
         }
         .sheet(item: $selectedDaySelection) { selection in
@@ -306,11 +345,22 @@ struct ContentView: View {
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
-                        Image(systemName: "clock")
-                            .font(.subheadline)
+                        Image(systemName: viewModel.isLoading ? "arrow.clockwise" : "clock")
+                            .font(.subheadline.weight(.semibold))
                             .symbolRenderingMode(.hierarchical)
-                            .foregroundStyle(YAWATheme.symbolColor("clock", scheme: colorScheme))
+                            .foregroundStyle(
+                                viewModel.isLoading
+                                ? Color.cyan.opacity(colorScheme == .dark ? 0.92 : 0.78)
+                                : YAWATheme.symbolColor("clock", scheme: colorScheme)
+                            )
                             .opacity(0.9)
+                            .rotationEffect(.degrees(viewModel.isLoading ? 360 : 0))
+                            .animation(
+                                viewModel.isLoading
+                                ? .linear(duration: 0.9).repeatForever(autoreverses: false)
+                                : .easeOut(duration: 0.18),
+                                value: viewModel.isLoading
+                            )
 
                         Text("Now")
                             .font(.headline)
@@ -319,6 +369,13 @@ struct ContentView: View {
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+
+                    if let lastUpdatedAt {
+                        Text("Updated \(lastUpdatedText(lastUpdatedAt))")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 }
                 Spacer()
                 let nowSymbol = nowSymbolName(for: snap)
@@ -335,12 +392,16 @@ struct ContentView: View {
                         .font(.system(size: 56, weight: .semibold, design: .rounded))
                         .monospacedDigit()
                         .contentTransition(.numericText())
+                        .opacity(viewModel.isLoading ? 0.82 : 1.0)
                         .animation(.easeInOut(duration: 0.22), value: temperatureAnimationKey)
+                        .animation(.easeInOut(duration: 0.18), value: viewModel.isLoading)
 
                     Text(temperatureUnitLabel)
                         .font(.title3.weight(.semibold))
                         .foregroundStyle(.secondary)
+                        .opacity(viewModel.isLoading ? 0.78 : 1.0)
                         .animation(.easeInOut(duration: 0.22), value: temperatureAnimationKey)
+                        .animation(.easeInOut(duration: 0.18), value: viewModel.isLoading)
                 }
 
                 Spacer(minLength: 12)
@@ -356,6 +417,8 @@ struct ContentView: View {
                 .monospacedDigit()
             }
         }
+        .opacity(viewModel.isLoading ? 0.72 : 1.0)
+        .animation(.easeInOut(duration: 0.18), value: viewModel.isLoading)
         .tileStyle()
     }
 
@@ -965,6 +1028,13 @@ private func metricIconValue(icon: String, value: String) -> some View {
         let f = Self.sunLocalTimeFormatter
         f.timeZone = timeZone
         return f.string(from: now)
+    }
+    
+    private func lastUpdatedText(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = .current
+        f.dateFormat = "h:mm:ss a"
+        return f.string(from: date)
     }
 
     // MARK: - Sun card tap (tree refresh) + Easter egg
