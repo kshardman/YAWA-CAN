@@ -542,11 +542,11 @@ struct ContentView: View {
                 Spacer()
 
                 // (Optional) If you want CAN to show a spinner while weather is loading:
-                if viewModel.isLoading {
-                    ProgressView()
-                        .controlSize(.small)
-                        .tint(YAWATheme.textSecondary(for: colorScheme))
-                }
+//                if viewModel.isLoading {
+//                    ProgressView()
+//                        .controlSize(.small)
+//                        .tint(YAWATheme.textSecondary(for: colorScheme))
+//                }
             }
 
             // Forecast rows
