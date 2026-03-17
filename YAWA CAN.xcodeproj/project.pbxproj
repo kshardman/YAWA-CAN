@@ -10,9 +10,25 @@
 		A00EA9192F5F754800085232 /* YAWA CAN.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "YAWA CAN.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		A00CE1832F68E47A00F38B27 /* Exceptions for "YAWA CAN" folder in "YAWA CAN" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Keyboard.swift,
+				LocationSelectionStore.swift,
+				NetworkMonitor.swift,
+				RadarStage0View.swift,
+			);
+			target = A00EA9182F5F754800085232 /* YAWA CAN */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A00EA91B2F5F754800085232 /* YAWA CAN */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				A00CE1832F68E47A00F38B27 /* Exceptions for "YAWA CAN" folder in "YAWA CAN" target */,
+			);
 			path = "YAWA CAN";
 			sourceTree = "<group>";
 		};
@@ -252,7 +268,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 19;
+				CURRENT_PROJECT_VERSION = 20;
 				DEVELOPMENT_TEAM = 9WPZ4893L6;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -288,7 +304,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 19;
+				CURRENT_PROJECT_VERSION = 20;
 				DEVELOPMENT_TEAM = 9WPZ4893L6;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;

@@ -1432,7 +1432,8 @@ final class RadarTileLayerView: UIView {
         let z = max(0, min(9, uiZ))
         let providerZ = min(7, z)
 
-        let px = (UIScreen.main.scale >= 3.0) ? 256 : 256
+        let screenScale = window?.screen.scale ?? mapView.window?.windowScene?.screen.scale ?? 2.0
+        let px = (screenScale >= 3.0) ? 256 : 256
 
         // Get visible bounds in lat/lon.
         let w = mapView.bounds.width

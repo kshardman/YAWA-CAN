@@ -172,15 +172,6 @@ struct ContentView: View {
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button {
-                        showingSettings = true
-                    } label: {
-                        Image(systemName: "gearshape")
-                            .symbolRenderingMode(.hierarchical)
-                            .foregroundStyle(YAWATheme.symbolColor("gearshape", scheme: colorScheme))
-                    }
-                    .accessibilityLabel("Settings")
-
-                    Button {
                         showingLocations = true
                     } label: {
                         Image(systemName: "location.circle")
@@ -188,6 +179,15 @@ struct ContentView: View {
                             .foregroundStyle(YAWATheme.symbolColor("location.circle", scheme: colorScheme))
                     }
                     .accessibilityLabel("Locations")
+                    
+                    Button {
+                        showingSettings = true
+                    } label: {
+                        Image(systemName: "gearshape")
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(YAWATheme.symbolColor("gearshape", scheme: colorScheme))
+                    }
+                    .accessibilityLabel("Settings")
                 }
             }
             // Make the nav bar match the background.
@@ -316,12 +316,7 @@ struct ContentView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-
                 Spacer()
-
-                Image(systemName: "chevron.down")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
