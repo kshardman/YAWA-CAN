@@ -340,7 +340,7 @@ struct ContentView: View {
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
-                        Image(systemName: viewModel.isLoading ? "arrow.clockwise" : "clock")
+                        Image(systemName: "clock")
                             .font(.subheadline.weight(.semibold))
                             .symbolRenderingMode(.hierarchical)
                             .foregroundStyle(
