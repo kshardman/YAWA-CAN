@@ -541,12 +541,6 @@ struct ContentView: View {
 
                 Spacer()
 
-                // (Optional) If you want CAN to show a spinner while weather is loading:
-//                if viewModel.isLoading {
-//                    ProgressView()
-//                        .controlSize(.small)
-//                        .tint(YAWATheme.textSecondary(for: colorScheme))
-//                }
             }
 
             // Forecast rows
@@ -640,7 +634,7 @@ struct ContentView: View {
                     .padding(.vertical, 3)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(ForecastRowPressStyle())
+                .buttonStyle(.plain)
 
                 if idx != days.count - 1 {
                     Divider().opacity(0.5)
@@ -1376,7 +1370,6 @@ private struct ForecastDetailSelection: Identifiable {
 
 // MARK: - Styling
 
-
 private struct TileStyleModifier: ViewModifier {
     @Environment(\.colorScheme) private var scheme
 
@@ -1395,26 +1388,70 @@ private struct TileStyleModifier: ViewModifier {
                         ? AnyShapeStyle(
                             LinearGradient(
                                 colors: [
-                                    Color.white.opacity(0.16),
-                                    Color.white.opacity(0.06),
+                                    Color.white.opacity(0.14),
+                                    Color.white.opacity(0.05),
                                     Color.white.opacity(0.02)
                                 ],
                                 startPoint: .top,
                                 endPoint: .bottom
                             )
                         )
-                        : AnyShapeStyle(YAWATheme.cardStroke(for: scheme)),
-                        lineWidth: scheme == .dark ? 1 : 0.8
+                        : AnyShapeStyle(
+                            LinearGradient(
+                                colors: [
+                                    YAWATheme.cardStroke(for: scheme).opacity(0.95),
+                                    YAWATheme.cardStroke(for: scheme).opacity(0.65),
+                                    YAWATheme.cardStroke(for: scheme).opacity(0.35)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        ),
+                        lineWidth: scheme == .dark ? 0.9 : 0.9
                     )
-            )
-            .shadow(
-                color: Color.black.opacity(scheme == .dark ? 0.18 : 0.04),
-                radius: scheme == .dark ? 12 : 8,
-                x: 0,
-                y: scheme == .dark ? 8 : 4
             )
     }
 }
+
+
+//private struct TileStyleModifier: ViewModifier {
+//    @Environment(\.colorScheme) private var scheme
+//
+//    func body(content: Content) -> some View {
+//        content
+//            .padding(14)
+//            .frame(maxWidth: .infinity, alignment: .leading)
+//            .background(
+//                RoundedRectangle(cornerRadius: 18, style: .continuous)
+//                    .fill(YAWATheme.cardBackground(for: scheme))
+//            )
+//            .overlay(
+////                RoundedRectangle(cornerRadius: 18, style: .continuous)
+////                    .strokeBorder(
+////                        scheme == .dark
+////                        ? AnyShapeStyle(
+////                            LinearGradient(
+////                                colors: [
+////                                    Color.white.opacity(0.16),
+////                                    Color.white.opacity(0.06),
+////                                    Color.white.opacity(0.02)
+////                                ],
+////                                startPoint: .top,
+////                                endPoint: .bottom
+////                            )
+////                        )
+////                        : AnyShapeStyle(YAWATheme.cardStroke(for: scheme)),
+////                        lineWidth: scheme == .dark ? 1 : 0.8
+////                    )
+////            )
+//            .shadow(
+//                color: Color.black.opacity(scheme == .dark ? 0.10 : 0.025),
+//                radius: scheme == .dark ? 8 : 5,
+//                x: 0,
+//                y: scheme == .dark ? 5 : 3
+//            )
+//    }
+//}
 
 private extension View {
     func tileStyle() -> some View {
@@ -2307,15 +2344,6 @@ private struct DailyForecastDetailSheet: View {
         return hourlyPointsForDay.map { cal.component(.hour, from: $0.date) }
     }
 
-}
-
-private struct ForecastRowPressStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.985 : 1.0)
-            .opacity(configuration.isPressed ? 0.82 : 1.0)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
-    }
 }
 
 
