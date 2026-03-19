@@ -28,6 +28,8 @@ struct ContentView: View {
     @State private var selectedDaySelection: ForecastDetailSelection? = nil
     @State private var forecastDetailDetent: PresentationDetent = .fraction(0.7)
     
+    @State private var selectedAlert: WeatherAlert? = nil
+    
     @AppStorage("yawa.can.isCurrentLocationSelected") private var isCurrentLocationSelected: Bool = false
     
     @MainActor
@@ -226,6 +228,11 @@ struct ContentView: View {
             .onAppear {
                 forecastDetailDetent = .fraction(0.70)
             }
+        }
+        .sheet(item: $selectedAlert) { alert in
+            AlertDetailSheet(alert: alert)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showingLocations) {
             LocationPickerView(
@@ -535,35 +542,42 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 6) {
 
             if let alert = activeAlertsForSelectedLocation.first {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.subheadline)
-                            .symbolRenderingMode(.hierarchical)
-                            .foregroundStyle(.orange)
-                            .opacity(0.95)
+                Button {
+                    selectedAlert = alert
+                } label: {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.subheadline)
+                                .symbolRenderingMode(.hierarchical)
+                                .foregroundStyle(.orange)
+                                .opacity(0.95)
 
-                        Text(alert.title)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
-                            .lineLimit(1)
+                            Text(alert.title)
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
+                                .lineLimit(1)
 
-                        Spacer()
+                            Spacer()
 
-                        Text(alert.severity)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.orange)
+                            Text(alert.severity)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.orange)
+                        }
+
+                        Text(alert.summary)
+                            .font(.caption)
+                            .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Text("Area: \(alert.areaName)")
+                            .font(.caption2)
+                            .foregroundStyle(YAWATheme.textTertiary(for: colorScheme))
                     }
-
-                    Text(alert.summary)
-                        .font(.caption)
-                        .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    Text("Area: \(alert.areaName)")
-                        .font(.caption2)
-                        .foregroundStyle(YAWATheme.textTertiary(for: colorScheme))
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
 
                 Divider().opacity(0.5)
             }
@@ -1409,6 +1423,88 @@ private struct ForecastDetailSelection: Identifiable {
         return "\(days[initialIndex].date.timeIntervalSince1970)-\(initialIndex)"
     }
 }
+
+private struct AlertDetailSheet: View {
+    let alert: WeatherAlert
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 22, weight: .semibold))
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(.orange)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(alert.title)
+                                .font(.headline.weight(.semibold))
+                                .foregroundStyle(.primary)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            Text(alert.areaName)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer(minLength: 8)
+
+                        Text(alert.severity)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.orange)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(
+                                Capsule()
+                                    .fill(Color.orange.opacity(colorScheme == .dark ? 0.16 : 0.12))
+                            )
+                    }
+
+                    Divider().opacity(0.18)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Summary")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+
+                        Text(alert.summary)
+                            .font(.body)
+                            .foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Divider().opacity(0.18)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Affected Area")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+
+                        Text(alert.areaName)
+                            .font(.body)
+                            .foregroundStyle(.primary)
+                    }
+                }
+                .padding(.horizontal, 22)
+                .padding(.top, 18)
+                .padding(.bottom, 22)
+            }
+            .navigationTitle("Alert")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .fontDesign(.rounded)
+    }
+}
+
 
 // MARK: - Styling
 
