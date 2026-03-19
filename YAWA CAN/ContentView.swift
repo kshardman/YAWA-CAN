@@ -1432,7 +1432,19 @@ private struct StubAlertService: AlertServiceProtocol {
     }
 
     func sampleAlerts(for location: SavedLocation) -> [WeatherAlert] {
-        sampleAlerts(forCountryCode: location.countryCode, coordinate: location.coordinate)
+        guard location.countryCode == "CA" else { return [] }
+
+        return [
+            WeatherAlert(
+                id: "stub-special-weather-statement",
+                title: "Special Weather Statement",
+                severity: "Moderate",
+                summary: "Stub alert for YC UI development. Replace this with official Environment Canada alert data once the real alert service is wired up.",
+                areaName: location.displayName,
+                issuedAt: nil,
+                expiresAt: nil
+            )
+        ]
     }
 
     private func sampleAlerts(forCountryCode countryCode: String, coordinate: CLLocationCoordinate2D) -> [WeatherAlert] {
@@ -1495,45 +1507,6 @@ private struct TileStyleModifier: ViewModifier {
     }
 }
 
-
-//private struct TileStyleModifier: ViewModifier {
-//    @Environment(\.colorScheme) private var scheme
-//
-//    func body(content: Content) -> some View {
-//        content
-//            .padding(14)
-//            .frame(maxWidth: .infinity, alignment: .leading)
-//            .background(
-//                RoundedRectangle(cornerRadius: 18, style: .continuous)
-//                    .fill(YAWATheme.cardBackground(for: scheme))
-//            )
-//            .overlay(
-////                RoundedRectangle(cornerRadius: 18, style: .continuous)
-////                    .strokeBorder(
-////                        scheme == .dark
-////                        ? AnyShapeStyle(
-////                            LinearGradient(
-////                                colors: [
-////                                    Color.white.opacity(0.16),
-////                                    Color.white.opacity(0.06),
-////                                    Color.white.opacity(0.02)
-////                                ],
-////                                startPoint: .top,
-////                                endPoint: .bottom
-////                            )
-////                        )
-////                        : AnyShapeStyle(YAWATheme.cardStroke(for: scheme)),
-////                        lineWidth: scheme == .dark ? 1 : 0.8
-////                    )
-////            )
-//            .shadow(
-//                color: Color.black.opacity(scheme == .dark ? 0.10 : 0.025),
-//                radius: scheme == .dark ? 8 : 5,
-//                x: 0,
-//                y: scheme == .dark ? 5 : 3
-//            )
-//    }
-//}
 
 private extension View {
     func tileStyle() -> some View {
