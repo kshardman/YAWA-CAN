@@ -610,11 +610,11 @@ struct ContentView: View {
                                 .foregroundStyle(alertSeverityColor(alert.severity))
                         }
 
-                        Text(alert.summary)
+                        Text(alertCardSubtitle(for: alert))
                             .font(.caption)
-                            .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
 
                         Text("Area: \(alert.areaName)")
                             .font(.caption2)
@@ -1505,16 +1505,22 @@ private struct ForecastDetailSelection: Identifiable {
                                 .foregroundStyle(alertSeverityColor(alert.severity))
                                 .offset(y: 1)
 
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(alert.title.localizedCapitalized)
-                                    .font(.headline.weight(.semibold))
-                                    .foregroundStyle(.primary)
-                                    .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(alert.title.replacingOccurrences(of: "^-\\s*", with: "", options: .regularExpression).localizedCapitalized)
+                    .font(.headline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                                Text(alert.areaName)
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                            }
+//                Text(alertCardSubtitle(for: alert))
+//                    .font(.subheadline)
+//                    .foregroundStyle(.secondary)
+//                    .lineLimit(1)
+//                    .truncationMode(.tail)
+
+                Text("Area: \(alert.areaName)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
                             Spacer(minLength: 8)
 
@@ -1532,27 +1538,22 @@ private struct ForecastDetailSelection: Identifiable {
 
                         Divider().opacity(0.18)
 
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Summary")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 10) {
+                            ForEach(summarySections(from: alert.summary)) { section in
+                                if let title = section.title {
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        Text(title)
+                                            .font(.caption.weight(.semibold))
+                                            .foregroundStyle(.secondary)
+                                            .textCase(.uppercase)
 
-                            Text(alert.summary)
-                                .font(.body)
-                                .foregroundStyle(.primary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-
-                        Divider().opacity(0.18)
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Affected Area")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.secondary)
-
-                            Text(alert.areaName)
-                                .font(.body)
-                                .foregroundStyle(.primary)
+                                        formattedSectionBody(section.body, isMetadata: section.title == nil)
+                                    }
+                                    .padding(.top, 2)
+                                } else {
+                                    formattedSectionBody(section.body, isMetadata: section.title == nil)
+                                }
+                            }
                         }
                     }
                     .padding(.horizontal, 22)
@@ -1596,10 +1597,317 @@ private struct ForecastDetailSelection: Identifiable {
                     y: 4
                 )
         }
+        private struct AlertSummarySection: Identifiable {
+            let id = UUID()
+            let title: String?
+            let body: String
+        }
+
+        private func summarySections(from text: String) -> [AlertSummarySection] {
+            var lines = text
+                .components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+
+            if let first = lines.first {
+                let upper = first.uppercased()
+                if (upper.contains("WARNING") || upper.contains("STATEMENT")) && (upper.contains("AM") || upper.contains("PM")) {
+                    lines.removeFirst()
+                }
+            }
+
+            let junkMarkers = [
+                "PLEASE CONTINUE TO MONITOR",
+                "TO REPORT SEVERE WEATHER",
+                "IN EFFECT FOR:",
+                "FOLLOW:",
+                "REGIONAL ATOM"
+            ]
+
+            let selectedAreaUpper = alert.areaName.uppercased()
+            
+            let selectedCityUpper = alert.areaName
+                .components(separatedBy: ",")
+                .first?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .uppercased() ?? ""
+            
+            lines = lines.filter { line in
+                let upper = line.uppercased()
+
+                if junkMarkers.contains(where: { upper.contains($0) }) {
+                    return false
+                }
+
+                if !selectedAreaUpper.isEmpty && upper == selectedAreaUpper {
+                    return false
+                }
+                
+                if !selectedCityUpper.isEmpty && upper == selectedCityUpper {
+                    return false
+                }
+                if !selectedCityUpper.isEmpty && upper.hasPrefix(selectedCityUpper + " - ") {
+                    return false
+                }
+
+                if upper.hasSuffix(" AND VICINITY") {
+                    return false
+                }
+
+                return true
+            }
+
+            let sectionHeaderTitles: [String: String] = [
+                "WHAT:": "What",
+                "WHAT AND WHERE:": "What and where",
+                "WHAT AND WHEN:": "What and when",
+                "WHEN:": "When",
+                "WHERE:": "Where",
+                "IMPACTS:": "Impacts",
+                "REMARKS:": "Remarks",
+                "ADDITIONAL INFORMATION:": "Additional information",
+                "LOCATIONS:": "Locations",
+                "TOTAL SNOWFALL:": "Total snowfall",
+                "TIME SPAN:": "Time span"
+            ]
+
+            let inlineHeaderTitles: [String: String] = [
+                "WHAT:": "What",
+                "WHAT AND WHERE:": "What and where",
+                "WHAT AND WHEN:": "What and when",
+                "WHEN:": "When",
+                "WHERE:": "Where",
+                "IMPACTS:": "Impacts",
+                "REMARKS:": "Remarks",
+                "ADDITIONAL INFORMATION:": "Additional information",
+                "LOCATIONS:": "Locations",
+                "TOTAL SNOWFALL:": "Total snowfall",
+                "TIME SPAN:": "Time span"
+            ]
+
+            var sections: [AlertSummarySection] = []
+            var currentTitle: String? = nil
+            var currentLines: [String] = []
+
+            func flushCurrentSection() {
+                let body = currentLines.joined(separator: "\n")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !body.isEmpty else { return }
+                sections.append(AlertSummarySection(title: currentTitle, body: body))
+            }
+
+            for line in lines {
+                let upper = line.uppercased()
+
+                if let mappedTitle = sectionHeaderTitles[upper] {
+                    flushCurrentSection()
+                    currentTitle = mappedTitle
+                    currentLines = []
+                    continue
+                }
+
+                var handledInlineHeader = false
+                for (key, mappedTitle) in inlineHeaderTitles {
+                    if upper.hasPrefix(key), upper != key {
+                        flushCurrentSection()
+                        currentTitle = mappedTitle
+                        let remainder = line.dropFirst(key.count).trimmingCharacters(in: .whitespacesAndNewlines)
+                        currentLines = remainder.isEmpty ? [] : [remainder]
+                        handledInlineHeader = true
+                        break
+                    }
+                }
+
+                if handledInlineHeader {
+                    continue
+                }
+
+                if line.hasPrefix("-") {
+                    let trimmed = String(line.drop(while: { $0 == "-" || $0 == " " }))
+                    currentLines.append(trimmed.isEmpty ? "•" : "• " + trimmed)
+                } else {
+                    currentLines.append(line)
+                }
+            }
+
+            flushCurrentSection()
+
+            if sections.isEmpty {
+                let metadataPrefixes = [
+                    "IMPACT LEVEL:",
+                    "FORECAST CONFIDENCE:"
+                ]
+
+                let whenIndicators = [
+                    "BEGINNING",
+                    "CONTINUE",
+                    "UNTIL",
+                    "THROUGH",
+                    "TONIGHT",
+                    "THIS AFTERNOON",
+                    "THIS EVENING",
+                    "FRIDAY",
+                    "SATURDAY",
+                    "SUNDAY",
+                    "MONDAY",
+                    "TUESDAY",
+                    "WEDNESDAY",
+                    "THURSDAY"
+                ]
+
+                let impactIndicators = [
+                    "HAZARDOUS",
+                    "VISIBILITY",
+                    "TRAVEL",
+                    "SLIPPERY",
+                    "DIFFICULT TO NAVIGATE",
+                    "FLOODING",
+                    "LANDSLIDE",
+                    "WASHOUT",
+                    "POOLING"
+                ]
+
+                var metadataLines: [String] = []
+                var remainingLines: [String] = []
+
+                for line in lines {
+                    let upper = line.uppercased()
+                    if metadataPrefixes.contains(where: { upper.hasPrefix($0) }) {
+                        metadataLines.append(line)
+                    } else {
+                        remainingLines.append(line)
+                    }
+                }
+
+                var leadLines: [String] = []
+                var whenLines: [String] = []
+                var impactLines: [String] = []
+                var bodyLines: [String] = []
+
+                if let firstRemaining = remainingLines.first {
+                    leadLines.append(firstRemaining)
+                    remainingLines.removeFirst()
+                }
+
+                for line in remainingLines {
+                    let upper = line.uppercased()
+                    if whenIndicators.contains(where: { upper.contains($0) }) {
+                        whenLines.append(line)
+                    } else if impactIndicators.contains(where: { upper.contains($0) }) {
+                        impactLines.append(line)
+                    } else {
+                        bodyLines.append(line)
+                    }
+                }
+
+                var fallbackSections: [AlertSummarySection] = []
+
+                let metadataBody = metadataLines
+                    .joined(separator: "\n")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !metadataBody.isEmpty {
+                    fallbackSections.append(AlertSummarySection(title: nil, body: metadataBody))
+                }
+
+                let leadBody = leadLines
+                    .joined(separator: "\n")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !leadBody.isEmpty {
+                    fallbackSections.append(AlertSummarySection(title: nil, body: leadBody))
+                }
+
+                let whenBody = whenLines
+                    .joined(separator: "\n")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !whenBody.isEmpty {
+                    fallbackSections.append(AlertSummarySection(title: "When", body: whenBody))
+                }
+
+                let impactsBody = impactLines
+                    .joined(separator: "\n")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !impactsBody.isEmpty {
+                    fallbackSections.append(AlertSummarySection(title: "Impacts", body: impactsBody))
+                }
+
+                let body = bodyLines
+                    .joined(separator: "\n")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !body.isEmpty {
+                    fallbackSections.append(AlertSummarySection(title: nil, body: body))
+                }
+
+                return fallbackSections
+            }
+
+            return sections
+        }
+
+        @ViewBuilder
+        private func formattedSectionBody(_ text: String, isMetadata: Bool) -> some View {
+            let lines = text
+                .components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+
+            VStack(alignment: .leading, spacing: isMetadata ? 4 : 6) {
+                ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                    if isMetadata {
+                        Text(line)
+                            .font(.subheadline.weight(.medium))
+                            .foregroundStyle(.primary.opacity(colorScheme == .dark ? 0.82 : 0.68))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.bottom, 2)
+                    } else if line.hasPrefix("• ") {
+                        HStack(alignment: .top, spacing: 10) {
+                            Text("•")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.primary)
+
+                            Text(String(line.dropFirst(2)))
+                                .font(.subheadline)
+                                .foregroundStyle(.primary)
+                                .lineSpacing(2)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    } else {
+                        Text(line)
+                            .font(.subheadline)
+                            .foregroundStyle(.primary)
+                            .lineSpacing(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
     }
 
 
 // MARK: - Styling
+    // MARK: - Alert Card Subtitle Helper
+
+    private func alertCardSubtitle(for alert: WeatherAlert) -> String {
+        let lines = alert.summary
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        guard let first = lines.first else { return "" }
+
+        if let timeRange = first.range(
+            of: #"\b\d{1,2}:\d{2}\s?(AM|PM)\s?[A-Z]{2,4}\b"#,
+            options: .regularExpression
+        ) {
+            let issuedTime = String(first[timeRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+            return "Issued \(issuedTime)"
+        }
+
+        if let second = lines.dropFirst().first, !second.isEmpty {
+            return second
+        }
+
+        return "Issued recently"
+    }
 
 private struct WeatherAlert: Identifiable, Equatable {
     let id: String
@@ -1616,297 +1924,405 @@ private protocol AlertServiceProtocol {
 }
 
 private struct CanadaAlertService: AlertServiceProtocol {
+
     func activeAlerts(for coordinate: CLLocationCoordinate2D, countryCode: String) async throws -> [WeatherAlert] {
         guard countryCode == "CA" else { return [] }
-        let selectedName = currentSelectedLocationName()
 
-        let delta = 0.9
-        let minLon = coordinate.longitude - delta
-        let minLat = coordinate.latitude - delta
-        let maxLon = coordinate.longitude + delta
-        let maxLat = coordinate.latitude + delta
+        let cityName = currentSelectedLocationName()
+        let displayName = cityName.isEmpty ? "Selected Location" : cityName
 
-        var components = URLComponents(string: "https://api.weather.gc.ca/collections/weather-alerts/items")!
-        components.queryItems = [
-            URLQueryItem(name: "f", value: "json"),
-            URLQueryItem(name: "lang", value: "en"),
-            URLQueryItem(name: "limit", value: "100"),
-            URLQueryItem(name: "bbox", value: "\(minLon),\(minLat),\(maxLon),\(maxLat)")
-        ]
+        let service = EnvironmentCanadaAlertService()
 
-        let (data, response) = try await URLSession.shared.data(from: components.url!)
+        let result = try await service.fetchActiveAlertText(
+            cityName: displayName,
+            latitude: coordinate.latitude,
+            longitude: coordinate.longitude
+        )
 
-        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-            throw URLError(.badServerResponse)
+        guard let text = result.alertText, !text.isEmpty else {
+            return []
         }
 
-        let decoder = JSONDecoder()
-        let collection = try decoder.decode(CanadaAlertFeatureCollection.self, from: data)
+        let parsed = parseAlertMetadata(from: text)
 
-        let point = (lon: coordinate.longitude, lat: coordinate.latitude)
-        let now = Date()
-
-        let alerts = collection.features.compactMap { feature -> WeatherAlert? in
-            guard let properties = feature.properties else { return nil }
-
-            if let expires = properties.expires, expires < now {
-                return nil
-            }
-
-            let title = properties.title?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let summary = properties.summary?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let area = properties.areaName?.trimmingCharacters(in: .whitespacesAndNewlines)
-            let severity = properties.severity?.trimmingCharacters(in: .whitespacesAndNewlines)
-
-            guard let finalTitle = title, !finalTitle.isEmpty else { return nil }
-            guard let finalSummary = summary, !finalSummary.isEmpty else { return nil }
-
-            return WeatherAlert(
-                id: feature.id ?? UUID().uuidString,
-                title: finalTitle,
-                severity: severity ?? "Alert",
-                summary: finalSummary,
-                areaName: area ?? "Affected area",
-                issuedAt: properties.issuedAt,
-                expiresAt: properties.expires
+        return [
+            WeatherAlert(
+                id: result.warningURL?.absoluteString ?? UUID().uuidString,
+                title: parsed.title,
+                severity: parsed.severity,
+                summary: text,
+                areaName: displayName,
+                issuedAt: nil,
+                expiresAt: nil
             )
-        }
-
-        return alerts.sorted { lhs, rhs in
-            let lhsSeverity = severityRank(lhs.severity)
-            let rhsSeverity = severityRank(rhs.severity)
-
-            if lhsSeverity != rhsSeverity {
-                return lhsSeverity > rhsSeverity
-            }
-
-            let lhsRelevance = relevanceScore(for: lhs, selectedName: selectedName)
-            let rhsRelevance = relevanceScore(for: rhs, selectedName: selectedName)
-
-            if lhsRelevance != rhsRelevance {
-                return lhsRelevance > rhsRelevance
-            }
-
-            return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
-        }
-    }
-
-    private func severityRank(_ severity: String) -> Int {
-        switch severity.lowercased() {
-        case "extreme": return 4
-        case "severe": return 3
-        case "moderate": return 2
-        case "minor": return 1
-        default: return 0
-        }
-    }
-    
-    private func relevanceScore(for alert: WeatherAlert, selectedName: String) -> Int {
-        let selected = normalizedMatchString(selectedName)
-        let area = normalizedMatchString(alert.areaName)
-        let title = normalizedMatchString(alert.title)
-
-        let components = selected.split(separator: ",").map { String($0) }
-        let cityToken = components.first ?? selected
-        let provinceToken = components.count > 1 ? components.last ?? "" : ""
-
-        var score = 0
-
-        // Strong exact / near match
-        if !selected.isEmpty {
-            if area == selected {
-                score += 120
-            }
-            if area.contains(selected) || selected.contains(area) {
-                score += 90
-            }
-        }
-
-        // City match (most important fallback)
-        if !cityToken.isEmpty {
-            if area.contains(cityToken) {
-                score += 70
-            }
-            if title.contains(cityToken) {
-                score += 20
-            }
-        }
-
-        // Province-level match (broad regional relevance)
-        if !provinceToken.isEmpty {
-            if area.contains(provinceToken) {
-                score += 25
-            }
-        }
-
-        // Generic regional keywords boost (helps rural / reserve naming cases)
-        if area.contains("res") || area.contains("county") || area.contains("region") {
-            score += 10
-        }
-
-        return score
-    }
-
-    private func normalizedMatchString(_ value: String) -> String {
-        value
-            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
-            .replacingOccurrences(of: ".", with: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased()
+        ]
     }
 
     private func currentSelectedLocationName() -> String {
         UserDefaults.standard.string(forKey: "yawa.can.selectedLocationDisplayName") ?? ""
     }
-    
-    
-}
 
-private struct CanadaAlertFeatureCollection: Decodable {
-    let features: [CanadaAlertFeature]
-}
+    private func parseAlertMetadata(from text: String) -> (title: String, severity: String) {
+        let firstLine = text
+            .components(separatedBy: .newlines)
+            .first?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? text
 
-private struct CanadaAlertFeature: Decodable {
-    let id: String?
-    let geometry: CanadaAlertGeometry?
-    let properties: CanadaAlertProperties?
-}
+        let upper = firstLine.uppercased()
 
-private enum CanadaAlertGeometry: Decodable {
-    case polygon([[[Double]]])
-    case multiPolygon([[[[Double]]]])
-
-    private enum CodingKeys: String, CodingKey {
-        case type
-        case coordinates
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        let type = try container.decode(String.self, forKey: .type)
-
-        switch type {
-        case "Polygon":
-            self = .polygon(try container.decode([[[Double]]].self, forKey: .coordinates))
-        case "MultiPolygon":
-            self = .multiPolygon(try container.decode([[[[Double]]]].self, forKey: .coordinates))
-        default:
-            throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Unsupported geometry type")
+        if upper.contains("SPECIAL WEATHER STATEMENT") {
+            return ("Special Weather Statement", "Statement")
         }
-    }
 
-    func contains(point: (lon: Double, lat: Double)) -> Bool {
-        switch self {
-        case .polygon(let rings):
-            return Self.polygonContains(point: point, rings: rings)
-        case .multiPolygon(let polygons):
-            return polygons.contains { Self.polygonContains(point: point, rings: $0) }
-        }
-    }
+        let colorMap: [(token: String, severity: String)] = [
+            ("RED WARNING", "Red"),
+            ("ORANGE WARNING", "Orange"),
+            ("YELLOW WARNING", "Yellow")
+        ]
 
-    private static func polygonContains(point: (lon: Double, lat: Double), rings: [[[Double]]]) -> Bool {
-        guard let outer = rings.first else { return false }
-        guard ringContains(point: point, ring: outer) else { return false }
-
-        for hole in rings.dropFirst() {
-            if ringContains(point: point, ring: hole) {
-                return false
+        for entry in colorMap {
+            if upper.hasPrefix(entry.token) {
+                let remainder = firstLine.dropFirst(entry.token.count).trimmingCharacters(in: .whitespacesAndNewlines)
+                let event = extractLeadingEventName(from: remainder)
+                if !event.isEmpty {
+                    return ("\(event) Warning", entry.severity)
+                }
+                return ("Weather Warning", entry.severity)
             }
         }
 
-        return true
+        let directWarnings = [
+            "WIND WARNING",
+            "RAINFALL WARNING",
+            "SNOWFALL WARNING",
+            "BLIZZARD WARNING",
+            "FLASH FREEZE WARNING",
+            "FREEZING RAIN WARNING",
+            "EXTREME COLD WARNING",
+            "HEAT WARNING",
+            "AIR QUALITY WARNING",
+            "WEATHER WARNING"
+        ]
+
+        for warning in directWarnings {
+            if upper.hasPrefix(warning) {
+                return (titleCaseWarning(warning), "Warning")
+            }
+        }
+
+        return ("Weather Alert", "Alert")
     }
 
-    private static func ringContains(point: (lon: Double, lat: Double), ring: [[Double]]) -> Bool {
-        guard ring.count > 2 else { return false }
+    private func extractLeadingEventName(from text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
 
-        var contains = false
-        var j = ring.count - 1
+        var cutIndex = trimmed.endIndex
+        let separators = ["  ", "\n", "\r", " 0", " 1", " 2", " 3", " 4", " 5", " 6", " 7", " 8", " 9"]
+        for separator in separators {
+            if let range = trimmed.range(of: separator), range.lowerBound < cutIndex {
+                cutIndex = range.lowerBound
+            }
+        }
 
-        for i in ring.indices {
-            guard ring[i].count >= 2, ring[j].count >= 2 else {
-                j = i
+        var leading = String(trimmed[..<cutIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let trailingMarkers = [
+            " IMPACT LEVEL:",
+            " FORECAST CONFIDENCE:",
+            " WHAT:",
+            " WHERE:",
+            " WHEN:",
+            " ISSUED",
+            " IN EFFECT",
+            " AM ",
+            " PM ",
+            " MDT ",
+            " PDT ",
+            " CDT ",
+            " EDT ",
+            " ADT ",
+            " NDT ",
+            " AST ",
+            " NST "
+        ]
+
+        for marker in trailingMarkers {
+            if let range = leading.uppercased().range(of: marker) {
+                leading = String(leading[..<range.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
+            }
+        }
+
+        return leading.capitalized
+    }
+
+    private func titleCaseWarning(_ text: String) -> String {
+        text.lowercased()
+            .split(separator: " ")
+            .map { $0.capitalized }
+            .joined(separator: " ")
+    }
+}
+
+private final class EnvironmentCanadaAlertService {
+
+    func fetchActiveAlertText(
+        cityName: String,
+        latitude: Double,
+        longitude: Double
+    ) async throws -> (warningURL: URL?, alertText: String?) {
+
+        let locationURL = makeLocationURL(latitude: latitude, longitude: longitude)
+        print("[ECAlerts] start city=\(cityName) lat=\(latitude) lon=\(longitude)")
+        print("[ECAlerts] locationURL=\(locationURL.absoluteString)")
+
+        let locationHTML = try await fetchHTML(from: locationURL)
+        print("[ECAlerts] locationHTML preview=\(locationHTML.prefix(1200).replacingOccurrences(of: "\n", with: " "))")
+
+        if let inlineAlertText = extractInlineAlertText(from: locationHTML, cityName: cityName) {
+            print("[ECAlerts] inline alert preview=\(inlineAlertText.prefix(200))")
+            return (locationURL, inlineAlertText)
+        }
+
+        if locationHTML.localizedCaseInsensitiveContains("No alerts in effect") {
+            print("[ECAlerts] no alert on location page")
+            return (locationURL, nil)
+        }
+
+        guard let warningURL = extractWarningURL(from: locationHTML) else {
+            print("[ECAlerts] no warning URL found; treating as no active alert")
+            return (locationURL, nil)
+        }
+
+        print("[ECAlerts] resolved warningURL=\(warningURL.absoluteString)")
+
+        let warningHTML = try await fetchHTML(from: warningURL)
+        print("[ECAlerts] warningHTML preview=\(warningHTML.prefix(1200).replacingOccurrences(of: "\n", with: " "))")
+
+        if warningHTML.localizedCaseInsensitiveContains("No alerts in effect") {
+            print("[ECAlerts] no alert")
+            return (warningURL, nil)
+        }
+
+        let text = extractAlertText(from: warningHTML)
+        print("[ECAlerts] alert preview=\(text?.prefix(200) ?? "nil")")
+
+        return (warningURL, text)
+    }
+
+    // MARK: URL
+
+    private func makeLocationURL(latitude: Double, longitude: Double) -> URL {
+        var c = URLComponents(string: "https://weather.gc.ca/en/location/index.html")!
+        c.queryItems = [URLQueryItem(name: "coords", value: "\(latitude),\(longitude)")]
+        return c.url!
+    }
+
+    // MARK: Network
+
+    private func fetchHTML(from url: URL) async throws -> String {
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 20
+        req.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
+
+        let (data, response) = try await URLSession.shared.data(for: req)
+
+        guard let http = response as? HTTPURLResponse,
+              (200...299).contains(http.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+
+        print("[ECAlerts] GET \(url.absoluteString) status=\(http.statusCode) bytes=\(data.count)")
+
+        return String(data: data, encoding: .utf8)
+            ?? String(data: data, encoding: .isoLatin1)
+            ?? ""
+    }
+
+    // MARK: Parsing
+
+    private func extractWarningURL(from html: String) -> URL? {
+        let patterns = [
+            #"https://weather\.gc\.ca/warnings/report_e\.html[^\"' ]+"#,
+            #"/warnings/report_e\.html[^\"' ]*"#
+        ]
+
+        for pattern in patterns {
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
                 continue
             }
 
-            let xi = ring[i][0]
-            let yi = ring[i][1]
-            let xj = ring[j][0]
-            let yj = ring[j][1]
-
-            let intersects = ((yi > point.lat) != (yj > point.lat)) &&
-                (point.lon < (xj - xi) * (point.lat - yi) / ((yj - yi) == 0 ? 0.0000001 : (yj - yi)) + xi)
-
-            if intersects {
-                contains.toggle()
+            let range = NSRange(html.startIndex..., in: html)
+            guard let match = regex.firstMatch(in: html, range: range),
+                  let r = Range(match.range, in: html) else {
+                continue
             }
 
-            j = i
-        }
+            let raw = String(html[r])
+                .replacingOccurrences(of: "&amp;", with: "&")
 
-        return contains
-    }
-}
+            let absoluteURL: URL?
+            if raw.hasPrefix("http") {
+                absoluteURL = URL(string: raw)
+            } else {
+                absoluteURL = URL(string: "https://weather.gc.ca\(raw)")
+            }
 
-private struct CanadaAlertProperties: Decodable {
-    let title: String?
-    let summary: String?
-    let areaName: String?
-    let severity: String?
-    let issuedAt: Date?
-    let expires: Date?
+            guard var comp = absoluteURL.flatMap({ URLComponents(url: $0, resolvingAgainstBaseURL: false) }) else {
+                continue
+            }
 
-    private enum CodingKeys: String, CodingKey {
-        case alertNameEn = "alert_name_en"
-        case alertShortNameEn = "alert_short_name_en"
-        case alertTextEn = "alert_text_en"
-        case featureNameEn = "feature_name_en"
-        case impactEn = "impact_en"
-        case publicationDatetime = "publication_datetime"
-        case expirationDatetime = "expiration_datetime"
-    }
+            var items = comp.queryItems ?? []
+            if !items.contains(where: { $0.name == "display" }) {
+                items.append(URLQueryItem(name: "display", value: "textonly"))
+            }
+            comp.queryItems = items
 
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-
-        title = Self.firstString(container, keys: [.alertNameEn, .alertShortNameEn])
-        summary = Self.firstString(container, keys: [.alertTextEn])
-        areaName = Self.firstString(container, keys: [.featureNameEn])
-        severity = Self.firstString(container, keys: [.impactEn])
-        issuedAt = Self.firstDate(container, keys: [.publicationDatetime])
-        expires = Self.firstDate(container, keys: [.expirationDatetime])
-    }
-
-    private static func firstString(_ container: KeyedDecodingContainer<CodingKeys>, keys: [CodingKeys]) -> String? {
-        for key in keys {
-            if let value = try? container.decode(String.self, forKey: key),
-               !value.isEmpty {
-                return value
+            let finalURL = comp.url
+            if let finalURL {
+                print("[ECAlerts] matched warningURL=\(finalURL.absoluteString)")
+                return finalURL
             }
         }
+
+        let preview = html.prefix(1200).replacingOccurrences(of: "\n", with: " ")
+        print("[ECAlerts] warning link regex failed. html preview=\(preview)")
         return nil
     }
 
-    private static func firstDate(_ container: KeyedDecodingContainer<CodingKeys>, keys: [CodingKeys]) -> Date? {
-        for key in keys {
-            if let raw = try? container.decode(String.self, forKey: key),
-               let date = parseDate(raw) {
-                return date
+    private func extractInlineAlertText(from html: String, cityName: String) -> String? {
+        let plain = normalizeLineBreaks(stripHTML(html))
+        let upper = plain.uppercased()
+
+        let stopMarkers = [
+            "FOLLOW:",
+            "CURRENT CONDITIONS OBSERVED AT:",
+            "## CURRENT CONDITIONS",
+            "## FORECAST",
+            "FORECAST FORECAST ISSUED:",
+            "PAST 24 HOURS",
+            "WEATHER RADAR",
+            "SATELLITE",
+            "AIR QUALITY INDEX",
+            "WEATHER SHORTCUTS"
+        ]
+
+        let possibleStarts = [
+            "SPECIAL WEATHER STATEMENT",
+            "WEATHER WARNING",
+            "WIND WARNING",
+            "HIGH WIND WARNING",
+            "RAINFALL WARNING",
+            "SNOWFALL WARNING",
+            "BLIZZARD WARNING",
+            "FLASH FREEZE WARNING",
+            "FREEZING RAIN WARNING",
+            "EXTREME COLD WARNING",
+            "HEAT WARNING",
+            "AIR QUALITY WARNING",
+            "RED WARNING",
+            "YELLOW WARNING",
+            "ORANGE WARNING"
+        ]
+
+        guard let start = possibleStarts
+            .compactMap({ marker -> Range<String.Index>? in
+                upper.range(of: marker)
+            })
+            .min(by: { $0.lowerBound < $1.lowerBound })
+        else {
+            print("[ECAlerts] no inline alert marker found for city=\(cityName)")
+            return nil
+        }
+
+        var result = String(plain[start.lowerBound...])
+
+        for stop in stopMarkers {
+            if let range = result.range(of: stop, options: [.caseInsensitive]) {
+                result = String(result[..<range.lowerBound])
             }
         }
-        return nil
+
+        result = normalizePreservingLineBreaks(result)
+
+        if result.localizedCaseInsensitiveContains("No alerts in effect") || result.isEmpty {
+            return nil
+        }
+
+        return result
     }
 
-    private static func parseDate(_ raw: String) -> Date? {
-        let iso = ISO8601DateFormatter()
-        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let d = iso.date(from: raw) { return d }
+    private func extractAlertText(from html: String) -> String? {
+        let plain = normalizeLineBreaks(stripHTML(html))
 
-        let isoNoFrac = ISO8601DateFormatter()
-        isoNoFrac.formatOptions = [.withInternetDateTime]
-        return isoNoFrac.date(from: raw)
+        if plain.localizedCaseInsensitiveContains("No alerts in effect") {
+            return nil
+        }
+
+        guard let range = plain.range(of: "Weather Alerts for:", options: .caseInsensitive) else {
+            let fallback = normalizePreservingLineBreaks(plain)
+            return fallback.isEmpty ? nil : fallback
+        }
+
+        let tail = String(plain[range.upperBound...])
+
+        let stopWords = [
+            "Follow:",
+            "Current Conditions Observed at:",
+            "Past 24 hours",
+            "Weather Radar",
+            "Satellite",
+            "Weather shortcuts",
+            "Feedback",
+            "Date modified"
+        ]
+
+        var result = tail
+        for stop in stopWords {
+            if let r = result.range(of: stop, options: .caseInsensitive) {
+                result = String(result[..<r.lowerBound])
+            }
+        }
+
+        let cleaned = normalizePreservingLineBreaks(result)
+        return cleaned.isEmpty ? nil : cleaned
+    }
+
+    private func stripHTML(_ html: String) -> String {
+        var s = html
+        s = s.replacingOccurrences(of: #"<script[\\s\\S]*?</script>"#, with: " ", options: .regularExpression)
+        s = s.replacingOccurrences(of: #"<style[\\s\\S]*?</style>"#, with: " ", options: .regularExpression)
+        s = s.replacingOccurrences(of: #"</(p|div|section|article|h1|h2|h3|li|br|tr|td)>"#, with: "\n", options: .regularExpression)
+        s = s.replacingOccurrences(of: #"<[^>]+>"#, with: " ", options: .regularExpression)
+        s = s.replacingOccurrences(of: "&nbsp;", with: " ")
+        s = s.replacingOccurrences(of: "&amp;", with: "&")
+        s = s.replacingOccurrences(of: "&quot;", with: "\"")
+        s = s.replacingOccurrences(of: "&#39;", with: "'")
+        return s
+    }
+
+    private func normalizeLineBreaks(_ s: String) -> String {
+        s.replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+            .replacingOccurrences(of: #"\n[ \t]+"#, with: "\n", options: .regularExpression)
+            .replacingOccurrences(of: #"[ \t]+\n"#, with: "\n", options: .regularExpression)
+            .replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
+    }
+
+    private func normalizePreservingLineBreaks(_ s: String) -> String {
+        s.replacingOccurrences(of: #"[ \t]+"#, with: " ", options: .regularExpression)
+            .replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func normalize(_ s: String) -> String {
+        s.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
+
+
 
 private struct TileStyleModifier: ViewModifier {
     @Environment(\.colorScheme) private var scheme
@@ -2053,6 +2469,8 @@ private final class LocationStore: ObservableObject {
     }
 
     // MARK: persistence
+// MARK: - Compact Alert Card (Tile/List) Subtitle Usage
+
     private static func loadArray(key: String) -> [SavedLocation]? {
         guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
         return try? JSONDecoder().decode([SavedLocation].self, from: data)
@@ -2846,7 +3264,7 @@ private struct DailyForecastDetailSheet: View {
 }
 
 
-    // MARK: - Comfort / Feels Like (YN-style, but metric)
+// MARK: - Comfort / Feels Like (YN-style, but metric)
 
     private enum FeelsLikeMode {
         case windChill
@@ -2986,5 +3404,6 @@ private func comfortSummaryText(for current: CurrentConditions) -> String {
 #Preview {
     ContentView()
 }
+
 
 
