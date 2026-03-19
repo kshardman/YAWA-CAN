@@ -523,8 +523,50 @@ struct ContentView: View {
     }
 
 
+    private var selectedLocationForAlerts: SavedLocation {
+        selected ?? displayedLocation ?? locationStore.selected ?? .toronto
+    }
+
+    private var activeAlertsForSelectedLocation: [WeatherAlert] {
+        StubAlertService().sampleAlerts(for: selectedLocationForAlerts)
+    }
+
     private func dailyTile(_ snap: WeatherSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 6) {
+
+            if let alert = activeAlertsForSelectedLocation.first {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.subheadline)
+                            .symbolRenderingMode(.hierarchical)
+                            .foregroundStyle(.orange)
+                            .opacity(0.95)
+
+                        Text(alert.title)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
+                            .lineLimit(1)
+
+                        Spacer()
+
+                        Text(alert.severity)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.orange)
+                    }
+
+                    Text(alert.summary)
+                        .font(.caption)
+                        .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text("Area: \(alert.areaName)")
+                        .font(.caption2)
+                        .foregroundStyle(YAWATheme.textTertiary(for: colorScheme))
+                }
+
+                Divider().opacity(0.5)
+            }
 
             // Header row
             HStack(spacing: 6) {
@@ -1369,6 +1411,46 @@ private struct ForecastDetailSelection: Identifiable {
 }
 
 // MARK: - Styling
+
+private struct WeatherAlert: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let severity: String
+    let summary: String
+    let areaName: String
+    let issuedAt: Date?
+    let expiresAt: Date?
+}
+
+private protocol AlertServiceProtocol {
+    func activeAlerts(for coordinate: CLLocationCoordinate2D, countryCode: String) async throws -> [WeatherAlert]
+}
+
+private struct StubAlertService: AlertServiceProtocol {
+    func activeAlerts(for coordinate: CLLocationCoordinate2D, countryCode: String) async throws -> [WeatherAlert] {
+        sampleAlerts(forCountryCode: countryCode, coordinate: coordinate)
+    }
+
+    func sampleAlerts(for location: SavedLocation) -> [WeatherAlert] {
+        sampleAlerts(forCountryCode: location.countryCode, coordinate: location.coordinate)
+    }
+
+    private func sampleAlerts(forCountryCode countryCode: String, coordinate: CLLocationCoordinate2D) -> [WeatherAlert] {
+        guard countryCode == "CA" else { return [] }
+
+        return [
+            WeatherAlert(
+                id: "stub-special-weather-statement",
+                title: "Special Weather Statement",
+                severity: "Moderate",
+                summary: "Stub alert for YC UI development. Replace this with official Environment Canada alert data once the real alert service is wired up.",
+                areaName: "Selected location",
+                issuedAt: nil,
+                expiresAt: nil
+            )
+        ]
+    }
+}
 
 private struct TileStyleModifier: ViewModifier {
     @Environment(\.colorScheme) private var scheme
