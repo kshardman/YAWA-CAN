@@ -200,6 +200,7 @@ struct ContentView: View {
             // Initial selection: whatever the user last chose in Locations, otherwise the first saved favorite.
             let initial = locationStore.selected ?? locationStore.favorites.first ?? SavedLocation.toronto
             selected = initial
+            UserDefaults.standard.set(initial.displayName, forKey: "yawa.can.selectedLocationDisplayName")
             await refreshWeather()
         }
         .onChange(of: forecastDaysToShow) { _, _ in
@@ -234,6 +235,9 @@ struct ContentView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
+        .task(id: "\(selectedLocationForAlerts.displayName)|\(selectedLocationForAlerts.countryCode)") {
+            await loadAlertsForSelectedLocation()
+        }
         .sheet(isPresented: $showingLocations) {
             LocationPickerView(
                 store: locationStore,
@@ -241,6 +245,7 @@ struct ContentView: View {
                     selected = loc
                     isCurrentLocationSelected = false
                     locationStore.setSelected(loc)
+                    UserDefaults.standard.set(loc.displayName, forKey: "yawa.can.selectedLocationDisplayName")
                     let days = max(1, min(forecastDaysToShow, 10))
                     Task {
                         await viewModel.load(for: loc.coordinate, locationName: loc.displayName, forecastDays: days)
@@ -254,6 +259,7 @@ struct ContentView: View {
                     selected = loc
                     isCurrentLocationSelected = true
                     locationStore.setSelectedCurrentLocation(loc)
+                    UserDefaults.standard.set(loc.displayName, forKey: "yawa.can.selectedLocationDisplayName")
                     let days = max(1, min(forecastDaysToShow, 10))
                     Task {
                         await viewModel.load(for: loc.coordinate, locationName: loc.displayName, forecastDays: days)
@@ -529,14 +535,38 @@ struct ContentView: View {
         return !(now >= sun.sunrise && now <= sun.sunset)
     }
 
-
+    @State private var activeAlerts: [WeatherAlert] = []
+    @State private var isLoadingAlerts = false
+    
     private var selectedLocationForAlerts: SavedLocation {
         selected ?? displayedLocation ?? locationStore.selected ?? .toronto
     }
 
     private var activeAlertsForSelectedLocation: [WeatherAlert] {
-        StubAlertService().sampleAlerts(for: selectedLocationForAlerts)
+        activeAlerts
     }
+    
+    @MainActor
+    private func loadAlertsForSelectedLocation() async {
+        guard selectedLocationForAlerts.countryCode == "CA" else {
+            activeAlerts = []
+            isLoadingAlerts = false
+            return
+        }
+
+        isLoadingAlerts = true
+        defer { isLoadingAlerts = false }
+
+        do {
+            activeAlerts = try await CanadaAlertService().activeAlerts(
+                for: selectedLocationForAlerts.coordinate,
+                countryCode: selectedLocationForAlerts.countryCode
+            )
+        } catch {
+            activeAlerts = []
+        }
+    }
+    
 
     private func dailyTile(_ snap: WeatherSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -1424,115 +1454,126 @@ private struct ForecastDetailSelection: Identifiable {
     }
 }
 
-private struct AlertDetailSheet: View {
-    let alert: WeatherAlert
+    private struct AlertDetailSheet: View {
+        let alert: WeatherAlert
 
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.colorScheme) private var colorScheme
+        @Environment(\.dismiss) private var dismiss
+        @Environment(\.colorScheme) private var colorScheme
 
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(alignment: .top, spacing: 10) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 22, weight: .semibold))
-                            .symbolRenderingMode(.hierarchical)
-                            .foregroundStyle(.orange)
-                            .offset(y: 1)
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(alert.title)
-                                .font(.headline.weight(.semibold))
-                                .foregroundStyle(.primary)
-                                .fixedSize(horizontal: false, vertical: true)
-
-                            Text(alert.areaName)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Spacer(minLength: 8)
-
-                        Text(alert.severity)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.orange)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(
-                                Capsule()
-                                    .fill(Color.orange.opacity(colorScheme == .dark ? 0.14 : 0.10))
-                            )
-                            .offset(y: 2)
-                    }
-
-                    Divider().opacity(0.18)
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Summary")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-
-                        Text(alert.summary)
-                            .font(.body)
-                            .foregroundStyle(.primary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    Divider().opacity(0.18)
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Affected Area")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-
-                        Text(alert.areaName)
-                            .font(.body)
-                            .foregroundStyle(.primary)
-                    }
-                }
-                .padding(.horizontal, 22)
-                .padding(.top, 18)
-                .padding(.bottom, 22)
-                .background(innerCard)
-                .padding(.horizontal, 20)
-                .padding(.top, 18)
-                .padding(.bottom, 12)
-            }
-            .navigationTitle("Alert")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
-                }
+        // Severity color mapping helper
+        private var severityColor: Color {
+            switch alert.severity.lowercased() {
+            case "extreme": return .red
+            case "severe": return Color.orange.opacity(0.9)
+            case "moderate": return .orange
+            case "minor": return .yellow
+            default: return .orange
             }
         }
-        .fontDesign(.rounded)
-    }
 
-    private var innerCard: some View {
-        RoundedRectangle(cornerRadius: 20, style: .continuous)
-            .fill(
-                colorScheme == .dark
-                ? Color(red: 0.05, green: 0.07, blue: 0.12).opacity(0.95)
-                : Color(.systemBackground)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .strokeBorder(
-                        colorScheme == .dark
-                        ? Color.white.opacity(0.05)
-                        : Color.black.opacity(0.04),
-                        lineWidth: 1
-                    )
-            )
-            .shadow(
-                color: Color.black.opacity(colorScheme == .dark ? 0.22 : 0.05),
-                radius: 10,
-                y: 4
-            )
+        var body: some View {
+            NavigationStack {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 22, weight: .semibold))
+                                .symbolRenderingMode(.hierarchical)
+                                .foregroundStyle(severityColor)
+                                .offset(y: 1)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(alert.title.localizedCapitalized)
+                                    .font(.headline.weight(.semibold))
+                                    .foregroundStyle(.primary)
+                                    .fixedSize(horizontal: false, vertical: true)
+
+                                Text(alert.areaName)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            Spacer(minLength: 8)
+
+                            Text(alert.severity)
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(severityColor)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(
+                                    Capsule()
+                                        .fill(severityColor.opacity(colorScheme == .dark ? 0.14 : 0.10))
+                                )
+                                .offset(y: 2)
+                        }
+
+                        Divider().opacity(0.18)
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Summary")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+
+                            Text(alert.summary)
+                                .font(.body)
+                                .foregroundStyle(.primary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        Divider().opacity(0.18)
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Affected Area")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+
+                            Text(alert.areaName)
+                                .font(.body)
+                                .foregroundStyle(.primary)
+                        }
+                    }
+                    .padding(.horizontal, 22)
+                    .padding(.top, 18)
+                    .padding(.bottom, 22)
+                    .background(innerCard)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 18)
+                    .padding(.bottom, 12)
+                }
+                .navigationTitle("Alert")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") { dismiss() }
+                    }
+                }
+            }
+            .fontDesign(.rounded)
+        }
+
+        private var innerCard: some View {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(
+                    colorScheme == .dark
+                    ? Color(red: 0.05, green: 0.07, blue: 0.12).opacity(0.95)
+                    : Color(.systemBackground)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .strokeBorder(
+                            colorScheme == .dark
+                            ? Color.white.opacity(0.05)
+                            : Color.black.opacity(0.04),
+                            lineWidth: 1
+                        )
+                )
+                .shadow(
+                    color: Color.black.opacity(colorScheme == .dark ? 0.22 : 0.05),
+                    radius: 10,
+                    y: 4
+                )
+        }
     }
-}
 
 
 // MARK: - Styling
@@ -1551,41 +1592,296 @@ private protocol AlertServiceProtocol {
     func activeAlerts(for coordinate: CLLocationCoordinate2D, countryCode: String) async throws -> [WeatherAlert]
 }
 
-private struct StubAlertService: AlertServiceProtocol {
+private struct CanadaAlertService: AlertServiceProtocol {
     func activeAlerts(for coordinate: CLLocationCoordinate2D, countryCode: String) async throws -> [WeatherAlert] {
-        sampleAlerts(forCountryCode: countryCode, coordinate: coordinate)
-    }
-
-    func sampleAlerts(for location: SavedLocation) -> [WeatherAlert] {
-        guard location.countryCode == "CA" else { return [] }
-
-        return [
-            WeatherAlert(
-                id: "stub-special-weather-statement",
-                title: "Special Weather Statement",
-                severity: "Moderate",
-                summary: "Stub alert for YC UI development. Replace this with official Environment Canada alert data once the real alert service is wired up.",
-                areaName: location.displayName,
-                issuedAt: nil,
-                expiresAt: nil
-            )
-        ]
-    }
-
-    private func sampleAlerts(forCountryCode countryCode: String, coordinate: CLLocationCoordinate2D) -> [WeatherAlert] {
         guard countryCode == "CA" else { return [] }
+        let selectedName = currentSelectedLocationName()
 
-        return [
-            WeatherAlert(
-                id: "stub-special-weather-statement",
-                title: "Special Weather Statement",
-                severity: "Moderate",
-                summary: "Stub alert for YC UI development. Replace this with official Environment Canada alert data once the real alert service is wired up.",
-                areaName: "Selected location",
-                issuedAt: nil,
-                expiresAt: nil
-            )
+        let delta = 0.9
+        let minLon = coordinate.longitude - delta
+        let minLat = coordinate.latitude - delta
+        let maxLon = coordinate.longitude + delta
+        let maxLat = coordinate.latitude + delta
+
+        var components = URLComponents(string: "https://api.weather.gc.ca/collections/weather-alerts/items")!
+        components.queryItems = [
+            URLQueryItem(name: "f", value: "json"),
+            URLQueryItem(name: "lang", value: "en"),
+            URLQueryItem(name: "limit", value: "100"),
+            URLQueryItem(name: "bbox", value: "\(minLon),\(minLat),\(maxLon),\(maxLat)")
         ]
+
+        let (data, response) = try await URLSession.shared.data(from: components.url!)
+
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            throw URLError(.badServerResponse)
+        }
+
+        let decoder = JSONDecoder()
+        let collection = try decoder.decode(CanadaAlertFeatureCollection.self, from: data)
+
+        let point = (lon: coordinate.longitude, lat: coordinate.latitude)
+        let now = Date()
+
+        let alerts = collection.features.compactMap { feature -> WeatherAlert? in
+            guard let properties = feature.properties else { return nil }
+
+            if let expires = properties.expires, expires < now {
+                return nil
+            }
+
+            let title = properties.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let summary = properties.summary?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let area = properties.areaName?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let severity = properties.severity?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            guard let finalTitle = title, !finalTitle.isEmpty else { return nil }
+            guard let finalSummary = summary, !finalSummary.isEmpty else { return nil }
+
+            return WeatherAlert(
+                id: feature.id ?? UUID().uuidString,
+                title: finalTitle,
+                severity: severity ?? "Alert",
+                summary: finalSummary,
+                areaName: area ?? "Affected area",
+                issuedAt: properties.issuedAt,
+                expiresAt: properties.expires
+            )
+        }
+
+        return alerts.sorted { lhs, rhs in
+            let lhsSeverity = severityRank(lhs.severity)
+            let rhsSeverity = severityRank(rhs.severity)
+
+            if lhsSeverity != rhsSeverity {
+                return lhsSeverity > rhsSeverity
+            }
+
+            let lhsRelevance = relevanceScore(for: lhs, selectedName: selectedName)
+            let rhsRelevance = relevanceScore(for: rhs, selectedName: selectedName)
+
+            if lhsRelevance != rhsRelevance {
+                return lhsRelevance > rhsRelevance
+            }
+
+            return lhs.title.localizedCaseInsensitiveCompare(rhs.title) == .orderedAscending
+        }
+    }
+
+    private func severityRank(_ severity: String) -> Int {
+        switch severity.lowercased() {
+        case "extreme": return 4
+        case "severe": return 3
+        case "moderate": return 2
+        case "minor": return 1
+        default: return 0
+        }
+    }
+    
+    private func relevanceScore(for alert: WeatherAlert, selectedName: String) -> Int {
+        let selected = normalizedMatchString(selectedName)
+        let area = normalizedMatchString(alert.areaName)
+        let title = normalizedMatchString(alert.title)
+
+        let components = selected.split(separator: ",").map { String($0) }
+        let cityToken = components.first ?? selected
+        let provinceToken = components.count > 1 ? components.last ?? "" : ""
+
+        var score = 0
+
+        // Strong exact / near match
+        if !selected.isEmpty {
+            if area == selected {
+                score += 120
+            }
+            if area.contains(selected) || selected.contains(area) {
+                score += 90
+            }
+        }
+
+        // City match (most important fallback)
+        if !cityToken.isEmpty {
+            if area.contains(cityToken) {
+                score += 70
+            }
+            if title.contains(cityToken) {
+                score += 20
+            }
+        }
+
+        // Province-level match (broad regional relevance)
+        if !provinceToken.isEmpty {
+            if area.contains(provinceToken) {
+                score += 25
+            }
+        }
+
+        // Generic regional keywords boost (helps rural / reserve naming cases)
+        if area.contains("res") || area.contains("county") || area.contains("region") {
+            score += 10
+        }
+
+        return score
+    }
+
+    private func normalizedMatchString(_ value: String) -> String {
+        value
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .replacingOccurrences(of: ".", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+    }
+
+    private func currentSelectedLocationName() -> String {
+        UserDefaults.standard.string(forKey: "yawa.can.selectedLocationDisplayName") ?? ""
+    }
+    
+    
+}
+
+private struct CanadaAlertFeatureCollection: Decodable {
+    let features: [CanadaAlertFeature]
+}
+
+private struct CanadaAlertFeature: Decodable {
+    let id: String?
+    let geometry: CanadaAlertGeometry?
+    let properties: CanadaAlertProperties?
+}
+
+private enum CanadaAlertGeometry: Decodable {
+    case polygon([[[Double]]])
+    case multiPolygon([[[[Double]]]])
+
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case coordinates
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let type = try container.decode(String.self, forKey: .type)
+
+        switch type {
+        case "Polygon":
+            self = .polygon(try container.decode([[[Double]]].self, forKey: .coordinates))
+        case "MultiPolygon":
+            self = .multiPolygon(try container.decode([[[[Double]]]].self, forKey: .coordinates))
+        default:
+            throw DecodingError.dataCorruptedError(forKey: .type, in: container, debugDescription: "Unsupported geometry type")
+        }
+    }
+
+    func contains(point: (lon: Double, lat: Double)) -> Bool {
+        switch self {
+        case .polygon(let rings):
+            return Self.polygonContains(point: point, rings: rings)
+        case .multiPolygon(let polygons):
+            return polygons.contains { Self.polygonContains(point: point, rings: $0) }
+        }
+    }
+
+    private static func polygonContains(point: (lon: Double, lat: Double), rings: [[[Double]]]) -> Bool {
+        guard let outer = rings.first else { return false }
+        guard ringContains(point: point, ring: outer) else { return false }
+
+        for hole in rings.dropFirst() {
+            if ringContains(point: point, ring: hole) {
+                return false
+            }
+        }
+
+        return true
+    }
+
+    private static func ringContains(point: (lon: Double, lat: Double), ring: [[Double]]) -> Bool {
+        guard ring.count > 2 else { return false }
+
+        var contains = false
+        var j = ring.count - 1
+
+        for i in ring.indices {
+            guard ring[i].count >= 2, ring[j].count >= 2 else {
+                j = i
+                continue
+            }
+
+            let xi = ring[i][0]
+            let yi = ring[i][1]
+            let xj = ring[j][0]
+            let yj = ring[j][1]
+
+            let intersects = ((yi > point.lat) != (yj > point.lat)) &&
+                (point.lon < (xj - xi) * (point.lat - yi) / ((yj - yi) == 0 ? 0.0000001 : (yj - yi)) + xi)
+
+            if intersects {
+                contains.toggle()
+            }
+
+            j = i
+        }
+
+        return contains
+    }
+}
+
+private struct CanadaAlertProperties: Decodable {
+    let title: String?
+    let summary: String?
+    let areaName: String?
+    let severity: String?
+    let issuedAt: Date?
+    let expires: Date?
+
+    private enum CodingKeys: String, CodingKey {
+        case alertNameEn = "alert_name_en"
+        case alertShortNameEn = "alert_short_name_en"
+        case alertTextEn = "alert_text_en"
+        case featureNameEn = "feature_name_en"
+        case impactEn = "impact_en"
+        case publicationDatetime = "publication_datetime"
+        case expirationDatetime = "expiration_datetime"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        title = Self.firstString(container, keys: [.alertNameEn, .alertShortNameEn])
+        summary = Self.firstString(container, keys: [.alertTextEn])
+        areaName = Self.firstString(container, keys: [.featureNameEn])
+        severity = Self.firstString(container, keys: [.impactEn])
+        issuedAt = Self.firstDate(container, keys: [.publicationDatetime])
+        expires = Self.firstDate(container, keys: [.expirationDatetime])
+    }
+
+    private static func firstString(_ container: KeyedDecodingContainer<CodingKeys>, keys: [CodingKeys]) -> String? {
+        for key in keys {
+            if let value = try? container.decode(String.self, forKey: key),
+               !value.isEmpty {
+                return value
+            }
+        }
+        return nil
+    }
+
+    private static func firstDate(_ container: KeyedDecodingContainer<CodingKeys>, keys: [CodingKeys]) -> Date? {
+        for key in keys {
+            if let raw = try? container.decode(String.self, forKey: key),
+               let date = parseDate(raw) {
+                return date
+            }
+        }
+        return nil
+    }
+
+    private static func parseDate(_ raw: String) -> Date? {
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = iso.date(from: raw) { return d }
+
+        let isoNoFrac = ISO8601DateFormatter()
+        isoNoFrac.formatOptions = [.withInternetDateTime]
+        return isoNoFrac.date(from: raw)
     }
 }
 
