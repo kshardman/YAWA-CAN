@@ -1433,12 +1433,13 @@ private struct AlertDetailSheet: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 12) {
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.system(size: 22, weight: .semibold))
                             .symbolRenderingMode(.hierarchical)
                             .foregroundStyle(.orange)
+                            .offset(y: 1)
 
                         VStack(alignment: .leading, spacing: 4) {
                             Text(alert.title)
@@ -1456,12 +1457,13 @@ private struct AlertDetailSheet: View {
                         Text(alert.severity)
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.orange)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
                             .background(
                                 Capsule()
-                                    .fill(Color.orange.opacity(colorScheme == .dark ? 0.16 : 0.12))
+                                    .fill(Color.orange.opacity(colorScheme == .dark ? 0.14 : 0.10))
                             )
+                            .offset(y: 2)
                     }
 
                     Divider().opacity(0.18)
@@ -1492,6 +1494,10 @@ private struct AlertDetailSheet: View {
                 .padding(.horizontal, 22)
                 .padding(.top, 18)
                 .padding(.bottom, 22)
+                .background(innerCard)
+                .padding(.horizontal, 20)
+                .padding(.top, 18)
+                .padding(.bottom, 12)
             }
             .navigationTitle("Alert")
             .navigationBarTitleDisplayMode(.inline)
@@ -1502,6 +1508,29 @@ private struct AlertDetailSheet: View {
             }
         }
         .fontDesign(.rounded)
+    }
+
+    private var innerCard: some View {
+        RoundedRectangle(cornerRadius: 20, style: .continuous)
+            .fill(
+                colorScheme == .dark
+                ? Color(red: 0.05, green: 0.07, blue: 0.12).opacity(0.95)
+                : Color(.systemBackground)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder(
+                        colorScheme == .dark
+                        ? Color.white.opacity(0.05)
+                        : Color.black.opacity(0.04),
+                        lineWidth: 1
+                    )
+            )
+            .shadow(
+                color: Color.black.opacity(colorScheme == .dark ? 0.22 : 0.05),
+                radius: 10,
+                y: 4
+            )
     }
 }
 
