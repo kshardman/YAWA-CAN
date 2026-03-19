@@ -13,6 +13,22 @@ import UIKit
 /// - Toronto is used only as a final fallback if no locations exist.
 /// - Units adapt by selected country: Canada uses °C / km/h / kPa, U.S. uses °F / mph / inHg.
 
+private func alertSeverityColor(_ severity: String) -> Color {
+    switch severity.lowercased() {
+    case "extreme":
+        return .red
+    case "severe":
+        return Color.orange.opacity(0.9)
+    case "moderate":
+        return .orange
+    case "minor":
+        return .yellow
+    default:
+        return .orange
+    }
+}
+
+
 struct ContentView: View {
     @StateObject private var viewModel = WeatherViewModel(service: OpenMeteoWeatherService())
     @StateObject private var locationStore = LocationStore()
@@ -578,12 +594,11 @@ struct ContentView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 6) {
                             Image(systemName: "exclamationmark.triangle.fill")
-                                .font(.subheadline)
-                                .symbolRenderingMode(.hierarchical)
-                                .foregroundStyle(.orange)
-                                .opacity(0.95)
+                                .font(.subheadline.weight(.semibold))
+                                .symbolRenderingMode(.monochrome)
+                                .foregroundStyle(alertSeverityColor(alert.severity))
 
-                            Text(alert.title)
+                            Text(normalizedAlertTitle(alert.title))
                                 .font(.subheadline.weight(.semibold))
                                 .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
                                 .lineLimit(1)
@@ -592,7 +607,7 @@ struct ContentView: View {
 
                             Text(alert.severity)
                                 .font(.caption.weight(.semibold))
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(alertSeverityColor(alert.severity))
                         }
 
                         Text(alert.summary)
@@ -735,7 +750,26 @@ struct ContentView: View {
         }
         .tileStyle()
     }
+    
+    private func normalizedAlertTitle(_ title: String) -> String {
+        title
+            .replacingOccurrences(of: "-", with: " ")
+            .split(separator: " ")
+            .map { word in
+                let lower = word.lowercased()
 
+                // keep small words lowercase unless first
+                let smallWords = ["of", "and", "in", "for", "to", "with"]
+
+                if smallWords.contains(lower) {
+                    return lower
+                }
+
+                return lower.prefix(1).uppercased() + lower.dropFirst()
+            }
+            .joined(separator: " ")
+    }
+    
     private func refinedDailyRowConditionText(for day: DailyForecastDay) -> String {
         let raw = day.conditionText.trimmingCharacters(in: .whitespacesAndNewlines)
         let lower = raw.lowercased()
@@ -1460,17 +1494,6 @@ private struct ForecastDetailSelection: Identifiable {
         @Environment(\.dismiss) private var dismiss
         @Environment(\.colorScheme) private var colorScheme
 
-        // Severity color mapping helper
-        private var severityColor: Color {
-            switch alert.severity.lowercased() {
-            case "extreme": return .red
-            case "severe": return Color.orange.opacity(0.9)
-            case "moderate": return .orange
-            case "minor": return .yellow
-            default: return .orange
-            }
-        }
-
         var body: some View {
             NavigationStack {
                 ScrollView {
@@ -1478,8 +1501,8 @@ private struct ForecastDetailSelection: Identifiable {
                         HStack(alignment: .top, spacing: 10) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .font(.system(size: 22, weight: .semibold))
-                                .symbolRenderingMode(.hierarchical)
-                                .foregroundStyle(severityColor)
+                                .symbolRenderingMode(.monochrome)
+                                .foregroundStyle(alertSeverityColor(alert.severity))
                                 .offset(y: 1)
 
                             VStack(alignment: .leading, spacing: 4) {
@@ -1497,12 +1520,12 @@ private struct ForecastDetailSelection: Identifiable {
 
                             Text(alert.severity)
                                 .font(.caption.weight(.semibold))
-                                .foregroundStyle(severityColor)
+                                .foregroundStyle(alertSeverityColor(alert.severity))
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 4)
                                 .background(
                                     Capsule()
-                                        .fill(severityColor.opacity(colorScheme == .dark ? 0.14 : 0.10))
+                                        .fill(alertSeverityColor(alert.severity).opacity(colorScheme == .dark ? 0.14 : 0.10))
                                 )
                                 .offset(y: 2)
                         }
@@ -2963,4 +2986,5 @@ private func comfortSummaryText(for current: CurrentConditions) -> String {
 #Preview {
     ContentView()
 }
+
 
