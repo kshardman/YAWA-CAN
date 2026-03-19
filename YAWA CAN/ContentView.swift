@@ -2971,7 +2971,7 @@ private struct DailyForecastDetailSheet: View {
                             .foregroundStyle(.secondary)
 
                         Text(forecastSummary)
-                            .font(.body)
+                            .font(.subheadline)
                             .foregroundStyle(.primary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
