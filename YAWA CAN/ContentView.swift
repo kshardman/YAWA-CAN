@@ -576,8 +576,11 @@ struct ContentView: View {
             print("Coordinates: \(selectedLocationForAlerts.coordinate.latitude), \(selectedLocationForAlerts.coordinate.longitude)")
             
             // Tight city delta first
-            let tightDelta = 0.35
+            let tightDelta = 0.20
+            let wideDelta = 0.75   // regional fallback
+            
             print("Trying tight city delta \(tightDelta)...")
+            
             var alerts = try await CanadaAlertService().fetchAlerts(
                 withDelta: tightDelta,
                 for: selectedLocationForAlerts.coordinate,
@@ -586,7 +589,6 @@ struct ContentView: View {
             
             // If nothing, widen
             if alerts.isEmpty {
-                let wideDelta = 0.75
                 usedWideDelta = true
                 print("No alerts → widening to delta \(wideDelta)...")
                 alerts = try await CanadaAlertService().fetchAlerts(
@@ -657,14 +659,14 @@ struct ContentView: View {
                     }
                     .buttonStyle(.plain)
                     
-                    // ← ADD THIS BLOCK HERE (after first alert, before "more" row and Divider)
-                    if usedWideDelta {
-                        Text("(Nearby region)")
-                            .font(.caption2.italic())
-                            .foregroundStyle(.secondary)
-                            .padding(.top, 2)
-                            .padding(.leading, 4)  // slight indent for visual flow
-                    }
+//                    // ← ADD THIS BLOCK HERE (after first alert, before "more" row and Divider)
+//                    if usedWideDelta {
+//                        Text("(Nearby region)")
+//                            .font(.caption2.italic())
+//                            .foregroundStyle(.secondary)
+//                            .padding(.top, 2)
+//                            .padding(.leading, 4)  // slight indent for visual flow
+//                    }
                     
                     // "+ more" tappable row (only if more alerts exist)
                     if activeAlertsForSelectedLocation.count > 1 {
@@ -1917,41 +1919,67 @@ private struct AlertDetailSheet: View {
 private struct AllAlertsSheet: View {
     let alerts: [WeatherAlert]
     
+    @State private var selectedAlertInSheet: WeatherAlert? = nil  // Temp state for detail sheet
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
         NavigationStack {
             List {
                 ForEach(alerts) { alert in
                     Button {
-                        // You could set selectedAlert here if you want to open detail immediately,
-                        // but for simplicity, just show title/area/expiry in list
+                        selectedAlertInSheet = alert  // Open detail sheet
                     } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(normalizedAlertTitle(alert.title))
-                                .font(.headline)
-                                .foregroundStyle(.primary)
-                            
-                            Text("Area: \(alert.areaName)")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                            
-                            Text(alert.expiresSoonText ?? alert.severity)
-                                .font(.caption)
-                                .foregroundStyle(alertSeverityColor(alert.severity))
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .font(.title3)
+                                    .symbolRenderingMode(.monochrome)
+                                    .foregroundStyle(alertSeverityColor(alert.severity))
+                                
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(normalizedAlertTitle(alert.title))
+                                        .font(.headline)
+                                        .foregroundStyle(.primary)
+                                        .lineLimit(1)
+                                    
+                                    Text("Area: \(alert.areaName)")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
+                                    
+                                    Text(alert.expiresSoonText ?? alert.severity)
+                                        .font(.caption)
+                                        .foregroundStyle(alertSeverityColor(alert.severity))
+                                }
+                                
+                                Spacer()
+                                
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                            }
                         }
-                        .padding(.vertical, 4)
+                        .padding(.vertical, 8)
                     }
                 }
             }
-            .navigationTitle("All Active Alerts")
+            .listStyle(.plain)
+            .navigationTitle("All Active Alerts (\(alerts.count))")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
                 }
             }
+            .sheet(item: $selectedAlertInSheet) { alert in
+                AlertDetailSheet(alert: alert)
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
+            }
         }
+        .fontDesign(.rounded)
     }
 }
 
