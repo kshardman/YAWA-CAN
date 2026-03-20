@@ -24,6 +24,21 @@ private func alertSeverityColor(_ severity: String) -> Color {
     }
 }
 
+private func normalizedAlertTitle(_ title: String) -> String {
+    title
+        .replacingOccurrences(of: "-", with: " ")
+        .split(separator: " ")
+        .map { word in
+            let lower = word.lowercased()
+            let smallWords = ["of", "and", "in", "for", "to", "with"]
+            if smallWords.contains(lower) {
+                return lower
+            }
+            return lower.prefix(1).uppercased() + lower.dropFirst()
+        }
+        .joined(separator: " ")
+}
+
 struct ContentView: View {
     @StateObject private var viewModel = WeatherViewModel(service: OpenMeteoWeatherService())
     @StateObject private var locationStore = LocationStore()
@@ -39,6 +54,10 @@ struct ContentView: View {
     @State private var forecastDetailDetent: PresentationDetent = .fraction(0.7)
     
     @State private var selectedAlert: WeatherAlert? = nil
+    
+    @State private var showingAllAlerts = false
+    
+    @State private var usedWideDelta = false
     
     @AppStorage("yawa.can.isCurrentLocationSelected") private var isCurrentLocationSelected: Bool = false
     
@@ -554,119 +573,159 @@ struct ContentView: View {
         
         do {
             print("=== Starting alert fetch for: \(selectedLocationForAlerts.displayName) ===")
-            print("Country: \(selectedLocationForAlerts.countryCode)")
             print("Coordinates: \(selectedLocationForAlerts.coordinate.latitude), \(selectedLocationForAlerts.coordinate.longitude)")
             
-            let alerts = try await CanadaAlertService().activeAlerts(
+            // Tight city delta first
+            let tightDelta = 0.35
+            print("Trying tight city delta \(tightDelta)...")
+            var alerts = try await CanadaAlertService().fetchAlerts(
+                withDelta: tightDelta,
                 for: selectedLocationForAlerts.coordinate,
                 countryCode: selectedLocationForAlerts.countryCode
             )
             
-            print("Fetch completed successfully. Found \(alerts.count) active alerts:")
-            
+            // If nothing, widen
             if alerts.isEmpty {
-                print("→ No active alerts returned from GeoMet API")
+                let wideDelta = 0.75
+                usedWideDelta = true
+                print("No alerts → widening to delta \(wideDelta)...")
+                alerts = try await CanadaAlertService().fetchAlerts(
+                    withDelta: wideDelta,
+                    for: selectedLocationForAlerts.coordinate,
+                    countryCode: selectedLocationForAlerts.countryCode
+                )
             } else {
-                for (index, alert) in alerts.enumerated() {
-                    print("Alert #\(index + 1):")
-                    print("  Title:    \(alert.title)")
-                    print("  Severity: \(alert.severity)")
-                    print("  Area:     \(alert.areaName)")
-                    print("  Issued:   \(alert.issuedAt?.formatted(date: .abbreviated, time: .shortened) ?? "unknown")")
-                    print("  Expires:  \(alert.expiresAt?.formatted(date: .abbreviated, time: .shortened) ?? "unknown")")
-                    print("  Summary preview: \(String(alert.summary.prefix(120)))…")
-                    print("---")
-                }
+                print("Found \(alerts.count) alerts in tight range")
             }
             
             activeAlerts = alerts.sorted { ($0.expiresAt ?? .distantFuture) < ($1.expiresAt ?? .distantFuture) }
             
-            print("Assigned to activeAlerts (sorted by expiry): \(activeAlerts.count) items")
+            print("Final active alerts count: \(activeAlerts.count)")
             
         } catch {
-            print("Alert fetch FAILED for \(selectedLocationForAlerts.displayName):")
-            print("Error: \(error.localizedDescription)")
-            if let urlError = error as? URLError {
-                print("URL error code: \(urlError.code.rawValue)")
-            }
+            print("Alert fetch FAILED: \(error.localizedDescription)")
             activeAlerts = []
         }
-        
-        print("Final activeAlerts count: \(activeAlerts.count)\n")
     }
 
     private func dailyTile(_ snap: WeatherSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-
-            if let alert = activeAlertsForSelectedLocation.first {
-                Button {
-                    selectedAlert = alert
-                } label: {
-                    VStack(alignment: .leading, spacing: 8) {
+            
+            // Alerts section – always show first alert + tappable "more" if needed
+            if let firstAlert = activeAlertsForSelectedLocation.first {
+                VStack(alignment: .leading, spacing: 8) {
+                    Button {
+                        selectedAlert = firstAlert
+                    } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .font(.subheadline.weight(.semibold))
                                 .symbolRenderingMode(.monochrome)
-                                .foregroundStyle(alertSeverityColor(alert.severity))
-
-                            Text(normalizedAlertTitle(alert.title))
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
-                                .lineLimit(1)
-
+                                .foregroundStyle(alertSeverityColor(firstAlert.severity))
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(normalizedAlertTitle(firstAlert.title))
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
+                                    .lineLimit(1)
+                                
+ //                               Text("Area: \(firstAlert.areaName)")
+                                Text("\(firstAlert.areaName)")
+                                    .font(.caption)
+                                        .fontWeight(.medium)
+                                        .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
+//                                    .font(.caption2)
+//                                    .foregroundStyle(YAWATheme.textTertiary(for: colorScheme))
+                            }
+                            
                             Spacer()
-
-                            Text(alert.severity)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(alertSeverityColor(alert.severity))
+                            
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text(firstAlert.severity)
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(alertSeverityColor(firstAlert.severity))
+                                
+                                Text(firstAlert.expiresSoonText ?? "")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
-
-                        Text(alertCardSubtitle(for: alert))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                            .truncationMode(.tail)
-
-                        Text("Area: \(alert.areaName)")
-                            .font(.caption2)
-                            .foregroundStyle(YAWATheme.textTertiary(for: colorScheme))
-                        
-                        Text(alert.expiresSoonText ?? alert.severity)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(alertSeverityColor(alert.severity))
+                        .padding(.vertical, 8)
+                        .contentShape(Rectangle())
                     }
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
+                    
+                    // ← ADD THIS BLOCK HERE (after first alert, before "more" row and Divider)
+                    if usedWideDelta {
+                        Text("(Nearby region)")
+                            .font(.caption2.italic())
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 2)
+                            .padding(.leading, 4)  // slight indent for visual flow
+                    }
+                    
+                    // "+ more" tappable row (only if more alerts exist)
+                    if activeAlertsForSelectedLocation.count > 1 {
+                        Button {
+                            showingAllAlerts = true
+                        } label: {
+                            HStack {
+                                Text("+\(activeAlertsForSelectedLocation.count - 1) more alerts")
+                                    .font(.subheadline.weight(.medium))
+                                    .foregroundStyle(.tint)
+                                
+                                Spacer()
+                                
+                                Image(systemName: "chevron.right")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(.tint)
+                            }
+                            .padding(.vertical, 6)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
-                .buttonStyle(.plain)
-
-                Divider().opacity(0.5)
+                .padding(.horizontal, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.yellow.opacity(colorScheme == .dark ? 0.15 : 0.25))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(alertSeverityColor(firstAlert.severity).opacity(0.5), lineWidth: 1)
+                )
+                
+                Divider().opacity(0.5).padding(.vertical, 4)
             }
-
-            // Header row
+            
+            // Forecast header – always visible
             HStack(spacing: 6) {
                 Image(systemName: "calendar")
                     .font(.subheadline)
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(YAWATheme.symbolColor("calendar", scheme: colorScheme))
                     .opacity(0.85)
-
+                
                 Text("\(max(1, min(forecastDaysToShow, 10)))-Day Forecast")
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
-
+                
                 Spacer()
             }
-
-            // Forecast rows
+            
+            // Forecast rows – now always visible below alerts
             let daysToShow = max(1, min(forecastDaysToShow, 10))
             let days: [DailyForecastDay] = Array(snap.daily.prefix(daysToShow))
-
+            
             ForEach(Array(days.enumerated()), id: \.offset) { idx, day in
                 let weekdayW: CGFloat = 40
                 let dateW: CGFloat = 32
                 let iconW: CGFloat = 36
-
+                
                 let sym = day.symbolName
                 Button {
                     selectedDaySelection = ForecastDetailSelection(
@@ -679,6 +738,7 @@ struct ContentView: View {
                     )
                 } label: {
                     HStack(spacing: 4) {
+                        // Left block: weekday/date/icon/PoP (unchanged)
                         HStack(spacing: 4) {
                             HStack(spacing: 2) {
                                 Text(weekdayLabel(day.date, timeZoneID: snap.timeZoneID))
@@ -686,7 +746,7 @@ struct ContentView: View {
                                     .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
                                     .lineLimit(1)
                                     .frame(width: weekdayW, alignment: .leading)
-
+                                
                                 Text(dateLabel(day.date, timeZoneID: snap.timeZoneID))
                                     .font(.caption)
                                     .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
@@ -694,11 +754,11 @@ struct ContentView: View {
                                     .lineLimit(1)
                                     .frame(width: dateW, alignment: .leading)
                             }
-
+                            
                             let rawPop = day.precipChancePercent
                             let roundedPop = max(0, min(100, Int((Double(rawPop) / 10.0).rounded() * 10.0)))
                             let popText: String? = (roundedPop > 0) ? "\(roundedPop)%" : nil
-
+                            
                             Group {
                                 if let popText {
                                     VStack(spacing: 2) {
@@ -707,7 +767,7 @@ struct ContentView: View {
                                             .foregroundStyle(YAWATheme.symbolColor(sym, scheme: colorScheme))
                                             .font(.title3)
                                             .frame(height: 18, alignment: .center)
-
+                                        
                                         Text(popText)
                                             .font(popText == "100%" ? .caption2.weight(.semibold) : .caption2)
                                             .monospacedDigit()
@@ -725,16 +785,18 @@ struct ContentView: View {
                             .frame(width: iconW, height: 34, alignment: .center)
                         }
                         .frame(width: weekdayW + dateW + 4 + iconW + 2, alignment: .leading)
-
+                        
+                        // Forecast text
                         Text(refinedDailyRowConditionText(for: day))
                             .font(.subheadline)
                             .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
                             .layoutPriority(2)
                             .lineLimit(1)
                             .minimumScaleFactor(0.85)
-
+                        
                         Spacer(minLength: 8)
-
+                        
+                        // High/Low
                         Text("H \(tempDisplay(day.highC))  L \(tempDisplay(day.lowC))")
                             .font(.subheadline.weight(.semibold))
                             .monospacedDigit()
@@ -745,34 +807,26 @@ struct ContentView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-
+                
                 if idx != days.count - 1 {
                     Divider().opacity(0.5)
                 }
             }
-
+            
             Text("Source: Open-Meteo")
                 .font(.caption)
                 .foregroundStyle(YAWATheme.textSecondary(for: colorScheme).opacity(0.9))
                 .padding(.top, 8)
         }
         .tileStyle()
+        .sheet(isPresented: $showingAllAlerts) {
+            AllAlertsSheet(alerts: activeAlertsForSelectedLocation)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
     }
     
-    private func normalizedAlertTitle(_ title: String) -> String {
-        title
-            .replacingOccurrences(of: "-", with: " ")
-            .split(separator: " ")
-            .map { word in
-                let lower = word.lowercased()
-                let smallWords = ["of", "and", "in", "for", "to", "with"]
-                if smallWords.contains(lower) {
-                    return lower
-                }
-                return lower.prefix(1).uppercased() + lower.dropFirst()
-            }
-            .joined(separator: " ")
-    }
+
     
     private func refinedDailyRowConditionText(for day: DailyForecastDay) -> String {
         let raw = day.conditionText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1497,6 +1551,7 @@ private struct AlertDetailSheet: View {
                             Text("Area: \(alert.areaName)")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
+                            
                         }
 
                         Spacer(minLength: 8)
@@ -1859,6 +1914,48 @@ private struct AlertDetailSheet: View {
         }
     }
 }
+private struct AllAlertsSheet: View {
+    let alerts: [WeatherAlert]
+    
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(alerts) { alert in
+                    Button {
+                        // You could set selectedAlert here if you want to open detail immediately,
+                        // but for simplicity, just show title/area/expiry in list
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(normalizedAlertTitle(alert.title))
+                                .font(.headline)
+                                .foregroundStyle(.primary)
+                            
+                            Text("Area: \(alert.areaName)")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            
+                            Text(alert.expiresSoonText ?? alert.severity)
+                                .font(.caption)
+                                .foregroundStyle(alertSeverityColor(alert.severity))
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+            }
+            .navigationTitle("All Active Alerts")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+
 
 // MARK: - Styling
 
@@ -1886,7 +1983,7 @@ private func alertCardSubtitle(for alert: WeatherAlert) -> String {
 }
 
 struct WeatherAlert: Identifiable, Equatable {
-    let id: String
+    let id = UUID().uuidString  // ← Always unique UUID
     let title: String
     let severity: String
     let summary: String
@@ -1910,15 +2007,25 @@ private protocol AlertServiceProtocol {
 
 struct CanadaAlertService: AlertServiceProtocol {
     
-    func activeAlerts(for coordinate: CLLocationCoordinate2D, countryCode: String) async throws -> [WeatherAlert] {
+    // Main protocol method – uses tight default delta
+    func activeAlerts(
+        for coordinate: CLLocationCoordinate2D,
+        countryCode: String
+    ) async throws -> [WeatherAlert] {
+        return try await fetchAlerts(
+            withDelta: 0.35,  // tight city default
+            for: coordinate,
+            countryCode: countryCode
+        )
+    }
+    
+    // Reusable helper – accessible from outside the struct (internal access)
+    func fetchAlerts(
+        withDelta delta: Double,
+        for coordinate: CLLocationCoordinate2D,
+        countryCode: String
+    ) async throws -> [WeatherAlert] {
         guard countryCode == "CA" else { return [] }
-        
-        // Dynamic delta
-        let delta: Double = {
-            if coordinate.latitude > 60 { return 0.70 }     // Northern Canada
-            if coordinate.latitude > 49 { return 0.55 }     // BC/southern Canada
-            return 0.45                                     // Default
-        }()
         
         let bbox = "\(coordinate.longitude - delta),\(coordinate.latitude - delta),\(coordinate.longitude + delta),\(coordinate.latitude + delta)"
         
@@ -1927,7 +2034,7 @@ struct CanadaAlertService: AlertServiceProtocol {
             throw URLError(.badURL)
         }
         
-        print("Querying GeoMet API: \(url.absoluteString)")
+        print("Querying GeoMet API (delta \(delta)): \(url.absoluteString)")
         
         let (data, _) = try await URLSession.shared.data(from: url)
         
@@ -1961,7 +2068,6 @@ struct CanadaAlertService: AlertServiceProtocol {
                     .withColonSeparatorInTime,
                     .withFractionalSeconds
                 ]
-                // Do NOT set f.timeZone here — let it parse from string
                 return f
             }()
             
@@ -1992,7 +2098,6 @@ struct CanadaAlertService: AlertServiceProtocol {
             .filter { $0.isActive }
             .map { prop in
                 WeatherAlert(
-                    id: prop.publication_datetime ?? UUID().uuidString,
                     title: prop.alert_name_en ?? "Weather Alert",
                     severity: prop.severity_en?.capitalized ?? "Moderate",
                     summary: prop.alert_text_en ?? "No details available",
