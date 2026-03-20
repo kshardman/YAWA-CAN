@@ -8,10 +8,6 @@ import UIKit
 // YAWA CAN - Main ContentView
 /// Uses `WeatherViewModel` + `WeatherServiceProtocol` (Open-Meteo service) and renders
 /// the core YAWA UX: current tile, hourly temp chart, and 7‑day forecast.
-//
-/// - Loads the last-selected location, otherwise the first saved favorite.
-/// - Toronto is used only as a final fallback if no locations exist.
-/// - Units adapt by selected country: Canada uses °C / km/h / kPa, U.S. uses °F / mph / inHg.
 
 private func alertSeverityColor(_ severity: String) -> Color {
     switch severity.lowercased() {
@@ -28,12 +24,10 @@ private func alertSeverityColor(_ severity: String) -> Color {
     }
 }
 
-
 struct ContentView: View {
     @StateObject private var viewModel = WeatherViewModel(service: OpenMeteoWeatherService())
     @StateObject private var locationStore = LocationStore()
     @StateObject private var locationResolver = LocationResolver()
-    
 
     @State private var showingLocations = false
     @State private var selected: SavedLocation? = nil
@@ -108,7 +102,6 @@ struct ContentView: View {
     
     @State private var lastForegroundRefreshAt: Date? = nil
 
-    // Use the shared YAWA theme background so CAN matches NOAA styling.
     private var appBackground: Color {
         YAWATheme.background(for: colorScheme)
     }
@@ -130,7 +123,6 @@ struct ContentView: View {
                 ScrollViewReader { proxy in
                     ScrollView {
                         VStack(spacing: 12) {
-                            // Scroll-to-top anchor
                             Color.clear
                                 .frame(height: 0)
                                 .id("top")
@@ -169,13 +161,12 @@ struct ContentView: View {
                         await refreshWeather()
                     }
                     .onChange(of: selected?.id) { _, _ in
-                        // When a new location is selected, jump back to the top so the current card is visible.
                         withAnimation(.easeInOut(duration: 0.25)) {
                             proxy.scrollTo("top", anchor: .top)
                         }
                     }
                 }
-                // Easter egg overlay (drops from the nav bar)
+
                 if showEasterEgg {
                     easterEggOverlay
                         .padding(.horizontal, 12)
@@ -208,12 +199,10 @@ struct ContentView: View {
                     .accessibilityLabel("Settings")
                 }
             }
-            // Make the nav bar match the background.
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarBackground(YAWATheme.background(for: colorScheme), for: .navigationBar)
         }
         .task {
-            // Initial selection: whatever the user last chose in Locations, otherwise the first saved favorite.
             let initial = locationStore.selected ?? locationStore.favorites.first ?? SavedLocation.toronto
             selected = initial
             UserDefaults.standard.set(initial.displayName, forKey: "yawa.can.selectedLocationDisplayName")
@@ -352,6 +341,7 @@ struct ContentView: View {
         .buttonStyle(.plain)
         .accessibilityLabel("Choose location")
     }
+
     private var loadingRow: some View {
         HStack(spacing: 10) {
             ProgressView()
@@ -410,7 +400,6 @@ struct ContentView: View {
             }
 
             HStack(alignment: .center, spacing: 12) {
-                // Temperature
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(currentTemperatureValueText(snap.current.temperatureC))
                         .font(.system(size: 56, weight: .semibold, design: .rounded))
@@ -430,7 +419,6 @@ struct ContentView: View {
 
                 Spacer(minLength: 12)
 
-                // Supporting metrics (icons right next to values)
                 VStack(alignment: .trailing, spacing: 6) {
                     metricIconValue(icon: "wind", value: windValueText(for: snap.current))
                     metricIconValue(icon: "humidity.fill", value: "\(Int(round(snap.current.humidityPercent)))%")
@@ -461,7 +449,6 @@ struct ContentView: View {
                 Spacer()
             }
 
-            // Align the big value baseline with the “Feels like” label.
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Image(systemName: "thermometer")
@@ -469,7 +456,6 @@ struct ContentView: View {
                         .symbolRenderingMode(.hierarchical)
                         .foregroundStyle(YAWATheme.symbolColor("thermometer", scheme: colorScheme))
                         .opacity(colorScheme == .dark ? 0.90 : 0.82)
-                        // Images don’t have a text baseline; pin to bottom so it participates nicely.
                         .alignmentGuide(.firstTextBaseline) { d in d[.bottom] }
 
                     Text("Feels like")
@@ -499,12 +485,10 @@ struct ContentView: View {
         .tileStyle()
     }
 
-    // Swap day/night icons like YAWA NOAA (sun by day, moon by night) using sunrise/sunset.
     private func nowSymbolName(for snap: WeatherSnapshot) -> String {
         let base = snap.current.symbolName
         guard isNight(for: snap) else { return base }
 
-        // Map common “day” symbols to their night equivalents.
         switch base {
         case "sun.max.fill", "sun.max":
             return "moon.stars.fill"
@@ -513,7 +497,6 @@ struct ContentView: View {
         case "cloud.sun.rain.fill", "cloud.sun.rain":
             return "cloud.moon.rain.fill"
         default:
-            // If the service already provides a moon icon (or it's not a day-specific icon), keep it.
             return base
         }
     }
@@ -521,7 +504,6 @@ struct ContentView: View {
     private func isNight(for snap: WeatherSnapshot) -> Bool {
         guard let sun = snap.sun else { return false }
 
-        // Use the snapshot time zone when available so day/night matches the selected location.
         let tz: TimeZone? = {
             let id = snap.timeZoneID.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !id.isEmpty else { return nil }
@@ -530,13 +512,11 @@ struct ContentView: View {
 
         let now = Date()
         if let tz {
-            // Compare by converting all dates to the same time zone.
             let cal = Calendar.current
             let nowComp = cal.dateComponents(in: tz, from: now)
             let srComp = cal.dateComponents(in: tz, from: sun.sunrise)
             let ssComp = cal.dateComponents(in: tz, from: sun.sunset)
 
-            // Rebuild comparable Date values anchored in that time zone.
             guard
                 let nowZ = Calendar(identifier: cal.identifier).date(from: nowComp),
                 let srZ  = Calendar(identifier: cal.identifier).date(from: srComp),
@@ -547,7 +527,6 @@ struct ContentView: View {
             return !(nowZ >= srZ && nowZ <= ssZ)
         }
 
-        // Fallback: compare directly.
         return !(now >= sun.sunrise && now <= sun.sunset)
     }
 
@@ -569,20 +548,52 @@ struct ContentView: View {
             isLoadingAlerts = false
             return
         }
-
+        
         isLoadingAlerts = true
         defer { isLoadingAlerts = false }
-
+        
         do {
-            activeAlerts = try await CanadaAlertService().activeAlerts(
+            print("=== Starting alert fetch for: \(selectedLocationForAlerts.displayName) ===")
+            print("Country: \(selectedLocationForAlerts.countryCode)")
+            print("Coordinates: \(selectedLocationForAlerts.coordinate.latitude), \(selectedLocationForAlerts.coordinate.longitude)")
+            
+            let alerts = try await CanadaAlertService().activeAlerts(
                 for: selectedLocationForAlerts.coordinate,
                 countryCode: selectedLocationForAlerts.countryCode
             )
+            
+            print("Fetch completed successfully. Found \(alerts.count) active alerts:")
+            
+            if alerts.isEmpty {
+                print("→ No active alerts returned from GeoMet API")
+            } else {
+                for (index, alert) in alerts.enumerated() {
+                    print("Alert #\(index + 1):")
+                    print("  Title:    \(alert.title)")
+                    print("  Severity: \(alert.severity)")
+                    print("  Area:     \(alert.areaName)")
+                    print("  Issued:   \(alert.issuedAt?.formatted(date: .abbreviated, time: .shortened) ?? "unknown")")
+                    print("  Expires:  \(alert.expiresAt?.formatted(date: .abbreviated, time: .shortened) ?? "unknown")")
+                    print("  Summary preview: \(String(alert.summary.prefix(120)))…")
+                    print("---")
+                }
+            }
+            
+            activeAlerts = alerts.sorted { ($0.expiresAt ?? .distantFuture) < ($1.expiresAt ?? .distantFuture) }
+            
+            print("Assigned to activeAlerts (sorted by expiry): \(activeAlerts.count) items")
+            
         } catch {
+            print("Alert fetch FAILED for \(selectedLocationForAlerts.displayName):")
+            print("Error: \(error.localizedDescription)")
+            if let urlError = error as? URLError {
+                print("URL error code: \(urlError.code.rawValue)")
+            }
             activeAlerts = []
         }
+        
+        print("Final activeAlerts count: \(activeAlerts.count)\n")
     }
-    
 
     private func dailyTile(_ snap: WeatherSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -619,6 +630,10 @@ struct ContentView: View {
                         Text("Area: \(alert.areaName)")
                             .font(.caption2)
                             .foregroundStyle(YAWATheme.textTertiary(for: colorScheme))
+                        
+                        Text(alert.expiresSoonText ?? alert.severity)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(alertSeverityColor(alert.severity))
                     }
                     .contentShape(Rectangle())
                 }
@@ -641,7 +656,6 @@ struct ContentView: View {
                     .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
 
                 Spacer()
-
             }
 
             // Forecast rows
@@ -665,7 +679,6 @@ struct ContentView: View {
                     )
                 } label: {
                     HStack(spacing: 4) {
-                        // Left block: weekday + date + icon/PoP (fixed width so everything aligns)
                         HStack(spacing: 4) {
                             HStack(spacing: 2) {
                                 Text(weekdayLabel(day.date, timeZoneID: snap.timeZoneID))
@@ -686,7 +699,6 @@ struct ContentView: View {
                             let roundedPop = max(0, min(100, Int((Double(rawPop) / 10.0).rounded() * 10.0)))
                             let popText: String? = (roundedPop > 0) ? "\(roundedPop)%" : nil
 
-                            // Icon + PoP (NOAA-style): keep a stable footprint, and avoid icon/text overlap.
                             Group {
                                 if let popText {
                                     VStack(spacing: 2) {
@@ -703,7 +715,6 @@ struct ContentView: View {
                                             .frame(height: 10, alignment: .top)
                                     }
                                 } else {
-                                    // No PoP: vertically center the icon within the same footprint.
                                     Image(systemName: sym)
                                         .symbolRenderingMode(.hierarchical)
                                         .foregroundStyle(YAWATheme.symbolColor(sym, scheme: colorScheme))
@@ -715,7 +726,6 @@ struct ContentView: View {
                         }
                         .frame(width: weekdayW + dateW + 4 + iconW + 2, alignment: .leading)
 
-                        // Brief forecast text
                         Text(refinedDailyRowConditionText(for: day))
                             .font(.subheadline)
                             .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
@@ -725,7 +735,6 @@ struct ContentView: View {
 
                         Spacer(minLength: 8)
 
-                        // Right column (fixed)
                         Text("H \(tempDisplay(day.highC))  L \(tempDisplay(day.lowC))")
                             .font(.subheadline.weight(.semibold))
                             .monospacedDigit()
@@ -742,7 +751,6 @@ struct ContentView: View {
                 }
             }
 
-            // Attribution
             Text("Source: Open-Meteo")
                 .font(.caption)
                 .foregroundStyle(YAWATheme.textSecondary(for: colorScheme).opacity(0.9))
@@ -757,14 +765,10 @@ struct ContentView: View {
             .split(separator: " ")
             .map { word in
                 let lower = word.lowercased()
-
-                // keep small words lowercase unless first
                 let smallWords = ["of", "and", "in", "for", "to", "with"]
-
                 if smallWords.contains(lower) {
                     return lower
                 }
-
                 return lower.prefix(1).uppercased() + lower.dropFirst()
             }
             .joined(separator: " ")
@@ -774,7 +778,6 @@ struct ContentView: View {
         let raw = day.conditionText.trimmingCharacters(in: .whitespacesAndNewlines)
         let lower = raw.lowercased()
 
-        // Keep explicit precip/fog/thunder wording untouched.
         if lower.contains("rain") || lower.contains("drizzle") || lower.contains("snow") ||
             lower.contains("shower") || lower.contains("thunder") || lower.contains("fog") ||
             lower.contains("ice") || lower.contains("sleet") || lower.contains("mix") {
@@ -807,8 +810,8 @@ struct ContentView: View {
 
     private func radarCard() -> some View {
         Button {
-            openRadar()           // ✅ sets radarTarget based on selected favorite / current location
-            lightHaptic()         // optional
+            openRadar()
+            lightHaptic()
         } label: {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 6) {
@@ -949,7 +952,6 @@ struct ContentView: View {
     }
 
     private func sunCardData(sun: SunTimes, timeZone: TimeZone, now: Date) -> SunCardData {
-        // Interpret all timestamps in the selected location's time zone.
         let cal = Calendar.current
         let nowComp = cal.dateComponents(in: timeZone, from: now)
         let srComp = cal.dateComponents(in: timeZone, from: sun.sunrise)
@@ -960,7 +962,6 @@ struct ContentView: View {
         let srZ  = cal2.date(from: srComp) ?? sun.sunrise
         let ssZ  = cal2.date(from: ssComp) ?? sun.sunset
 
-        // Night: keep the marker centered (matches the NOAA card vibe).
         if nowZ < srZ || nowZ > ssZ {
             return SunCardData(progressForArc: 0.5, isNight: true)
         }
@@ -998,7 +999,7 @@ struct ContentView: View {
     private func timeString(_ date: Date, timeZoneID: String?) -> String {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_CA")
-        f.dateFormat = "h:mm a"   // 12h like you requested
+        f.dateFormat = "h:mm a"
         if let tzid = timeZoneID, let tz = TimeZone(identifier: tzid) {
             f.timeZone = tz
         }
@@ -1016,7 +1017,7 @@ struct ContentView: View {
         .font(.callout)
     }
 
-private func metricIconValue(icon: String, value: String) -> some View {
+    private func metricIconValue(icon: String, value: String) -> some View {
         HStack(spacing: 5) {
             Image(systemName: icon)
                 .font(.subheadline.weight(.semibold))
@@ -1036,7 +1037,6 @@ private func metricIconValue(icon: String, value: String) -> some View {
         }
         .frame(width: 104, alignment: .trailing)
     }
-
 
     private var usesUSUnits: Bool {
         (displayedLocation?.countryCode ?? selected?.countryCode ?? locationStore.selected?.countryCode ?? "CA") == "US"
@@ -1088,7 +1088,6 @@ private func metricIconValue(icon: String, value: String) -> some View {
     private func cToF(_ celsius: Double) -> Double {
         (celsius * 9.0 / 5.0) + 32.0
     }
-    
 
     private func shortDay(_ date: Date, timeZoneID: String) -> String {
         let f = DateFormatter()
@@ -1110,7 +1109,7 @@ private func metricIconValue(icon: String, value: String) -> some View {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_CA")
         f.timeZone = TimeZone(identifier: timeZoneID) ?? .current
-        f.dateFormat = "M/d"   // matches the small date style you use in NOAA
+        f.dateFormat = "M/d"
         return f.string(from: date)
     }
 
@@ -1119,7 +1118,6 @@ private func metricIconValue(icon: String, value: String) -> some View {
         return "\(Int(round(value)))°"
     }
 
-    /// NOAA-ish: round precip to nearest 10 and clamp 0...100
     private func popTextRoundedTo10(_ percent: Int) -> String {
         let clamped = max(0, min(100, percent))
         let rounded = Int((Double(clamped) / 10.0).rounded() * 10.0)
@@ -1129,7 +1127,7 @@ private func metricIconValue(icon: String, value: String) -> some View {
     private static let sunLocalTimeFormatter: DateFormatter = {
         let f = DateFormatter()
         f.locale = .current
-        f.dateFormat = "h:mm a z"  // 12h with zone
+        f.dateFormat = "h:mm a z"
         return f
     }()
 
@@ -1146,30 +1144,19 @@ private func metricIconValue(icon: String, value: String) -> some View {
         return f.string(from: date)
     }
 
-    // MARK: - Sun card tap (tree refresh) + Easter egg
-
     @MainActor
     private func handleSunArcTap() {
-        // This is the same tap that regenerates the trees (SunArcView tap refresh).
-        // Count these taps; after 5, show the Easter egg.
-
         sunTapCount += 1
-
-        // Keep the visual behavior: tapping refreshes/re-randomizes the SunArcView.
         sunRefreshToken = Date()
 
-        // Reset the counter if the user pauses too long between taps.
         sunTapResetTask?.cancel()
         sunTapResetTask = Task { @MainActor in
             do {
-                try await Task.sleep(nanoseconds: 3_500_000_000) // 3.5s
+                try await Task.sleep(nanoseconds: 3_500_000_000)
             } catch {
-                // Cancelled: do not reset the count.
                 return
             }
-            guard !Task.isCancelled else {
-                return
-            }
+            guard !Task.isCancelled else { return }
             sunTapCount = 0
         }
 
@@ -1183,13 +1170,11 @@ private func metricIconValue(icon: String, value: String) -> some View {
             easterEggHideTask?.cancel()
             easterEggHideTask = Task { @MainActor in
                 do {
-                    try await Task.sleep(nanoseconds: 4_000_000_000) // 4.0s
+                    try await Task.sleep(nanoseconds: 4_000_000_000)
                 } catch {
                     return
                 }
-                guard !Task.isCancelled else {
-                    return
-                }
+                guard !Task.isCancelled else { return }
                 withAnimation {
                     showEasterEgg = false
                 }
@@ -1204,7 +1189,6 @@ private func metricIconValue(icon: String, value: String) -> some View {
     }
     
     private func openRadar() {
-        // Present RadarView centered on the currently selected YC location.
         let loc = selected ?? locationStore.selected ?? SavedLocation.toronto
 
         let newTarget = RadarTarget(
@@ -1213,16 +1197,14 @@ private func metricIconValue(icon: String, value: String) -> some View {
             title: loc.displayName
         )
 
-        // Deterministic presentation: if already shown, dismiss and re-present.
         Task { @MainActor in
             if radarTarget != nil {
                 radarTarget = nil
-                try? await Task.sleep(nanoseconds: 80_000_000) // 0.08s
+                try? await Task.sleep(nanoseconds: 80_000_000)
             }
             radarTarget = newTarget
         }
     }
-    
 }
 
 // MARK: - Chart
@@ -1474,6 +1456,7 @@ private struct HourlyTempChart: View {
         .animation(.easeInOut(duration: 0.25), value: precipChancePercent)
     }
 }
+
 private struct ForecastDetailSelection: Identifiable {
     let days: [DailyForecastDay]
     let initialIndex: Int
@@ -1488,428 +1471,421 @@ private struct ForecastDetailSelection: Identifiable {
     }
 }
 
-    private struct AlertDetailSheet: View {
-        let alert: WeatherAlert
+private struct AlertDetailSheet: View {
+    let alert: WeatherAlert
 
-        @Environment(\.dismiss) private var dismiss
-        @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
 
-        var body: some View {
-            NavigationStack {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack(alignment: .top, spacing: 10) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .font(.system(size: 22, weight: .semibold))
-                                .symbolRenderingMode(.monochrome)
-                                .foregroundStyle(alertSeverityColor(alert.severity))
-                                .offset(y: 1)
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 22, weight: .semibold))
+                            .symbolRenderingMode(.monochrome)
+                            .foregroundStyle(alertSeverityColor(alert.severity))
+                            .offset(y: 1)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(alert.title.replacingOccurrences(of: "^-\\s*", with: "", options: .regularExpression).localizedCapitalized)
-                    .font(.headline.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(alert.title.replacingOccurrences(of: "^-\\s*", with: "", options: .regularExpression).localizedCapitalized)
+                                .font(.headline.weight(.semibold))
+                                .foregroundStyle(.primary)
+                                .fixedSize(horizontal: false, vertical: true)
 
-//                Text(alertCardSubtitle(for: alert))
-//                    .font(.subheadline)
-//                    .foregroundStyle(.secondary)
-//                    .lineLimit(1)
-//                    .truncationMode(.tail)
-
-                Text("Area: \(alert.areaName)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-                            Spacer(minLength: 8)
-
-                            Text(alert.severity)
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(alertSeverityColor(alert.severity))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(
-                                    Capsule()
-                                        .fill(alertSeverityColor(alert.severity).opacity(colorScheme == .dark ? 0.14 : 0.10))
-                                )
-                                .offset(y: 2)
+                            Text("Area: \(alert.areaName)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
 
-                        Divider().opacity(0.18)
+                        Spacer(minLength: 8)
 
-                        VStack(alignment: .leading, spacing: 10) {
-                            ForEach(summarySections(from: alert.summary)) { section in
-                                if let title = section.title {
-                                    VStack(alignment: .leading, spacing: 6) {
-                                        Text(title)
-                                            .font(.caption.weight(.semibold))
-                                            .foregroundStyle(.secondary)
-                                            .textCase(.uppercase)
+                        Text(alert.severity)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(alertSeverityColor(alert.severity))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(
+                                Capsule()
+                                    .fill(alertSeverityColor(alert.severity).opacity(colorScheme == .dark ? 0.14 : 0.10))
+                            )
+                            .offset(y: 2)
+                    }
 
-                                        formattedSectionBody(section.body, isMetadata: section.title == nil)
-                                    }
-                                    .padding(.top, 2)
-                                } else {
+                    Divider().opacity(0.18)
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForEach(summarySections(from: alert.summary)) { section in
+                            if let title = section.title {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(title)
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(.secondary)
+                                        .textCase(.uppercase)
+
                                     formattedSectionBody(section.body, isMetadata: section.title == nil)
                                 }
+                                .padding(.top, 2)
+                            } else {
+                                formattedSectionBody(section.body, isMetadata: section.title == nil)
                             }
                         }
                     }
-                    .padding(.horizontal, 22)
-                    .padding(.top, 18)
-                    .padding(.bottom, 22)
-                    .background(innerCard)
-                    .padding(.horizontal, 20)
-                    .padding(.top, 18)
-                    .padding(.bottom, 12)
                 }
-                .navigationTitle("Alert")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("Done") { dismiss() }
-                    }
+                .padding(.horizontal, 22)
+                .padding(.top, 18)
+                .padding(.bottom, 22)
+                .background(innerCard)
+                .padding(.horizontal, 20)
+                .padding(.top, 18)
+                .padding(.bottom, 12)
+            }
+            .navigationTitle("Alert")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
                 }
             }
-            .fontDesign(.rounded)
+        }
+        .fontDesign(.rounded)
+    }
+
+    private var innerCard: some View {
+        RoundedRectangle(cornerRadius: 20, style: .continuous)
+            .fill(
+                colorScheme == .dark
+                ? Color(red: 0.05, green: 0.07, blue: 0.12).opacity(0.95)
+                : Color(.systemBackground)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder(
+                        colorScheme == .dark
+                        ? Color.white.opacity(0.05)
+                        : Color.black.opacity(0.04),
+                        lineWidth: 1
+                    )
+            )
+            .shadow(
+                color: Color.black.opacity(colorScheme == .dark ? 0.22 : 0.05),
+                radius: 10,
+                y: 4
+            )
+    }
+
+    private struct AlertSummarySection: Identifiable {
+        let id = UUID()
+        let title: String?
+        let body: String
+    }
+
+    private func summarySections(from text: String) -> [AlertSummarySection] {
+        var lines = text
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        if let first = lines.first {
+            let upper = first.uppercased()
+            if (upper.contains("WARNING") || upper.contains("STATEMENT")) && (upper.contains("AM") || upper.contains("PM")) {
+                lines.removeFirst()
+            }
         }
 
-        private var innerCard: some View {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(
-                    colorScheme == .dark
-                    ? Color(red: 0.05, green: 0.07, blue: 0.12).opacity(0.95)
-                    : Color(.systemBackground)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .strokeBorder(
-                            colorScheme == .dark
-                            ? Color.white.opacity(0.05)
-                            : Color.black.opacity(0.04),
-                            lineWidth: 1
-                        )
-                )
-                .shadow(
-                    color: Color.black.opacity(colorScheme == .dark ? 0.22 : 0.05),
-                    radius: 10,
-                    y: 4
-                )
-        }
-        private struct AlertSummarySection: Identifiable {
-            let id = UUID()
-            let title: String?
-            let body: String
-        }
+        let junkMarkers = [
+            "PLEASE CONTINUE TO MONITOR",
+            "TO REPORT SEVERE WEATHER",
+            "IN EFFECT FOR:",
+            "FOLLOW:",
+            "REGIONAL ATOM"
+        ]
 
-        private func summarySections(from text: String) -> [AlertSummarySection] {
-            var lines = text
-                .components(separatedBy: .newlines)
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
+        let selectedAreaUpper = alert.areaName.uppercased()
+        
+        let selectedCityUpper = alert.areaName
+            .components(separatedBy: ",")
+            .first?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .uppercased() ?? ""
+        
+        lines = lines.filter { line in
+            let upper = line.uppercased()
 
-            if let first = lines.first {
-                let upper = first.uppercased()
-                if (upper.contains("WARNING") || upper.contains("STATEMENT")) && (upper.contains("AM") || upper.contains("PM")) {
-                    lines.removeFirst()
-                }
+            if junkMarkers.contains(where: { upper.contains($0) }) {
+                return false
             }
 
-            let junkMarkers = [
-                "PLEASE CONTINUE TO MONITOR",
-                "TO REPORT SEVERE WEATHER",
-                "IN EFFECT FOR:",
-                "FOLLOW:",
-                "REGIONAL ATOM"
-            ]
-
-            let selectedAreaUpper = alert.areaName.uppercased()
+            if !selectedAreaUpper.isEmpty && upper == selectedAreaUpper {
+                return false
+            }
             
-            let selectedCityUpper = alert.areaName
-                .components(separatedBy: ",")
-                .first?
+            if !selectedCityUpper.isEmpty && upper == selectedCityUpper {
+                return false
+            }
+            if !selectedCityUpper.isEmpty && upper.hasPrefix(selectedCityUpper + " - ") {
+                return false
+            }
+
+            if upper.hasSuffix(" AND VICINITY") {
+                return false
+            }
+
+            return true
+        }
+
+        let sectionHeaderTitles: [String: String] = [
+            "WHAT:": "What",
+            "WHAT AND WHERE:": "What and where",
+            "WHAT AND WHEN:": "What and when",
+            "WHEN:": "When",
+            "WHERE:": "Where",
+            "IMPACTS:": "Impacts",
+            "REMARKS:": "Remarks",
+            "ADDITIONAL INFORMATION:": "Additional information",
+            "LOCATIONS:": "Locations",
+            "TOTAL SNOWFALL:": "Total snowfall",
+            "TIME SPAN:": "Time span"
+        ]
+
+        let inlineHeaderTitles: [String: String] = [
+            "WHAT:": "What",
+            "WHAT AND WHERE:": "What and where",
+            "WHAT AND WHEN:": "What and when",
+            "WHEN:": "When",
+            "WHERE:": "Where",
+            "IMPACTS:": "Impacts",
+            "REMARKS:": "Remarks",
+            "ADDITIONAL INFORMATION:": "Additional information",
+            "LOCATIONS:": "Locations",
+            "TOTAL SNOWFALL:": "Total snowfall",
+            "TIME SPAN:": "Time span"
+        ]
+
+        var sections: [AlertSummarySection] = []
+        var currentTitle: String? = nil
+        var currentLines: [String] = []
+
+        func flushCurrentSection() {
+            let body = currentLines.joined(separator: "\n")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
-                .uppercased() ?? ""
-            
-            lines = lines.filter { line in
-                let upper = line.uppercased()
+            guard !body.isEmpty else { return }
+            sections.append(AlertSummarySection(title: currentTitle, body: body))
+        }
 
-                if junkMarkers.contains(where: { upper.contains($0) }) {
-                    return false
-                }
+        for line in lines {
+            let upper = line.uppercased()
 
-                if !selectedAreaUpper.isEmpty && upper == selectedAreaUpper {
-                    return false
-                }
-                
-                if !selectedCityUpper.isEmpty && upper == selectedCityUpper {
-                    return false
-                }
-                if !selectedCityUpper.isEmpty && upper.hasPrefix(selectedCityUpper + " - ") {
-                    return false
-                }
-
-                if upper.hasSuffix(" AND VICINITY") {
-                    return false
-                }
-
-                return true
+            if let mappedTitle = sectionHeaderTitles[upper] {
+                flushCurrentSection()
+                currentTitle = mappedTitle
+                currentLines = []
+                continue
             }
 
-            let sectionHeaderTitles: [String: String] = [
-                "WHAT:": "What",
-                "WHAT AND WHERE:": "What and where",
-                "WHAT AND WHEN:": "What and when",
-                "WHEN:": "When",
-                "WHERE:": "Where",
-                "IMPACTS:": "Impacts",
-                "REMARKS:": "Remarks",
-                "ADDITIONAL INFORMATION:": "Additional information",
-                "LOCATIONS:": "Locations",
-                "TOTAL SNOWFALL:": "Total snowfall",
-                "TIME SPAN:": "Time span"
-            ]
-
-            let inlineHeaderTitles: [String: String] = [
-                "WHAT:": "What",
-                "WHAT AND WHERE:": "What and where",
-                "WHAT AND WHEN:": "What and when",
-                "WHEN:": "When",
-                "WHERE:": "Where",
-                "IMPACTS:": "Impacts",
-                "REMARKS:": "Remarks",
-                "ADDITIONAL INFORMATION:": "Additional information",
-                "LOCATIONS:": "Locations",
-                "TOTAL SNOWFALL:": "Total snowfall",
-                "TIME SPAN:": "Time span"
-            ]
-
-            var sections: [AlertSummarySection] = []
-            var currentTitle: String? = nil
-            var currentLines: [String] = []
-
-            func flushCurrentSection() {
-                let body = currentLines.joined(separator: "\n")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !body.isEmpty else { return }
-                sections.append(AlertSummarySection(title: currentTitle, body: body))
+            var handledInlineHeader = false
+            for (key, mappedTitle) in inlineHeaderTitles {
+                if upper.hasPrefix(key), upper != key {
+                    flushCurrentSection()
+                    currentTitle = mappedTitle
+                    let remainder = line.dropFirst(key.count).trimmingCharacters(in: .whitespacesAndNewlines)
+                    currentLines = remainder.isEmpty ? [] : [remainder]
+                    handledInlineHeader = true
+                    break
+                }
             }
+
+            if handledInlineHeader {
+                continue
+            }
+
+            if line.hasPrefix("-") {
+                let trimmed = String(line.drop(while: { $0 == "-" || $0 == " " }))
+                currentLines.append(trimmed.isEmpty ? "•" : "• " + trimmed)
+            } else {
+                currentLines.append(line)
+            }
+        }
+
+        flushCurrentSection()
+
+        if sections.isEmpty {
+            let metadataPrefixes = [
+                "IMPACT LEVEL:",
+                "FORECAST CONFIDENCE:"
+            ]
+
+            let whenIndicators = [
+                "BEGINNING",
+                "CONTINUE",
+                "UNTIL",
+                "THROUGH",
+                "TONIGHT",
+                "THIS AFTERNOON",
+                "THIS EVENING",
+                "FRIDAY",
+                "SATURDAY",
+                "SUNDAY",
+                "MONDAY",
+                "TUESDAY",
+                "WEDNESDAY",
+                "THURSDAY"
+            ]
+
+            let impactIndicators = [
+                "HAZARDOUS",
+                "VISIBILITY",
+                "TRAVEL",
+                "SLIPPERY",
+                "DIFFICULT TO NAVIGATE",
+                "FLOODING",
+                "LANDSLIDE",
+                "WASHOUT",
+                "POOLING"
+            ]
+
+            var metadataLines: [String] = []
+            var remainingLines: [String] = []
 
             for line in lines {
                 let upper = line.uppercased()
-
-                if let mappedTitle = sectionHeaderTitles[upper] {
-                    flushCurrentSection()
-                    currentTitle = mappedTitle
-                    currentLines = []
-                    continue
-                }
-
-                var handledInlineHeader = false
-                for (key, mappedTitle) in inlineHeaderTitles {
-                    if upper.hasPrefix(key), upper != key {
-                        flushCurrentSection()
-                        currentTitle = mappedTitle
-                        let remainder = line.dropFirst(key.count).trimmingCharacters(in: .whitespacesAndNewlines)
-                        currentLines = remainder.isEmpty ? [] : [remainder]
-                        handledInlineHeader = true
-                        break
-                    }
-                }
-
-                if handledInlineHeader {
-                    continue
-                }
-
-                if line.hasPrefix("-") {
-                    let trimmed = String(line.drop(while: { $0 == "-" || $0 == " " }))
-                    currentLines.append(trimmed.isEmpty ? "•" : "• " + trimmed)
+                if metadataPrefixes.contains(where: { upper.hasPrefix($0) }) {
+                    metadataLines.append(line)
                 } else {
-                    currentLines.append(line)
+                    remainingLines.append(line)
                 }
             }
 
-            flushCurrentSection()
+            var leadLines: [String] = []
+            var whenLines: [String] = []
+            var impactLines: [String] = []
+            var bodyLines: [String] = []
 
-            if sections.isEmpty {
-                let metadataPrefixes = [
-                    "IMPACT LEVEL:",
-                    "FORECAST CONFIDENCE:"
-                ]
-
-                let whenIndicators = [
-                    "BEGINNING",
-                    "CONTINUE",
-                    "UNTIL",
-                    "THROUGH",
-                    "TONIGHT",
-                    "THIS AFTERNOON",
-                    "THIS EVENING",
-                    "FRIDAY",
-                    "SATURDAY",
-                    "SUNDAY",
-                    "MONDAY",
-                    "TUESDAY",
-                    "WEDNESDAY",
-                    "THURSDAY"
-                ]
-
-                let impactIndicators = [
-                    "HAZARDOUS",
-                    "VISIBILITY",
-                    "TRAVEL",
-                    "SLIPPERY",
-                    "DIFFICULT TO NAVIGATE",
-                    "FLOODING",
-                    "LANDSLIDE",
-                    "WASHOUT",
-                    "POOLING"
-                ]
-
-                var metadataLines: [String] = []
-                var remainingLines: [String] = []
-
-                for line in lines {
-                    let upper = line.uppercased()
-                    if metadataPrefixes.contains(where: { upper.hasPrefix($0) }) {
-                        metadataLines.append(line)
-                    } else {
-                        remainingLines.append(line)
-                    }
-                }
-
-                var leadLines: [String] = []
-                var whenLines: [String] = []
-                var impactLines: [String] = []
-                var bodyLines: [String] = []
-
-                if let firstRemaining = remainingLines.first {
-                    leadLines.append(firstRemaining)
-                    remainingLines.removeFirst()
-                }
-
-                for line in remainingLines {
-                    let upper = line.uppercased()
-                    if whenIndicators.contains(where: { upper.contains($0) }) {
-                        whenLines.append(line)
-                    } else if impactIndicators.contains(where: { upper.contains($0) }) {
-                        impactLines.append(line)
-                    } else {
-                        bodyLines.append(line)
-                    }
-                }
-
-                var fallbackSections: [AlertSummarySection] = []
-
-                let metadataBody = metadataLines
-                    .joined(separator: "\n")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                if !metadataBody.isEmpty {
-                    fallbackSections.append(AlertSummarySection(title: nil, body: metadataBody))
-                }
-
-                let leadBody = leadLines
-                    .joined(separator: "\n")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                if !leadBody.isEmpty {
-                    fallbackSections.append(AlertSummarySection(title: nil, body: leadBody))
-                }
-
-                let whenBody = whenLines
-                    .joined(separator: "\n")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                if !whenBody.isEmpty {
-                    fallbackSections.append(AlertSummarySection(title: "When", body: whenBody))
-                }
-
-                let impactsBody = impactLines
-                    .joined(separator: "\n")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                if !impactsBody.isEmpty {
-                    fallbackSections.append(AlertSummarySection(title: "Impacts", body: impactsBody))
-                }
-
-                let body = bodyLines
-                    .joined(separator: "\n")
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                if !body.isEmpty {
-                    fallbackSections.append(AlertSummarySection(title: nil, body: body))
-                }
-
-                return fallbackSections
+            if let firstRemaining = remainingLines.first {
+                leadLines.append(firstRemaining)
+                remainingLines.removeFirst()
             }
 
-            return sections
+            for line in remainingLines {
+                let upper = line.uppercased()
+                if whenIndicators.contains(where: { upper.contains($0) }) {
+                    whenLines.append(line)
+                } else if impactIndicators.contains(where: { upper.contains($0) }) {
+                    impactLines.append(line)
+                } else {
+                    bodyLines.append(line)
+                }
+            }
+
+            var fallbackSections: [AlertSummarySection] = []
+
+            let metadataBody = metadataLines
+                .joined(separator: "\n")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !metadataBody.isEmpty {
+                fallbackSections.append(AlertSummarySection(title: nil, body: metadataBody))
+            }
+
+            let leadBody = leadLines
+                .joined(separator: "\n")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !leadBody.isEmpty {
+                fallbackSections.append(AlertSummarySection(title: nil, body: leadBody))
+            }
+
+            let whenBody = whenLines
+                .joined(separator: "\n")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !whenBody.isEmpty {
+                fallbackSections.append(AlertSummarySection(title: "When", body: whenBody))
+            }
+
+            let impactsBody = impactLines
+                .joined(separator: "\n")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !impactsBody.isEmpty {
+                fallbackSections.append(AlertSummarySection(title: "Impacts", body: impactsBody))
+            }
+
+            let body = bodyLines
+                .joined(separator: "\n")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !body.isEmpty {
+                fallbackSections.append(AlertSummarySection(title: nil, body: body))
+            }
+
+            return fallbackSections
         }
 
-        @ViewBuilder
-        private func formattedSectionBody(_ text: String, isMetadata: Bool) -> some View {
-            let lines = text
-                .components(separatedBy: .newlines)
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
+        return sections
+    }
 
-            VStack(alignment: .leading, spacing: isMetadata ? 4 : 6) {
-                ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                    if isMetadata {
-                        Text(line)
-                            .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.primary.opacity(colorScheme == .dark ? 0.82 : 0.68))
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.bottom, 2)
-                    } else if line.hasPrefix("• ") {
-                        HStack(alignment: .top, spacing: 10) {
-                            Text("•")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.primary)
+    @ViewBuilder
+    private func formattedSectionBody(_ text: String, isMetadata: Bool) -> some View {
+        let lines = text
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
 
-                            Text(String(line.dropFirst(2)))
-                                .font(.subheadline)
-                                .foregroundStyle(.primary)
-                                .lineSpacing(2)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    } else {
-                        Text(line)
+        VStack(alignment: .leading, spacing: isMetadata ? 4 : 6) {
+            ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                if isMetadata {
+                    Text(line)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.primary.opacity(colorScheme == .dark ? 0.82 : 0.68))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.bottom, 2)
+                } else if line.hasPrefix("• ") {
+                    HStack(alignment: .top, spacing: 10) {
+                        Text("•")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.primary)
+
+                        Text(String(line.dropFirst(2)))
                             .font(.subheadline)
                             .foregroundStyle(.primary)
                             .lineSpacing(2)
                             .fixedSize(horizontal: false, vertical: true)
                     }
+                } else {
+                    Text(line)
+                        .font(.subheadline)
+                        .foregroundStyle(.primary)
+                        .lineSpacing(2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
     }
-
+}
 
 // MARK: - Styling
-    // MARK: - Alert Card Subtitle Helper
 
-    private func alertCardSubtitle(for alert: WeatherAlert) -> String {
-        let lines = alert.summary
-            .components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+private func alertCardSubtitle(for alert: WeatherAlert) -> String {
+    let lines = alert.summary
+        .components(separatedBy: .newlines)
+        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
 
-        guard let first = lines.first else { return "" }
+    guard let first = lines.first else { return "" }
 
-        if let timeRange = first.range(
-            of: #"\b\d{1,2}:\d{2}\s?(AM|PM)\s?[A-Z]{2,4}\b"#,
-            options: .regularExpression
-        ) {
-            let issuedTime = String(first[timeRange]).trimmingCharacters(in: .whitespacesAndNewlines)
-            return "Issued \(issuedTime)"
-        }
-
-        if let second = lines.dropFirst().first, !second.isEmpty {
-            return second
-        }
-
-        return "Issued recently"
+    if let timeRange = first.range(
+        of: #"\b\d{1,2}:\d{2}\s?(AM|PM)\s?[A-Z]{2,4}\b"#,
+        options: .regularExpression
+    ) {
+        let issuedTime = String(first[timeRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+        return "Issued \(issuedTime)"
     }
 
-private struct WeatherAlert: Identifiable, Equatable {
+    if let second = lines.dropFirst().first, !second.isEmpty {
+        return second
+    }
+
+    return "Issued recently"
+}
+
+struct WeatherAlert: Identifiable, Equatable {
     let id: String
     let title: String
     let severity: String
@@ -1917,412 +1893,118 @@ private struct WeatherAlert: Identifiable, Equatable {
     let areaName: String
     let issuedAt: Date?
     let expiresAt: Date?
+    
+    var expiresSoonText: String? {
+        guard let expires = expiresAt else { return nil }
+        let interval = expires.timeIntervalSinceNow
+        if interval < 0 { return "Expired" }
+        if interval < 3600 { return "Expires soon" }
+        let hours = Int(interval / 3600)
+        return "Expires in \(hours)h"
+    }
 }
 
 private protocol AlertServiceProtocol {
     func activeAlerts(for coordinate: CLLocationCoordinate2D, countryCode: String) async throws -> [WeatherAlert]
 }
 
-private struct CanadaAlertService: AlertServiceProtocol {
-
+struct CanadaAlertService: AlertServiceProtocol {
+    
     func activeAlerts(for coordinate: CLLocationCoordinate2D, countryCode: String) async throws -> [WeatherAlert] {
         guard countryCode == "CA" else { return [] }
-
-        let cityName = currentSelectedLocationName()
-        let displayName = cityName.isEmpty ? "Selected Location" : cityName
-
-        let service = EnvironmentCanadaAlertService()
-
-        let result = try await service.fetchActiveAlertText(
-            cityName: displayName,
-            latitude: coordinate.latitude,
-            longitude: coordinate.longitude
-        )
-
-        guard let text = result.alertText, !text.isEmpty else {
-            return []
+        
+        // Dynamic delta
+        let delta: Double = {
+            if coordinate.latitude > 60 { return 0.70 }     // Northern Canada
+            if coordinate.latitude > 49 { return 0.55 }     // BC/southern Canada
+            return 0.45                                     // Default
+        }()
+        
+        let bbox = "\(coordinate.longitude - delta),\(coordinate.latitude - delta),\(coordinate.longitude + delta),\(coordinate.latitude + delta)"
+        
+        let urlString = "https://api.weather.gc.ca/collections/weather-alerts/items?f=json&lang=en&bbox=\(bbox)&limit=20"
+        guard let url = URL(string: urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? urlString) else {
+            throw URLError(.badURL)
         }
-
-        let parsed = parseAlertMetadata(from: text)
-
-        return [
-            WeatherAlert(
-                id: result.warningURL?.absoluteString ?? UUID().uuidString,
-                title: parsed.title,
-                severity: parsed.severity,
-                summary: text,
-                areaName: displayName,
-                issuedAt: nil,
-                expiresAt: nil
-            )
-        ]
-    }
-
-    private func currentSelectedLocationName() -> String {
-        UserDefaults.standard.string(forKey: "yawa.can.selectedLocationDisplayName") ?? ""
-    }
-
-    private func parseAlertMetadata(from text: String) -> (title: String, severity: String) {
-        let firstLine = text
-            .components(separatedBy: .newlines)
-            .first?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            ?? text
-
-        let upper = firstLine.uppercased()
-
-        if upper.contains("SPECIAL WEATHER STATEMENT") {
-            return ("Special Weather Statement", "Statement")
+        
+        print("Querying GeoMet API: \(url.absoluteString)")
+        
+        let (data, _) = try await URLSession.shared.data(from: url)
+        
+        print("Received \(data.count) bytes from GeoMet")
+        
+        struct Response: Decodable {
+            let features: [Feature]
         }
-
-        let colorMap: [(token: String, severity: String)] = [
-            ("RED WARNING", "Red"),
-            ("ORANGE WARNING", "Orange"),
-            ("YELLOW WARNING", "Yellow")
-        ]
-
-        for entry in colorMap {
-            if upper.hasPrefix(entry.token) {
-                let remainder = firstLine.dropFirst(entry.token.count).trimmingCharacters(in: .whitespacesAndNewlines)
-                let event = extractLeadingEventName(from: remainder)
-                if !event.isEmpty {
-                    return ("\(event) Warning", entry.severity)
+        
+        struct Feature: Decodable {
+            let properties: Properties
+        }
+        
+        struct Properties: Decodable {
+            let alert_name_en: String?
+            let alert_text_en: String?
+            let severity_en: String?
+            let publication_datetime: String?
+            let expiration_datetime: String?
+            let feature_name_en: String?
+            let status_en: String?
+            
+            private static let isoFormatter: ISO8601DateFormatter = {
+                let f = ISO8601DateFormatter()
+                f.formatOptions = [
+                    .withInternetDateTime,
+                    .withDashSeparatorInDate,
+                    .withFullDate,
+                    .withFullTime,
+                    .withTimeZone,
+                    .withColonSeparatorInTime,
+                    .withFractionalSeconds
+                ]
+                // Do NOT set f.timeZone here — let it parse from string
+                return f
+            }()
+            
+            var issuedAt: Date? {
+                publication_datetime.flatMap { Self.isoFormatter.date(from: $0) }
+            }
+            
+            var expiresAt: Date? {
+                expiration_datetime.flatMap { Self.isoFormatter.date(from: $0) }
+            }
+            
+            var isActive: Bool {
+                guard let issued = issuedAt, let exp = expiresAt else {
+                    return status_en?.lowercased() == "issued"
                 }
-                return ("Weather Warning", entry.severity)
+                let now = Date()
+                return now >= issued && now <= exp
             }
         }
-
-        let directWarnings = [
-            "WIND WARNING",
-            "RAINFALL WARNING",
-            "SNOWFALL WARNING",
-            "BLIZZARD WARNING",
-            "FLASH FREEZE WARNING",
-            "FREEZING RAIN WARNING",
-            "EXTREME COLD WARNING",
-            "HEAT WARNING",
-            "AIR QUALITY WARNING",
-            "WEATHER WARNING"
-        ]
-
-        for warning in directWarnings {
-            if upper.hasPrefix(warning) {
-                return (titleCaseWarning(warning), "Warning")
+        
+        let decoder = JSONDecoder()
+        let response = try decoder.decode(Response.self, from: data)
+        
+        print("Decoded \(response.features.count) raw features")
+        
+        let alerts = response.features
+            .map { $0.properties }
+            .filter { $0.isActive }
+            .map { prop in
+                WeatherAlert(
+                    id: prop.publication_datetime ?? UUID().uuidString,
+                    title: prop.alert_name_en ?? "Weather Alert",
+                    severity: prop.severity_en?.capitalized ?? "Moderate",
+                    summary: prop.alert_text_en ?? "No details available",
+                    areaName: prop.feature_name_en ?? "Affected area",
+                    issuedAt: prop.issuedAt,
+                    expiresAt: prop.expiresAt
+                )
             }
-        }
-
-        return ("Weather Alert", "Alert")
-    }
-
-    private func extractLeadingEventName(from text: String) -> String {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return "" }
-
-        var cutIndex = trimmed.endIndex
-        let separators = ["  ", "\n", "\r", " 0", " 1", " 2", " 3", " 4", " 5", " 6", " 7", " 8", " 9"]
-        for separator in separators {
-            if let range = trimmed.range(of: separator), range.lowerBound < cutIndex {
-                cutIndex = range.lowerBound
-            }
-        }
-
-        var leading = String(trimmed[..<cutIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
-
-        let trailingMarkers = [
-            " IMPACT LEVEL:",
-            " FORECAST CONFIDENCE:",
-            " WHAT:",
-            " WHERE:",
-            " WHEN:",
-            " ISSUED",
-            " IN EFFECT",
-            " AM ",
-            " PM ",
-            " MDT ",
-            " PDT ",
-            " CDT ",
-            " EDT ",
-            " ADT ",
-            " NDT ",
-            " AST ",
-            " NST "
-        ]
-
-        for marker in trailingMarkers {
-            if let range = leading.uppercased().range(of: marker) {
-                leading = String(leading[..<range.lowerBound]).trimmingCharacters(in: .whitespacesAndNewlines)
-            }
-        }
-
-        return leading.capitalized
-    }
-
-    private func titleCaseWarning(_ text: String) -> String {
-        text.lowercased()
-            .split(separator: " ")
-            .map { $0.capitalized }
-            .joined(separator: " ")
+        
+        return alerts
     }
 }
-
-private final class EnvironmentCanadaAlertService {
-
-    func fetchActiveAlertText(
-        cityName: String,
-        latitude: Double,
-        longitude: Double
-    ) async throws -> (warningURL: URL?, alertText: String?) {
-
-        let locationURL = makeLocationURL(latitude: latitude, longitude: longitude)
-        print("[ECAlerts] start city=\(cityName) lat=\(latitude) lon=\(longitude)")
-        print("[ECAlerts] locationURL=\(locationURL.absoluteString)")
-
-        let locationHTML = try await fetchHTML(from: locationURL)
-        print("[ECAlerts] locationHTML preview=\(locationHTML.prefix(1200).replacingOccurrences(of: "\n", with: " "))")
-
-        if let inlineAlertText = extractInlineAlertText(from: locationHTML, cityName: cityName) {
-            print("[ECAlerts] inline alert preview=\(inlineAlertText.prefix(200))")
-            return (locationURL, inlineAlertText)
-        }
-
-        if locationHTML.localizedCaseInsensitiveContains("No alerts in effect") {
-            print("[ECAlerts] no alert on location page")
-            return (locationURL, nil)
-        }
-
-        guard let warningURL = extractWarningURL(from: locationHTML) else {
-            print("[ECAlerts] no warning URL found; treating as no active alert")
-            return (locationURL, nil)
-        }
-
-        print("[ECAlerts] resolved warningURL=\(warningURL.absoluteString)")
-
-        let warningHTML = try await fetchHTML(from: warningURL)
-        print("[ECAlerts] warningHTML preview=\(warningHTML.prefix(1200).replacingOccurrences(of: "\n", with: " "))")
-
-        if warningHTML.localizedCaseInsensitiveContains("No alerts in effect") {
-            print("[ECAlerts] no alert")
-            return (warningURL, nil)
-        }
-
-        let text = extractAlertText(from: warningHTML)
-        print("[ECAlerts] alert preview=\(text?.prefix(200) ?? "nil")")
-
-        return (warningURL, text)
-    }
-
-    // MARK: URL
-
-    private func makeLocationURL(latitude: Double, longitude: Double) -> URL {
-        var c = URLComponents(string: "https://weather.gc.ca/en/location/index.html")!
-        c.queryItems = [URLQueryItem(name: "coords", value: "\(latitude),\(longitude)")]
-        return c.url!
-    }
-
-    // MARK: Network
-
-    private func fetchHTML(from url: URL) async throws -> String {
-        var req = URLRequest(url: url)
-        req.timeoutInterval = 20
-        req.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
-
-        let (data, response) = try await URLSession.shared.data(for: req)
-
-        guard let http = response as? HTTPURLResponse,
-              (200...299).contains(http.statusCode) else {
-            throw URLError(.badServerResponse)
-        }
-
-        print("[ECAlerts] GET \(url.absoluteString) status=\(http.statusCode) bytes=\(data.count)")
-
-        return String(data: data, encoding: .utf8)
-            ?? String(data: data, encoding: .isoLatin1)
-            ?? ""
-    }
-
-    // MARK: Parsing
-
-    private func extractWarningURL(from html: String) -> URL? {
-        let patterns = [
-            #"https://weather\.gc\.ca/warnings/report_e\.html[^\"' ]+"#,
-            #"/warnings/report_e\.html[^\"' ]*"#
-        ]
-
-        for pattern in patterns {
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
-                continue
-            }
-
-            let range = NSRange(html.startIndex..., in: html)
-            guard let match = regex.firstMatch(in: html, range: range),
-                  let r = Range(match.range, in: html) else {
-                continue
-            }
-
-            let raw = String(html[r])
-                .replacingOccurrences(of: "&amp;", with: "&")
-
-            let absoluteURL: URL?
-            if raw.hasPrefix("http") {
-                absoluteURL = URL(string: raw)
-            } else {
-                absoluteURL = URL(string: "https://weather.gc.ca\(raw)")
-            }
-
-            guard var comp = absoluteURL.flatMap({ URLComponents(url: $0, resolvingAgainstBaseURL: false) }) else {
-                continue
-            }
-
-            var items = comp.queryItems ?? []
-            if !items.contains(where: { $0.name == "display" }) {
-                items.append(URLQueryItem(name: "display", value: "textonly"))
-            }
-            comp.queryItems = items
-
-            let finalURL = comp.url
-            if let finalURL {
-                print("[ECAlerts] matched warningURL=\(finalURL.absoluteString)")
-                return finalURL
-            }
-        }
-
-        let preview = html.prefix(1200).replacingOccurrences(of: "\n", with: " ")
-        print("[ECAlerts] warning link regex failed. html preview=\(preview)")
-        return nil
-    }
-
-    private func extractInlineAlertText(from html: String, cityName: String) -> String? {
-        let plain = normalizeLineBreaks(stripHTML(html))
-        let upper = plain.uppercased()
-
-        let stopMarkers = [
-            "FOLLOW:",
-            "CURRENT CONDITIONS OBSERVED AT:",
-            "## CURRENT CONDITIONS",
-            "## FORECAST",
-            "FORECAST FORECAST ISSUED:",
-            "PAST 24 HOURS",
-            "WEATHER RADAR",
-            "SATELLITE",
-            "AIR QUALITY INDEX",
-            "WEATHER SHORTCUTS"
-        ]
-
-        let possibleStarts = [
-            "SPECIAL WEATHER STATEMENT",
-            "WEATHER WARNING",
-            "WIND WARNING",
-            "HIGH WIND WARNING",
-            "RAINFALL WARNING",
-            "SNOWFALL WARNING",
-            "BLIZZARD WARNING",
-            "FLASH FREEZE WARNING",
-            "FREEZING RAIN WARNING",
-            "EXTREME COLD WARNING",
-            "HEAT WARNING",
-            "AIR QUALITY WARNING",
-            "RED WARNING",
-            "YELLOW WARNING",
-            "ORANGE WARNING"
-        ]
-
-        guard let start = possibleStarts
-            .compactMap({ marker -> Range<String.Index>? in
-                upper.range(of: marker)
-            })
-            .min(by: { $0.lowerBound < $1.lowerBound })
-        else {
-            print("[ECAlerts] no inline alert marker found for city=\(cityName)")
-            return nil
-        }
-
-        var result = String(plain[start.lowerBound...])
-
-        for stop in stopMarkers {
-            if let range = result.range(of: stop, options: [.caseInsensitive]) {
-                result = String(result[..<range.lowerBound])
-            }
-        }
-
-        result = normalizePreservingLineBreaks(result)
-
-        if result.localizedCaseInsensitiveContains("No alerts in effect") || result.isEmpty {
-            return nil
-        }
-
-        return result
-    }
-
-    private func extractAlertText(from html: String) -> String? {
-        let plain = normalizeLineBreaks(stripHTML(html))
-
-        if plain.localizedCaseInsensitiveContains("No alerts in effect") {
-            return nil
-        }
-
-        guard let range = plain.range(of: "Weather Alerts for:", options: .caseInsensitive) else {
-            let fallback = normalizePreservingLineBreaks(plain)
-            return fallback.isEmpty ? nil : fallback
-        }
-
-        let tail = String(plain[range.upperBound...])
-
-        let stopWords = [
-            "Follow:",
-            "Current Conditions Observed at:",
-            "Past 24 hours",
-            "Weather Radar",
-            "Satellite",
-            "Weather shortcuts",
-            "Feedback",
-            "Date modified"
-        ]
-
-        var result = tail
-        for stop in stopWords {
-            if let r = result.range(of: stop, options: .caseInsensitive) {
-                result = String(result[..<r.lowerBound])
-            }
-        }
-
-        let cleaned = normalizePreservingLineBreaks(result)
-        return cleaned.isEmpty ? nil : cleaned
-    }
-
-    private func stripHTML(_ html: String) -> String {
-        var s = html
-        s = s.replacingOccurrences(of: #"<script[\\s\\S]*?</script>"#, with: " ", options: .regularExpression)
-        s = s.replacingOccurrences(of: #"<style[\\s\\S]*?</style>"#, with: " ", options: .regularExpression)
-        s = s.replacingOccurrences(of: #"</(p|div|section|article|h1|h2|h3|li|br|tr|td)>"#, with: "\n", options: .regularExpression)
-        s = s.replacingOccurrences(of: #"<[^>]+>"#, with: " ", options: .regularExpression)
-        s = s.replacingOccurrences(of: "&nbsp;", with: " ")
-        s = s.replacingOccurrences(of: "&amp;", with: "&")
-        s = s.replacingOccurrences(of: "&quot;", with: "\"")
-        s = s.replacingOccurrences(of: "&#39;", with: "'")
-        return s
-    }
-
-    private func normalizeLineBreaks(_ s: String) -> String {
-        s.replacingOccurrences(of: "\r\n", with: "\n")
-            .replacingOccurrences(of: "\r", with: "\n")
-            .replacingOccurrences(of: #"\n[ \t]+"#, with: "\n", options: .regularExpression)
-            .replacingOccurrences(of: #"[ \t]+\n"#, with: "\n", options: .regularExpression)
-            .replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
-    }
-
-    private func normalizePreservingLineBreaks(_ s: String) -> String {
-        s.replacingOccurrences(of: #"[ \t]+"#, with: " ", options: .regularExpression)
-            .replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private func normalize(_ s: String) -> String {
-        s.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-}
-
-
 
 private struct TileStyleModifier: ViewModifier {
     @Environment(\.colorScheme) private var scheme
@@ -2367,14 +2049,11 @@ private struct TileStyleModifier: ViewModifier {
     }
 }
 
-
 private extension View {
     func tileStyle() -> some View {
         modifier(TileStyleModifier())
     }
 }
-
-// MARK: - Locations
 
 private struct SavedLocation: Identifiable, Codable, Equatable {
     let id: UUID
@@ -2425,9 +2104,6 @@ private final class LocationStore: ObservableObject {
         selected = loc
         Self.saveOne(loc, key: selectedKey)
 
-        // Auto-add to favorites only for searched/saved places.
-        // Do not auto-add a current-location selection, because its coordinates can
-        // vary slightly from one request to the next and create duplicate rows.
         let normalizedName = loc.displayName.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         let isCurrentLocationSelection = normalizedName == "current location"
 
@@ -2467,9 +2143,6 @@ private final class LocationStore: ObservableObject {
         favorites.remove(atOffsets: offsets)
         Self.saveArray(favorites, key: favoritesKey)
     }
-
-    // MARK: persistence
-// MARK: - Compact Alert Card (Tile/List) Subtitle Usage
 
     private static func loadArray(key: String) -> [SavedLocation]? {
         guard let data = UserDefaults.standard.data(forKey: key) else { return nil }
@@ -2526,10 +2199,8 @@ private final class LocationResolver: NSObject, ObservableObject, CLLocationMana
     }
 
     func requestOneShotLocation() async throws -> SavedLocation {
-        // Don’t allow concurrent requests (keeps continuations safe).
         guard pendingLocation == nil else { throw LocationError.alreadyInFlight }
 
-        // Ensure authorization first.
         try await ensureAuthorized()
 
         return try await withCheckedThrowingContinuation { cont in
@@ -2574,7 +2245,6 @@ private final class LocationResolver: NSObject, ObservableObject, CLLocationMana
         case .restricted:
             cont.resume(throwing: LocationError.permissionRestricted)
         case .notDetermined:
-            // Still waiting; don’t resume yet.
             pendingAuth = cont
         @unknown default:
             cont.resume(throwing: LocationError.permissionDenied)
@@ -2635,7 +2305,6 @@ private struct LocationPickerView: View {
     @State private var isSearching = false
     @State private var searchError: String? = nil
 
-    // Prevent out-of-order async searches from updating UI (e.g. showing "No matches" while results exist).
     @State private var searchGeneration: Int = 0
     @State private var searchTask: Task<Void, Never>? = nil
 
@@ -2753,7 +2422,6 @@ private struct LocationPickerView: View {
             results = []
         }
         .onChange(of: query) { _, newValue in
-            // Cancel any in-flight search; we only want the latest query to win.
             searchTask?.cancel()
 
             let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2764,12 +2432,10 @@ private struct LocationPickerView: View {
                 return
             }
 
-            // Debounce + generation token to avoid out-of-order UI updates.
             searchGeneration &+= 1
             let gen = searchGeneration
 
             searchTask = Task {
-                // small debounce so we don't hammer MKLocalSearch while typing
                 try? await Task.sleep(nanoseconds: 250_000_000)
                 guard !Task.isCancelled else { return }
                 await runSearch(expectedQuery: trimmed, generation: gen)
@@ -2778,7 +2444,6 @@ private struct LocationPickerView: View {
     }
 
     private func runSearch(expectedQuery: String, generation: Int) async {
-        // Ensure this request still corresponds to the current text.
         let currentQ = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard currentQ == expectedQuery else { return }
         guard expectedQuery.count >= 3 else { return }
@@ -2789,14 +2454,12 @@ private struct LocationPickerView: View {
         do {
             let found = try await LocationSearch.searchCities(query: expectedQuery)
 
-            // Ignore results from stale searches.
             guard generation == searchGeneration else { return }
             guard query.trimmingCharacters(in: .whitespacesAndNewlines) == expectedQuery else { return }
 
             results = found
             searchError = found.isEmpty ? "No matches found." : nil
         } catch {
-            // Ignore errors from cancelled/stale searches.
             guard generation == searchGeneration else { return }
             guard query.trimmingCharacters(in: .whitespacesAndNewlines) == expectedQuery else { return }
 
@@ -2804,7 +2467,6 @@ private struct LocationPickerView: View {
             results = []
         }
 
-        // Only clear searching state if we're still the active generation.
         if generation == searchGeneration {
             isSearching = false
         }
@@ -2813,11 +2475,9 @@ private struct LocationPickerView: View {
 
 private enum LocationSearch {
     static func searchCities(query: String) async throws -> [SavedLocation] {
-        // Use MKLocalSearch and return both Canadian and U.S. matches.
         let request = MKLocalSearch.Request()
         request.naturalLanguageQuery = query
 
-        // Center roughly on North America to bias Canada/U.S. results.
         request.region = MKCoordinateRegion(
             center: CLLocationCoordinate2D(latitude: 45.0, longitude: -98.0),
             span: MKCoordinateSpan(latitudeDelta: 38, longitudeDelta: 58)
@@ -2848,11 +2508,9 @@ private enum LocationSearch {
             )
         }
 
-        // De-dupe by name + country.
         var seen = Set<String>()
         let deduped = results.filter { seen.insert("\($0.displayName)|\($0.countryCode)").inserted }
 
-        // Prefer Canadian matches first.
         return deduped.sorted { a, b in
             if a.countryCode == b.countryCode { return a.displayName < b.displayName }
             if a.countryCode == "CA" { return true }
@@ -2980,37 +2638,35 @@ private struct DailyForecastDetailSheet: View {
                     if !hourlyTempsForDay.isEmpty {
                         Divider().opacity(0.18)
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Hourly")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-
-                        HStack(spacing: 6) {
-                            Image(systemName: "chart.bar")
-                                .font(.caption2.weight(.semibold))
-                                .symbolRenderingMode(.hierarchical)
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Hourly")
+                                .font(.caption.weight(.semibold))
                                 .foregroundStyle(.secondary)
 
-                            Text("Temperature trend and precipitation chance")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                            HStack(spacing: 6) {
+                                Image(systemName: "chart.bar")
+                                    .font(.caption2.weight(.semibold))
+                                    .symbolRenderingMode(.hierarchical)
+                                    .foregroundStyle(.secondary)
+
+                                Text("Temperature trend and precipitation chance")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            HourlyTempChart(
+                                temps: hourlyTempsForDay,
+                                precipChancePercent: hourlyPrecipForDay,
+                                hourPositions: hourlyHoursForDay.map(Double.init),
+                                usesUSUnits: usesUSUnits,
+                                showCurrentHourMarker: isToday,
+                                currentHourIndex: currentHourIndex
+                            )
+                            .frame(height: 210, alignment: .top)
+                            .padding(.top, 12)
                         }
-
-                        HourlyTempChart(
-                            temps: hourlyTempsForDay,
-                            precipChancePercent: hourlyPrecipForDay,
-                            hourPositions: hourlyHoursForDay.map(Double.init),
-                            usesUSUnits: usesUSUnits,
-                            showCurrentHourMarker: isToday,
-                            currentHourIndex: currentHourIndex
-                        )
-                        .frame(height: 210, alignment: .top)
-                        .padding(.top, 12)
-                    }
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
-
-                    // Spacer(minLength: 0) -- removed for inner card to hug content
                 }
                 .contentShape(Rectangle())
                 .gesture(
@@ -3090,7 +2746,6 @@ private struct DailyForecastDetailSheet: View {
                 y: 4
             )
     }
-    
     
     private var isToday: Bool {
         Calendar.current.isDateInToday(day.date)
@@ -3226,8 +2881,10 @@ private struct DailyForecastDetailSheet: View {
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = tz
 
-        return Array(zip(hourlyTimeISO.indices, hourlyTimeISO)).compactMap { idx, iso in
-            guard idx < hourlyTempsC.count, idx < hourlyPrecipChancePercent.count else { return nil }
+        return Array(zip(hourlyTimeISO.indices, hourlyTimeISO)).compactMap { idx, iso -> HourlyPoint? in
+            guard idx < hourlyTempsC.count,
+                  idx < hourlyPrecipChancePercent.count else { return nil }
+            
             guard let date = hourlyDateFormatter.date(from: iso) else { return nil }
             guard cal.isDate(date, inSameDayAs: day.date) else { return nil }
 
@@ -3260,58 +2917,49 @@ private struct DailyForecastDetailSheet: View {
         cal.timeZone = tz
         return hourlyPointsForDay.map { cal.component(.hour, from: $0.date) }
     }
-
 }
-
 
 // MARK: - Comfort / Feels Like (YN-style, but metric)
 
-    private enum FeelsLikeMode {
-        case windChill
-        case heatIndex
-        case actual
+private enum FeelsLikeMode {
+    case windChill
+    case heatIndex
+    case actual
+}
+
+private func computeFeelsLikeMode(tempC: Double, windKph: Double, relativeHumidity: Double?) -> FeelsLikeMode {
+    if tempC <= 10.0, windKph >= 5.0 {
+        return .windChill
     }
 
-
-    private func computeFeelsLikeMode(tempC: Double, windKph: Double, relativeHumidity: Double?) -> FeelsLikeMode {
-        // Wind chill only applies at/under 10°C (50°F) and with meaningful wind.
-        if tempC <= 10.0, windKph >= 5.0 {
-            return .windChill
-        }
-
-        // Heat index applies at/above ~26.7°C (80°F) with sufficient humidity.
-        if tempC >= 26.7, let rh = relativeHumidity, rh >= 40.0 {
-            return .heatIndex
-        }
-
-        return .actual
+    if tempC >= 26.7, let rh = relativeHumidity, rh >= 40.0 {
+        return .heatIndex
     }
 
-    // MARK: - Dew Point / Comfort helpers (YN-style, but metric)
+    return .actual
+}
 
-    private func dewPointComfortSubtitleText(for current: CurrentConditions) -> String {
-        let dpC = current.dewPointC
+private func dewPointComfortSubtitleText(for current: CurrentConditions) -> String {
+    let dpC = current.dewPointC
 
-        // Convert the YN bands (°F) into approximate °C thresholds.
-        // 50°F≈10.0°C, 55°F≈12.8°C, 60°F≈15.6°C, 65°F≈18.3°C,
-        // 70°F≈21.1°C, 75°F≈23.9°C
-        switch dpC {
-        case ..<10.0:
-            return "Dry air"
-        case 10.0..<12.8:
-            return "Comfortable"
-        case 12.8..<15.6:
-            return "Pleasant"
-        case 15.6..<18.3:
-            return "Slightly humid"
-        case 18.3..<21.1:
-            return "Humid"
-        case 21.1..<23.9:
-            return "Very humid"
-        default:
-            return "Oppressive humidity"
-        }
+    switch dpC {
+    case ..<10.0:
+        return "Dry air"
+    case 10.0..<12.8:
+        return "Comfortable"
+    case 12.8..<15.6:
+        return "Pleasant"
+    case 15.6..<18.3:
+        return "Slightly humid"
+    case 18.3..<21.1:
+        return "Humid"
+    case 21.1..<23.9:
+        return "Very humid"
+    default:
+        return "Oppressive humidity"
     }
+}
+
 private func feelsLikeSubtitleText(for current: CurrentConditions) -> String {
     let actualC = current.temperatureC
     let apparentC = current.apparentTemperatureC
@@ -3369,23 +3017,19 @@ private func comfortSummaryText(for current: CurrentConditions) -> String {
     }()
 
     switch feelsLikeMode {
+    case "windChill":
+        if isCurrentlyWet(for: current) { return "Cool and damp" }
+        if current.humidityPercent >= 80 {
+            return "Cool and damp"
+        }
+        return dewPointC < 15.6 ? "Cool and dry" : "Cool and humid"
         
-        case "windChill":
-            if isCurrentlyWet(for: current) { return "Cool and damp" }
-
-            if current.humidityPercent >= 80 {
-                return "Cool and damp"
-            }
-
-            return dewPointC < 15.6 ? "Cool and dry" : "Cool and humid"
-            
     case "heatIndex":
         if isCurrentlyWet(for: current) {
             if dewPointC >= 23.9 { return "Hot and oppressive" }
             if dewPointC >= 21.1 { return "Hot and muggy" }
             return "Warm and damp"
         }
-
         if dewPointC >= 23.9 { return "Hot and oppressive" }
         if dewPointC >= 21.1 { return "Hot and muggy" }
         return "Warm and humid"
@@ -3400,10 +3044,6 @@ private func comfortSummaryText(for current: CurrentConditions) -> String {
     }
 }
 
-
 #Preview {
     ContentView()
 }
-
-
-
