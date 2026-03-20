@@ -896,348 +896,349 @@ private struct RadarMapViewStage0: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
-        final class Coordinator: NSObject, MKMapViewDelegate {
-            private var isActive: Bool = true
-            func setActive(_ active: Bool) {
-                guard isActive != active else { return }
-                isActive = active
-
-                // Pause tile fetching when inactive/backgrounded to avoid churn.
-                radarLayerA?.setFetchingEnabled(active)
-                radarLayerB?.setFetchingEnabled(active)
-            }
-            private var lastRecenterToken: UUID?
-            func applyRecenterIfNeeded(_ map: MKMapView, region: MKCoordinateRegion, token: UUID) {
-                // Only act when the token changes.
-                guard lastRecenterToken != token else { return }
-                lastRecenterToken = token
-
-                // Don't fight during live gestures.
-                if userIsInteracting { return }
-
-                // Mark programmatic so regionDidChange doesn't look like a user pan.
-                isProgrammaticRegionChange = true
-                lastProgrammaticRegionChangeAt = CACurrentMediaTime()
-                map.setRegion(region, animated: false)
-
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-                    self?.isProgrammaticRegionChange = false
-                }
-
-                updateRadarAfterLayout()
-
-                #if DEBUG
-                print("[RV0] applyRecenter token=\(token) span=\(region.span.latitudeDelta),\(region.span.longitudeDelta)")
-                #endif
-            }
-            private var tileHealthHandler: ((RadarTileLayerView.TileHealth) -> Void)?
-
-            func setTileHealthHandler(_ handler: @escaping (RadarTileLayerView.TileHealth) -> Void) {
-                tileHealthHandler = handler
-                radarLayerA?.onTileHealthUpdate = handler
-                radarLayerB?.onTileHealthUpdate = handler
-            }
-            private var lastRegionSignature: String? = nil
-            private var didApplyInitialRegion: Bool = false
-            private var isProgrammaticRegionChange: Bool = false
-            private var lastProgrammaticRegionChangeAt: CFTimeInterval = 0
-            private var currentCenterBinding: Binding<CLLocationCoordinate2D>?
-
-            private weak var mapViewRef: MKMapView?
-            private var radarLayerA: RadarTileLayerView?
-            private var radarLayerB: RadarTileLayerView?
-            private var activeRadarIsA: Bool = true
-
-            private var activeRadarLayer: RadarTileLayerView? {
-                activeRadarIsA ? radarLayerA : radarLayerB
-            }
-
-            private var inactiveRadarLayer: RadarTileLayerView? {
-                activeRadarIsA ? radarLayerB : radarLayerA
-            }
-
-            private var lastRadarHost: String = ""
-            private var lastRadarFramePath: String = ""
-            private var lastRadarOpacity: CGFloat = 0.80
-
-            private weak var crosshairView: UIImageView?
+    final class Coordinator: NSObject, MKMapViewDelegate {
+        private var isActive: Bool = true
+        func setActive(_ active: Bool) {
+            guard isActive != active else { return }
+            isActive = active
             
-            private var lastPrewarmToken: UUID?
-            
-            private var userIsInteracting: Bool = false
-            
-            func setFeedStale(_ stale: Bool) {
-                radarLayerA?.isFeedStale = stale
-                radarLayerB?.isFeedStale = stale
-            }
+            // Pause tile fetching when inactive/backgrounded to avoid churn.
+            radarLayerA?.setFetchingEnabled(active)
+            radarLayerB?.setFetchingEnabled(active)
+        }
 
-            func setRenderPalette(_ palette: RadarTileLayerView.RenderPalette) {
-                radarLayerA?.renderPalette = palette
-                radarLayerB?.renderPalette = palette
+        private var lastRecenterToken: UUID?
+        func applyRecenterIfNeeded(_ map: MKMapView, region: MKCoordinateRegion, token: UUID) {
+            // Only act when the token changes.
+            guard lastRecenterToken != token else { return }
+            lastRecenterToken = token
+            
+            // Don't fight during live gestures.
+            if userIsInteracting { return }
+            
+            // Mark programmatic so regionDidChange doesn't look like a user pan.
+            isProgrammaticRegionChange = true
+            lastProgrammaticRegionChangeAt = CACurrentMediaTime()
+            map.setRegion(region, animated: false)
+            
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+                self?.isProgrammaticRegionChange = false
             }
             
-            func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
-                // During initial setup MapKit may emit region change callbacks while still at its default
-                // world/placeholder region. Don’t treat that as user interaction.
-                guard didApplyInitialRegion else { return }
-                if isProgrammaticRegionChange { return }
-                userIsInteracting = true
+            updateCrosshairPosition(on: map)
+            updateRadarAfterLayout()
+            
+            #if DEBUG
+            print("[RV0] applyRecenter token=\(token) span=\(region.span.latitudeDelta),\(region.span.longitudeDelta)")
+            #endif
+        }
+
+        private var tileHealthHandler: ((RadarTileLayerView.TileHealth) -> Void)?
+        
+        func setTileHealthHandler(_ handler: @escaping (RadarTileLayerView.TileHealth) -> Void) {
+            tileHealthHandler = handler
+            radarLayerA?.onTileHealthUpdate = handler
+            radarLayerB?.onTileHealthUpdate = handler
+        }
+
+        private var lastRegionSignature: String? = nil
+        private var didApplyInitialRegion: Bool = false
+        private var isProgrammaticRegionChange: Bool = false
+        private var lastProgrammaticRegionChangeAt: CFTimeInterval = 0
+        private var currentCenterBinding: Binding<CLLocationCoordinate2D>?
+
+        private weak var mapViewRef: MKMapView?
+        private var radarLayerA: RadarTileLayerView?
+        private var radarLayerB: RadarTileLayerView?
+        private var activeRadarIsA: Bool = true
+        
+        private var activeRadarLayer: RadarTileLayerView? {
+            activeRadarIsA ? radarLayerA : radarLayerB
+        }
+        
+        private var inactiveRadarLayer: RadarTileLayerView? {
+            activeRadarIsA ? radarLayerB : radarLayerA
+        }
+        
+        private var lastRadarHost: String = ""
+        private var lastRadarFramePath: String = ""
+        private var lastRadarOpacity: CGFloat = 0.80
+        
+        private weak var crosshairView: UIImageView?
+        
+        private var lastPrewarmToken: UUID?
+        
+        private var userIsInteracting: Bool = false
+        
+        func setFeedStale(_ stale: Bool) {
+            radarLayerA?.isFeedStale = stale
+            radarLayerB?.isFeedStale = stale
+        }
+        
+        func setRenderPalette(_ palette: RadarTileLayerView.RenderPalette) {
+            radarLayerA?.renderPalette = palette
+            radarLayerB?.renderPalette = palette
+        }
+        
+        func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
+            // During initial setup MapKit may emit region change callbacks while still at its default
+            // world/placeholder region. Don’t treat that as user interaction.
+            guard didApplyInitialRegion else { return }
+            if isProgrammaticRegionChange { return }
+            userIsInteracting = true
+        }
+        
+        func prewarmIfNeeded(token: UUID, host: String, framePaths: [String], completion: @escaping () -> Void) {
+            // If we already ran this token, report completion immediately.
+            if lastPrewarmToken == token {
+                completion()
+                return
             }
-
-            func prewarmIfNeeded(token: UUID, host: String, framePaths: [String], completion: @escaping () -> Void) {
-                // If we already ran this token, report completion immediately.
-                if lastPrewarmToken == token {
-                    completion()
-                    return
-                }
-                lastPrewarmToken = token
-                guard let map = mapViewRef else {
-                    completion()
-                    return
-                }
-                if framePaths.isEmpty {
-                    completion()
-                    return
-                }
-                activeRadarLayer?.prewarm(mapView: map, host: host, framePaths: framePaths, opacity: lastRadarOpacity) {
-                    completion()
-                }
+            lastPrewarmToken = token
+            guard let map = mapViewRef else {
+                completion()
+                return
             }
-
-
-            func setCurrentCenterBinding(_ binding: Binding<CLLocationCoordinate2D>) {
-                self.currentCenterBinding = binding
+            if framePaths.isEmpty {
+                completion()
+                return
             }
-
-            func attachMapView(_ map: MKMapView) {
-                self.mapViewRef = map
-            }
-
-            func attachRadarLayer(to map: MKMapView) {
-                if radarLayerA != nil || radarLayerB != nil { return }
-
-                func makeLayer() -> RadarTileLayerView {
-                    let v = RadarTileLayerView()
-                    v.isUserInteractionEnabled = false
-                    v.translatesAutoresizingMaskIntoConstraints = false
-                    v.onTileHealthUpdate = tileHealthHandler
-                    return v
-                }
-
-                let a = makeLayer()
-                let b = makeLayer()
-
-                // Place under MapKit labels by inserting into the overlay container when available.
-                if let overlayContainer = map.subviews.first(where: { String(describing: type(of: $0)).contains("Overlay") }) {
-                    overlayContainer.addSubview(a)
-                    overlayContainer.addSubview(b)
-                } else {
-                    map.addSubview(a)
-                    map.addSubview(b)
-                }
-
-                NSLayoutConstraint.activate([
-                    a.leadingAnchor.constraint(equalTo: map.leadingAnchor),
-                    a.trailingAnchor.constraint(equalTo: map.trailingAnchor),
-                    a.topAnchor.constraint(equalTo: map.topAnchor),
-                    a.bottomAnchor.constraint(equalTo: map.bottomAnchor),
-
-                    b.leadingAnchor.constraint(equalTo: map.leadingAnchor),
-                    b.trailingAnchor.constraint(equalTo: map.trailingAnchor),
-                    b.topAnchor.constraint(equalTo: map.topAnchor),
-                    b.bottomAnchor.constraint(equalTo: map.bottomAnchor)
-                ])
-
-                // Start with A visible, B hidden.
-                a.alpha = 1.0
-                b.alpha = 0.0
-
-                radarLayerA = a
-                radarLayerB = b
-                activeRadarIsA = true
-            }
-
-            func updateRadar(host: String, framePath: String, opacity: CGFloat) {
-                guard let map = mapViewRef else { return }
-
-                // Track last requested radar params.
-                lastRadarHost = host
-                lastRadarFramePath = framePath
-                lastRadarOpacity = opacity
-
-                // Use a single active layer update. The double-buffer layer crossfade was causing
-                // visible flashing when tiles arrive asynchronously.
-                guard let active = activeRadarLayer else { return }
-                active.update(mapView: map, host: host, framePath: framePath, opacity: opacity)
-
-                updateRadarAfterLayout()
-            }
-
-            private func updateRadarAfterLayout() {
-                guard let map = mapViewRef else { return }
-                guard let active = activeRadarLayer else { return }
-                guard !lastRadarHost.isEmpty, !lastRadarFramePath.isEmpty else { return }
-
-                // Try now (if we have bounds), then again shortly after.
-                DispatchQueue.main.async { [weak self] in
-                    guard let self else { return }
-                    active.update(mapView: map, host: self.lastRadarHost, framePath: self.lastRadarFramePath, opacity: self.lastRadarOpacity)
-                }
-
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
-                    guard let self else { return }
-                    active.update(mapView: map, host: self.lastRadarHost, framePath: self.lastRadarFramePath, opacity: self.lastRadarOpacity)
-                }
-            }
-
-            func applyInitialRegionIfNeeded(_ map: MKMapView, region: MKCoordinateRegion) {
-                guard !didApplyInitialRegion else { return }
-                guard map.bounds.size.width > 0, map.bounds.size.height > 0 else { return }
-                applyInitialRegion(map, region: region)
-            }
-
-            func applyInitialRegion(_ map: MKMapView, region: MKCoordinateRegion) {
-                // Only apply when we have a real size.
-                guard map.bounds.size.width > 0, map.bounds.size.height > 0 else { return }
-
-                didApplyInitialRegion = true
-                lastRegionSignature = signature(for: region)
-
-                isProgrammaticRegionChange = true
-                lastProgrammaticRegionChangeAt = CACurrentMediaTime()
-                map.setRegion(region, animated: false)
-                // Keep recenter baseline aligned with the current view lifecycle.
-                if lastRecenterToken == nil { lastRecenterToken = UUID() }
-                // After region is applied, keep programmatic suppression on briefly so MapKit's
-                // delayed regionDidChange doesn't look like a user pan.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-                    self?.isProgrammaticRegionChange = false
-                }
-
-                updateRadarAfterLayout()
-
-                #if DEBUG
-                print("[RV0] applyInitialRegion span=\(region.span.latitudeDelta),\(region.span.longitudeDelta)")
-                #endif
-            }
-
-            func applyRegionIfNeeded(_ map: MKMapView, region: MKCoordinateRegion) {
-                // Don't fight live user gestures; let the map move freely.
-                if userIsInteracting { return }
-
-                // Don’t attempt “zoom enforcement” until we’ve successfully applied the initial region.
-                // Otherwise we can fight MapKit’s initial world-region and cause redundant setRegion calls.
-                guard didApplyInitialRegion else { return }
-
-                // Stage 1 behavior: ONLY enforce zoom/span changes (e.g. zoomStep changes).
-                // Do NOT re-apply region because the user panned (center changed), and do NOT
-                // re-apply because longitudeDelta differs slightly (it can vary with latitude).
-                let current = map.region
-
-                // We treat latitudeDelta as the authoritative zoom signal.
-                let spanEps: CLLocationDegrees = 0.00025
-                let latSpanClose = abs(current.span.latitudeDelta - region.span.latitudeDelta) < spanEps
-
-                if latSpanClose {
-                    // Still advance the signature so we don't keep re-evaluating this same zoom target.
-                    // Signature intentionally ignores center and longitudeDelta.
-                    lastRegionSignature = "latSpan=\(String(format: "%.6f", region.span.latitudeDelta))"
-                    return
-                }
-
-                // Zoom changed: apply region (center is whatever SwiftUI currently wants).
-                let sig = "latSpan=\(String(format: "%.6f", region.span.latitudeDelta))"
-                guard sig != lastRegionSignature else { return }
-                lastRegionSignature = sig
-
-                isProgrammaticRegionChange = true
-                lastProgrammaticRegionChangeAt = CACurrentMediaTime()
-                map.setRegion(region, animated: false)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-                    self?.isProgrammaticRegionChange = false
-                }
-
-                updateRadarAfterLayout()
-
-                #if DEBUG
-                print("[RV0] applyRegionIfNeeded(zoom) span=\(region.span.latitudeDelta),\(region.span.longitudeDelta)")
-                #endif
-            }
-
-            private func signature(for region: MKCoordinateRegion) -> String {
-                // Round to reduce noise from floating point and prevent thrash.
-                func r(_ v: CLLocationDegrees) -> Double { (v * 10_000).rounded() / 10_000 }
-                return "c=\(r(region.center.latitude)),\(r(region.center.longitude))|s=\(r(region.span.latitudeDelta)),\(r(region.span.longitudeDelta))"
-            }
-
-
-            func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
-                // Called continuously during pans/scrolls. Keep the radar compositor in sync so
-                // tiles don't appear to "stick" until the gesture ends.
-                updateRadarAfterLayout()
-            }
-
-            func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
-                let dt = CACurrentMediaTime() - lastProgrammaticRegionChangeAt
-
-                // During initial setup MapKit can briefly report its default region (often centered in the US)
-                // before our initial setRegion fully sticks. Never treat those as user pans.
-                guard didApplyInitialRegion else {
-                    updateRadarAfterLayout()
-                    return
-                }
-
-                // Ignore programmatic changes, and ignore delayed callbacks from a recent programmatic
-                // setRegion ONLY if the user was not actively interacting.
-                if isProgrammaticRegionChange || (dt <= 0.45 && !userIsInteracting) {
-                    updateRadarAfterLayout()
-                    return
-                }
-
-                // Otherwise: treat as user-driven.
-                userIsInteracting = false
-                currentCenterBinding?.wrappedValue = mapView.region.center
-
-                #if DEBUG
-                let c = mapView.region.center
-                print("[RV0] userPan center=\(c.latitude),\(c.longitude)")
-                #endif
-
-                updateRadarAfterLayout()
-            }
-
-            func mapViewDidFinishRenderingMap(_ mapView: MKMapView, fullyRendered: Bool) {
-                guard fullyRendered else { return }
-                updateRadarAfterLayout()
-            }
-
-            func ensureCrosshair(on map: MKMapView) {
-                if crosshairView != nil { return }
-
-                // Simple center reticle: a plain plus sign (less visually loud than the red scope).
-                let cfg = UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold)
-                let iv = UIImageView(image: UIImage(systemName: "plus", withConfiguration: cfg))
-                iv.translatesAutoresizingMaskIntoConstraints = false
-                iv.tintColor = .black
-                iv.isUserInteractionEnabled = false
-                iv.backgroundColor = .clear
-                iv.isOpaque = false
-                iv.layer.zPosition = 10_000
-
-                map.addSubview(iv)
-                NSLayoutConstraint.activate([
-                    iv.centerXAnchor.constraint(equalTo: map.centerXAnchor),
-                    iv.centerYAnchor.constraint(equalTo: map.centerYAnchor)
-                ])
-
-                crosshairView = iv
-            }
-
-            func removeCrosshair(from map: MKMapView) {
-                crosshairView?.removeFromSuperview()
-                crosshairView = nil
+            activeRadarLayer?.prewarm(mapView: map, host: host, framePaths: framePaths, opacity: lastRadarOpacity) {
+                completion()
             }
         }
+        
+        func setCurrentCenterBinding(_ binding: Binding<CLLocationCoordinate2D>) {
+            self.currentCenterBinding = binding
+        }
+        
+        func attachMapView(_ map: MKMapView) {
+            self.mapViewRef = map
+        }
+        
+        func attachRadarLayer(to map: MKMapView) {
+            if radarLayerA != nil || radarLayerB != nil { return }
+            
+            func makeLayer() -> RadarTileLayerView {
+                let v = RadarTileLayerView()
+                v.isUserInteractionEnabled = false
+                v.translatesAutoresizingMaskIntoConstraints = false
+                v.onTileHealthUpdate = tileHealthHandler
+                return v
+            }
+            
+            let a = makeLayer()
+            let b = makeLayer()
+            
+            // Place under MapKit labels by inserting into the overlay container when available.
+            if let overlayContainer = map.subviews.first(where: { String(describing: type(of: $0)).contains("Overlay") }) {
+                overlayContainer.addSubview(a)
+                overlayContainer.addSubview(b)
+            } else {
+                map.addSubview(a)
+                map.addSubview(b)
+            }
+            
+            a.alpha = 1.0
+            b.alpha = 0.0
+            
+            radarLayerA = a
+            radarLayerB = b
+            activeRadarIsA = true
+        }
+        
+        func updateRadar(host: String, framePath: String, opacity: CGFloat) {
+            guard let map = mapViewRef else { return }
+            
+            // Track last requested radar params.
+            lastRadarHost = host
+            lastRadarFramePath = framePath
+            lastRadarOpacity = opacity
+            
+            // Use a single active layer update. The double-buffer layer crossfade was causing
+            // visible flashing when tiles arrive asynchronously.
+            guard let active = activeRadarLayer else { return }
+            active.update(mapView: map, host: host, framePath: framePath, opacity: opacity)
+            
+            updateRadarAfterLayout()
+        }
+        
+        private func updateRadarAfterLayout() {
+            guard let map = mapViewRef else { return }
+            guard let active = activeRadarLayer else { return }
+            guard !lastRadarHost.isEmpty, !lastRadarFramePath.isEmpty else { return }
+            
+            // Try now (if we have bounds), then again shortly after.
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                active.update(mapView: map, host: self.lastRadarHost, framePath: self.lastRadarFramePath, opacity: self.lastRadarOpacity)
+            }
+            
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+                guard let self else { return }
+                active.update(mapView: map, host: self.lastRadarHost, framePath: self.lastRadarFramePath, opacity: self.lastRadarOpacity)
+            }
+        }
+        
+        func applyInitialRegionIfNeeded(_ map: MKMapView, region: MKCoordinateRegion) {
+            guard !didApplyInitialRegion else { return }
+            guard map.bounds.size.width > 0, map.bounds.size.height > 0 else { return }
+            applyInitialRegion(map, region: region)
+        }
+        
+        func applyInitialRegion(_ map: MKMapView, region: MKCoordinateRegion) {
+            // Only apply when we have a real size.
+            guard map.bounds.size.width > 0, map.bounds.size.height > 0 else { return }
+            
+            didApplyInitialRegion = true
+            lastRegionSignature = signature(for: region)
+            
+            isProgrammaticRegionChange = true
+            lastProgrammaticRegionChangeAt = CACurrentMediaTime()
+            map.setRegion(region, animated: false)
+            // Keep recenter baseline aligned with the current view lifecycle.
+            if lastRecenterToken == nil { lastRecenterToken = UUID() }
+            // After region is applied, keep programmatic suppression on briefly so MapKit's
+            // delayed regionDidChange doesn't look like a user pan.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+                self?.isProgrammaticRegionChange = false
+            }
+            
+            updateCrosshairPosition(on: map)
+            updateRadarAfterLayout()
+            
+            #if DEBUG
+            print("[RV0] applyInitialRegion span=\(region.span.latitudeDelta),\(region.span.longitudeDelta)")
+            #endif
+        }
+        
+        func applyRegionIfNeeded(_ map: MKMapView, region: MKCoordinateRegion) {
+            // Don't fight live user gestures; let the map move freely.
+            if userIsInteracting { return }
+            
+            // Don’t attempt “zoom enforcement” until we’ve successfully applied the initial region.
+            // Otherwise we can fight MapKit’s initial world-region and cause redundant setRegion calls.
+            guard didApplyInitialRegion else { return }
+            
+            // Stage 1 behavior: ONLY enforce zoom/span changes (e.g. zoomStep changes).
+            // Do NOT re-apply region because the user panned (center changed), and do NOT
+            // re-apply because longitudeDelta differs slightly (it can vary with latitude).
+            let current = map.region
+            
+            // We treat latitudeDelta as the authoritative zoom signal.
+            let spanEps: CLLocationDegrees = 0.00025
+            let latSpanClose = abs(current.span.latitudeDelta - region.span.latitudeDelta) < spanEps
+            
+            if latSpanClose {
+                // Still advance the signature so we don't keep re-evaluating this same zoom target.
+                // Signature intentionally ignores center and longitudeDelta.
+                lastRegionSignature = "latSpan=\(String(format: "%.6f", region.span.latitudeDelta))"
+                return
+            }
+            
+            // Zoom changed: apply region (center is whatever SwiftUI currently wants).
+            let sig = "latSpan=\(String(format: "%.6f", region.span.latitudeDelta))"
+            guard sig != lastRegionSignature else { return }
+            lastRegionSignature = sig
+            
+            isProgrammaticRegionChange = true
+            lastProgrammaticRegionChangeAt = CACurrentMediaTime()
+            map.setRegion(region, animated: false)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+                self?.isProgrammaticRegionChange = false
+            }
+            
+            updateCrosshairPosition(on: map)
+            updateRadarAfterLayout()
+            
+            #if DEBUG
+            print("[RV0] applyRegionIfNeeded(zoom) span=\(region.span.latitudeDelta),\(region.span.longitudeDelta)")
+            #endif
+        }
+        
+        private func signature(for region: MKCoordinateRegion) -> String {
+            // Round to reduce noise from floating point and prevent thrash.
+            func r(_ v: CLLocationDegrees) -> Double { (v * 10_000).rounded() / 10_000 }
+            return "c=\(r(region.center.latitude)),\(r(region.center.longitude))|s=\(r(region.span.latitudeDelta)),\(r(region.span.longitudeDelta))"
+        }
+        
+        func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
+            // Called continuously during pans/scrolls. Keep the radar compositor in sync so
+            // tiles don't appear to "stick" until the gesture ends.
+            updateCrosshairPosition(on: mapView)
+            updateRadarAfterLayout()
+        }
+        
+        func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
+            let dt = CACurrentMediaTime() - lastProgrammaticRegionChangeAt
+            
+            // During initial setup MapKit can briefly report its default region (often centered in the US)
+            // before our initial setRegion fully sticks. Never treat those as user pans.
+            guard didApplyInitialRegion else {
+                updateCrosshairPosition(on: mapView)
+                updateRadarAfterLayout()
+                return
+            }
+            
+            // Ignore programmatic changes, and ignore delayed callbacks from a recent programmatic
+            // setRegion ONLY if the user was not actively interacting.
+            if isProgrammaticRegionChange || (dt <= 0.45 && !userIsInteracting) {
+                updateCrosshairPosition(on: mapView)
+                updateRadarAfterLayout()
+                return
+            }
+            
+            // Otherwise: treat as user-driven.
+            userIsInteracting = false
+            currentCenterBinding?.wrappedValue = mapView.region.center
+            
+            #if DEBUG
+            let c = mapView.region.center
+            print("[RV0] userPan center=\(c.latitude),\(c.longitude)")
+            #endif
+            
+            updateCrosshairPosition(on: mapView)
+            updateRadarAfterLayout()
+        }
+        
+        func mapViewDidFinishRenderingMap(_ mapView: MKMapView, fullyRendered: Bool) {
+            guard fullyRendered else { return }
+            updateCrosshairPosition(on: mapView)
+            updateRadarAfterLayout()
+        }
+        
+        // MARK: - Crosshair
+        
+        func ensureCrosshair(on map: MKMapView) {
+            if crosshairView != nil { return }
+            
+            // Simple center reticle: a plain plus sign (less visually loud than the red scope).
+            let cfg = UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold)
+            let iv = UIImageView(image: UIImage(systemName: "plus", withConfiguration: cfg))
+            iv.translatesAutoresizingMaskIntoConstraints = false
+            iv.tintColor = .black
+            iv.isUserInteractionEnabled = false
+            iv.backgroundColor = .clear
+            iv.isOpaque = false
+            iv.layer.zPosition = 10_000
+            
+            map.addSubview(iv)
+            crosshairView = iv
+            
+            updateCrosshairPosition(on: map)
+        }
+        
+        func updateCrosshairPosition(on map: MKMapView) {
+            guard let iv = crosshairView else { return }
+            let centerPoint = map.convert(map.region.center, toPointTo: map)
+            iv.center = centerPoint
+        }
+        
+        func removeCrosshair(from map: MKMapView) {
+            crosshairView?.removeFromSuperview()
+            crosshairView = nil
+        }
+    }
 }
 
 
