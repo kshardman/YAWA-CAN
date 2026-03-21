@@ -654,37 +654,30 @@ struct ContentView: View {
                                     .foregroundStyle(.secondary)
                             }
                         }
-                        .padding(.vertical, 8)
+                        .padding(.vertical, 6)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    
-//                    // ← ADD THIS BLOCK HERE (after first alert, before "more" row and Divider)
-//                    if usedWideDelta {
-//                        Text("(Nearby region)")
-//                            .font(.caption2.italic())
-//                            .foregroundStyle(.secondary)
-//                            .padding(.top, 2)
-//                            .padding(.leading, 4)  // slight indent for visual flow
-//                    }
-                    
+                
                     // "+ more" tappable row (only if more alerts exist)
                     if activeAlertsForSelectedLocation.count > 1 {
                         Button {
                             showingAllAlerts = true
                         } label: {
-                            HStack {
+                            HStack(spacing: 6) {
                                 Text("+\(activeAlertsForSelectedLocation.count - 1) more alerts")
-                                    .font(.subheadline.weight(.medium))
-                                    .foregroundStyle(.tint)
+                                    .font(.subheadline)                    // exact match to forecast header size
+                                    .fontWeight(.semibold)                 // exact match to forecast header weight
+                                    .foregroundStyle(.tint)                // accent color to indicate tappable
                                 
                                 Spacer()
                                 
                                 Image(systemName: "chevron.right")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.tint)
+                                    .font(.caption)                        // keep small and secondary
+                                    .foregroundStyle(.tint.opacity(0.8))
                             }
-                            .padding(.vertical, 6)
+                            .padding(.vertical, 4)                         // tight spacing to align with forecast rows
+                            .padding(.horizontal, 0)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
@@ -700,7 +693,7 @@ struct ContentView: View {
                         .stroke(alertSeverityColor(firstAlert.severity).opacity(0.5), lineWidth: 1)
                 )
                 
-                Divider().opacity(0.5).padding(.vertical, 4)
+                Divider().opacity(0.3).padding(.vertical, 2)
             }
             
             // Forecast header – always visible
@@ -2430,6 +2423,7 @@ private struct LocationPickerView: View {
     let onSelectCurrentLocation: (SavedLocation) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     @StateObject private var resolver = LocationResolver()
     @AppStorage("yawa.can.isCurrentLocationSelected") private var isCurrentLocationSelected: Bool = false
 
@@ -2467,6 +2461,7 @@ private struct LocationPickerView: View {
                     } label: {
                         HStack {
                             Label("Current Location", systemImage: "location")
+                                .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.96) : Color.black.opacity(0.92))
                             Spacer()
                             if isCurrentLocationSelected {
                                 Image(systemName: "checkmark")
@@ -2505,6 +2500,7 @@ private struct LocationPickerView: View {
                             } label: {
                                 HStack {
                                     Text(loc.displayName)
+                                        .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.96) : Color.black.opacity(0.92))
                                     Spacer()
                                     if store.selected == loc {
                                         Image(systemName: "checkmark")
@@ -2530,6 +2526,7 @@ private struct LocationPickerView: View {
                         } label: {
                             HStack {
                                 Text(loc.displayName)
+                                    .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.96) : Color.black.opacity(0.92))
                                 Spacer()
                                 if store.selected == loc {
                                     Image(systemName: "checkmark")
