@@ -335,7 +335,7 @@ struct ContentView: View {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
-                        Text(selected?.displayName ?? "–")
+                        Text(displayedLocation?.headerName ?? selected?.headerName ?? locationStore.selected?.headerName ?? "Toronto, ON")
                             .font(.title2.weight(.semibold))
 
                         if isCurrentLocationSelected {
@@ -1087,8 +1087,12 @@ struct ContentView: View {
         .frame(width: 104, alignment: .trailing)
     }
 
+    private var displayedCountryCode: String {
+        displayedLocation?.countryCode ?? selected?.countryCode ?? locationStore.selected?.countryCode ?? "CA"
+    }
+
     private var usesUSUnits: Bool {
-        (displayedLocation?.countryCode ?? selected?.countryCode ?? locationStore.selected?.countryCode ?? "CA") == "US"
+        displayedCountryCode == "US"
     }
 
     private var temperatureUnitLabel: String {
@@ -1096,7 +1100,14 @@ struct ContentView: View {
     }
 
     private var locationUnitsSubtitle: String {
-        usesUSUnits ? "United States • °F • mph • inHg" : "Canada • °C • km/h • kPa"
+        switch displayedCountryCode {
+        case "US":
+            return "United States • °F • mph • inHg"
+        case "MX":
+            return "Mexico • °C • km/h • kPa"
+        default:
+            return "Canada • °C • km/h • kPa"
+        }
     }
 
     private var navigationTitleText: String {
@@ -2188,6 +2199,24 @@ private struct SavedLocation: Identifiable, Codable, Equatable {
     let longitude: Double
     let countryCode: String
 
+    var cityName: String {
+        displayName
+            .components(separatedBy: ",")
+            .first?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? displayName
+    }
+    
+    var headerName: String {
+        switch countryCode {
+        case "MX":
+            return cityName
+        case "CA", "US":
+            return displayName
+        default:
+            return displayName
+        }
+    }
+    
     var coordinate: CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
     }
@@ -2402,7 +2431,7 @@ private final class LocationResolver: NSObject, ObservableObject, CLLocationMana
             let pm = placemarks?.first
             let country = pm?.isoCountryCode ?? ""
             let city = pm?.locality ?? pm?.subAdministrativeArea ?? "Unknown"
-            let prov = pm?.administrativeArea ?? ""
+            let prov = Self.normalizedAdministrativeArea(pm?.administrativeArea ?? "", countryCode: country)
             let name = prov.isEmpty ? city : "\(city), \(prov)"
 
             let out = SavedLocation(
@@ -2414,6 +2443,52 @@ private final class LocationResolver: NSObject, ObservableObject, CLLocationMana
             )
             cont.resume(returning: out)
         }
+    }
+    
+    private static func normalizedAdministrativeArea(_ administrativeArea: String, countryCode: String) -> String {
+        guard countryCode == "MX" else { return administrativeArea }
+
+        let normalized = administrativeArea.trimmingCharacters(in: .whitespacesAndNewlines)
+        let mexicoMap: [String: String] = [
+            "Q. Roo.": "Quintana Roo",
+            "Q.Roo.": "Quintana Roo",
+            "QR": "Quintana Roo",
+            "CDMX": "Ciudad de México",
+            "D.F.": "Ciudad de México",
+            "DF": "Ciudad de México",
+            "Edo. Méx.": "Estado de México",
+            "Edo. Mex.": "Estado de México",
+            "Méx.": "Estado de México",
+            "Mex.": "Estado de México",
+            "N.L.": "Nuevo León",
+            "NL": "Nuevo León",
+            "B.C.": "Baja California",
+            "BC": "Baja California",
+            "B.C.S.": "Baja California Sur",
+            "BCS": "Baja California Sur",
+            "Coah.": "Coahuila",
+            "Chis.": "Chiapas",
+            "Chih.": "Chihuahua",
+            "Gro.": "Guerrero",
+            "Hgo.": "Hidalgo",
+            "Jal.": "Jalisco",
+            "Mich.": "Michoacán",
+            "Mor.": "Morelos",
+            "Nay.": "Nayarit",
+            "Oax.": "Oaxaca",
+            "Pue.": "Puebla",
+            "Qro.": "Querétaro",
+            "Sin.": "Sinaloa",
+            "Son.": "Sonora",
+            "Tab.": "Tabasco",
+            "Tamps.": "Tamaulipas",
+            "Tlax.": "Tlaxcala",
+            "Ver.": "Veracruz",
+            "Yuc.": "Yucatán",
+            "Zac.": "Zacatecas"
+        ]
+
+        return mexicoMap[normalized] ?? normalized
     }
 }
 
@@ -2499,7 +2574,7 @@ private struct LocationPickerView: View {
                                 dismiss()
                             } label: {
                                 HStack {
-                                    Text(loc.displayName)
+                                    Text(displayNameForList(loc))
                                         .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.96) : Color.black.opacity(0.92))
                                     Spacer()
                                     if store.selected == loc {
@@ -2525,7 +2600,7 @@ private struct LocationPickerView: View {
                             dismiss()
                         } label: {
                             HStack {
-                                Text(loc.displayName)
+                                Text(displayNameForList(loc))
                                     .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.96) : Color.black.opacity(0.92))
                                 Spacer()
                                 if store.selected == loc {
@@ -2573,6 +2648,17 @@ private struct LocationPickerView: View {
         }
     }
 
+    private func hasDuplicateCityNames(in locations: [SavedLocation], cityName: String) -> Bool {
+        let matches = locations.filter {
+            $0.cityName.localizedCaseInsensitiveCompare(cityName) == .orderedSame
+        }
+        return matches.count > 1
+    }
+
+    private func pickerRowTitle(for loc: SavedLocation, in locations: [SavedLocation]) -> String {
+        hasDuplicateCityNames(in: locations, cityName: loc.cityName) ? loc.displayName : loc.cityName
+    }
+    
     private func runSearch(expectedQuery: String, generation: Int) async {
         let currentQ = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard currentQ == expectedQuery else { return }
@@ -2601,6 +2687,21 @@ private struct LocationPickerView: View {
             isSearching = false
         }
     }
+    
+    private func displayNameForList(_ loc: SavedLocation) -> String {
+        // Mexico → "City, Mexico"
+        if loc.countryCode == "MX" {
+            let city = loc.displayName
+                .components(separatedBy: ",")
+                .first?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? loc.displayName
+            
+            return "\(city), Mexico"
+        }
+
+        // US / Canada → keep full "City, State/Province"
+        return loc.displayName
+    }
 }
 
 private enum LocationSearch {
@@ -2621,11 +2722,12 @@ private enum LocationSearch {
             let pm = item.placemark
 
             let country = pm.isoCountryCode ?? ""
+            guard ["CA", "US", "MX"].contains(country) else { return nil }
 
             let city = pm.locality ?? pm.subAdministrativeArea
             guard let city else { return nil }
 
-            let prov = pm.administrativeArea ?? ""
+            let prov = normalizedAdministrativeArea(pm.administrativeArea ?? "", countryCode: country)
             let name = prov.isEmpty ? city : "\(city), \(prov)"
 
             let coord = pm.coordinate
@@ -2641,12 +2743,60 @@ private enum LocationSearch {
         var seen = Set<String>()
         let deduped = results.filter { seen.insert("\($0.displayName)|\($0.countryCode)").inserted }
 
+        let rank: [String: Int] = ["CA": 0, "US": 1, "MX": 2]
+
         return deduped.sorted { a, b in
-            if a.countryCode == b.countryCode { return a.displayName < b.displayName }
-            if a.countryCode == "CA" { return true }
-            if b.countryCode == "CA" { return false }
-            return a.countryCode < b.countryCode
+            if a.countryCode == b.countryCode {
+                return a.displayName.localizedCaseInsensitiveCompare(b.displayName) == .orderedAscending
+            }
+            return (rank[a.countryCode] ?? 99) < (rank[b.countryCode] ?? 99)
         }
+    }
+
+    private static func normalizedAdministrativeArea(_ administrativeArea: String, countryCode: String) -> String {
+        guard countryCode == "MX" else { return administrativeArea }
+
+        let normalized = administrativeArea.trimmingCharacters(in: .whitespacesAndNewlines)
+        let mexicoMap: [String: String] = [
+            "Q. Roo.": "Quintana Roo",
+            "Q.Roo.": "Quintana Roo",
+            "QR": "Quintana Roo",
+            "CDMX": "Ciudad de México",
+            "D.F.": "Ciudad de México",
+            "DF": "Ciudad de México",
+            "Edo. Méx.": "Estado de México",
+            "Edo. Mex.": "Estado de México",
+            "Méx.": "Estado de México",
+            "Mex.": "Estado de México",
+            "N.L.": "Nuevo León",
+            "NL": "Nuevo León",
+            "B.C.": "Baja California",
+            "BC": "Baja California",
+            "B.C.S.": "Baja California Sur",
+            "BCS": "Baja California Sur",
+            "Coah.": "Coahuila",
+            "Chis.": "Chiapas",
+            "Chih.": "Chihuahua",
+            "Gro.": "Guerrero",
+            "Hgo.": "Hidalgo",
+            "Jal.": "Jalisco",
+            "Mich.": "Michoacán",
+            "Mor.": "Morelos",
+            "Nay.": "Nayarit",
+            "Oax.": "Oaxaca",
+            "Pue.": "Puebla",
+            "Qro.": "Querétaro",
+            "Sin.": "Sinaloa",
+            "Son.": "Sonora",
+            "Tab.": "Tabasco",
+            "Tamps.": "Tamaulipas",
+            "Tlax.": "Tlaxcala",
+            "Ver.": "Veracruz",
+            "Yuc.": "Yucatán",
+            "Zac.": "Zacatecas"
+        ]
+
+        return mexicoMap[normalized] ?? normalized
     }
 }
 
