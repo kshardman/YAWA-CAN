@@ -459,7 +459,7 @@ struct RadarView: View {
                             }
                         },
                         isFeedStale: staleRadarBanner != nil,
-                        opacity: radarOpacity,
+                        opacity : radarOpacity,
                         renderPalette: radarPalette
                     )
                         .ignoresSafeArea()
@@ -1243,7 +1243,6 @@ final class RadarTileLayerView: UIView {
     struct TileHealth: Equatable {
         let requests: Int
         let empties: Int
-        let windowSeconds: Double
         var emptyRate: Double {
             guard requests > 0 else { return 0 }
             return Double(empties) / Double(requests)
@@ -1606,7 +1605,7 @@ final class RadarTileLayerView: UIView {
         let req = healthEvents.count
         if req == 0 { return }
         let empties = healthEvents.reduce(0) { $0 + ($1.isEmpty ? 1 : 0) }
-        let health = TileHealth(requests: req, empties: empties, windowSeconds: Double(healthWindowSeconds))
+        let health = TileHealth(requests: req, empties: empties)
 
         DispatchQueue.main.async { [weak self] in
             self?.onTileHealthUpdate?(health)
@@ -1808,7 +1807,7 @@ final class RadarTileLayerView: UIView {
         }
     }
 
-    func prewarm(mapView: MKMapView, host: String, framePaths: [String], opacity: CGFloat, completion: (() -> Void)? = nil) {
+    func prewarm(mapView: MKMapView, host: String, framePaths: [String], opacity _: CGFloat, completion: (() -> Void)? = nil) {
         let width = max(Double(mapView.bounds.width), 1)
         let lonDelta = max(mapView.region.span.longitudeDelta, 0.0000001)
         let uiZ = Int(floor(log2(360.0 * width / 256.0 / lonDelta)))

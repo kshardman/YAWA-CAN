@@ -90,7 +90,7 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
         }()
         
         return WeatherSnapshot(
-            locationName: name,
+ //           locationName: name,
             timeZoneID: decoded.timezone,
             current: current,
             daily: daily,

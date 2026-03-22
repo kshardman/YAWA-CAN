@@ -8,7 +8,6 @@
 import Foundation
 
 struct WeatherSnapshot: Equatable {
-    let locationName: String
     let timeZoneID: String
     let current: CurrentConditions
     let daily: [DailyForecastDay]

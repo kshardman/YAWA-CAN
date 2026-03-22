@@ -125,13 +125,13 @@ struct ContentView: View {
         YAWATheme.background(for: colorScheme)
     }
 
-    private var cardBackground: Color {
-        YAWATheme.cardBackground(for: colorScheme)
-    }
+//    private var cardBackground: Color {
+//        YAWATheme.cardBackground(for: colorScheme)
+//    }
 
-    private var cardStroke: Color {
-        YAWATheme.cardStroke(for: colorScheme)
-    }
+//    private var cardStroke: Color {
+//        YAWATheme.cardStroke(for: colorScheme)
+//    }
 
     var body: some View {
         NavigationStack {
@@ -1850,7 +1850,7 @@ private struct AllAlertsSheet: View {
     
     @State private var selectedAlertInSheet: WeatherAlert? = nil  // Temp state for detail sheet
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.colorScheme) private var colorScheme
+   
     
     var body: some View {
         NavigationStack {
@@ -1922,7 +1922,6 @@ struct WeatherAlert: Identifiable, Equatable {
     let severity: String
     let summary: String
     let areaName: String
-    let issuedAt: Date?
     let expiresAt: Date?
     
     var expiresSoonText: String? {
@@ -2032,7 +2031,6 @@ struct CanadaAlertService {
                     severity: prop.severity_en?.capitalized ?? "Moderate",
                     summary: prop.alert_text_en ?? "No details available",
                     areaName: prop.feature_name_en ?? "Affected area",
-                    issuedAt: prop.issuedAt,
                     expiresAt: prop.expiresAt
                 )
             }
@@ -2179,18 +2177,6 @@ private final class LocationStore: ObservableObject {
         Self.saveOne(loc, key: selectedKey)
     }
 
-    func addFavorite(_ loc: SavedLocation) {
-        guard !favorites.contains(where: {
-            $0.displayName.caseInsensitiveCompare(loc.displayName) == .orderedSame &&
-            $0.countryCode == loc.countryCode
-        }) else { return }
-
-        favorites.append(loc)
-        favorites.sort { a, b in
-            a.displayName.localizedCaseInsensitiveCompare(b.displayName) == .orderedAscending
-        }
-        Self.saveArray(favorites, key: favoritesKey)
-    }
 
     func removeFavorites(at offsets: IndexSet) {
         favorites.remove(atOffsets: offsets)
