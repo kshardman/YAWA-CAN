@@ -39,34 +39,7 @@ struct CurrentConditions: Equatable {
         "\(windCompass) \(Int(round(windSpeedKph))) km/h"
     }
 
-    /// Convenience string used by UI, e.g. "Feels like 3°".
-    var feelsLikeDisplay: String {
-        "\(Int(round(apparentTemperatureC)))°"
-    }
 
-    /// Dew point as a simple comfort bucket (Apple Weather-ish).
-    /// Source: common meteorological comfort ranges.
-    var comfortText: String {
-        switch dewPointC {
-        case ..<0:
-            return "Dry"
-        case 0..<10:
-            return "Comfortable"
-        case 10..<16:
-            return "Slightly humid"
-        case 16..<20:
-            return "Humid"
-        case 20..<24:
-            return "Very humid"
-        default:
-            return "Oppressive"
-        }
-    }
-
-    /// Convenience string used by UI, e.g. "Dew 12° • Humid".
-    var comfortDisplay: String {
-        "Dew \(Int(round(dewPointC)))° • \(comfortText)"
-    }
 
     static func compassPoint(fromDegrees degrees: Double) -> String {
         // Normalize to 0..<360

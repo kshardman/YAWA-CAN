@@ -179,10 +179,8 @@ struct RadarView: View {
     // Token to force recentering the map view when changed.
     @State private var recenterToken: UUID = UUID()
 
-    // Glassy on-map control styling to match the system toolbar “liquid glass” feel.
-    private func glassCircleButton(size: CGFloat = 38) -> some ViewModifier {
-        GlassCircleButtonModifier(size: size)
-    }
+   
+   
 
     private struct GlassCircleButtonModifier: ViewModifier {
         let size: CGFloat
@@ -956,9 +954,7 @@ private struct RadarMapViewStage0: UIViewRepresentable {
             activeRadarIsA ? radarLayerA : radarLayerB
         }
         
-        private var inactiveRadarLayer: RadarTileLayerView? {
-            activeRadarIsA ? radarLayerB : radarLayerA
-        }
+      
         
         private var lastRadarHost: String = ""
         private var lastRadarFramePath: String = ""

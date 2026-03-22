@@ -7,9 +7,7 @@
 
 import SwiftUI
 
-/// Draws an (optional) arc between the Sunrise and Sunset columns (assumes they are equal-width),
-/// and places a marker (sun or moon) along that arc based on progress (0...1).
-/// Can also draw a straight "horizon" line that is independent of the arc.
+
 struct SunArcView: View {
 
     // Keep this order aligned with how ContentView calls it:
@@ -68,9 +66,6 @@ struct SunArcView: View {
 
     /// Tree icon size (points).
     var horizonTreeSize: CGFloat = 24
-
-    /// Additional opacity multiplier for trees (applied on top of the strokeColor).
-    var horizonTreeOpacity: CGFloat = 1.0
 
     /// Vertical offset for trees relative to the horizon line.
     /// Increase to move trees upward (since Y grows downward in SwiftUI).

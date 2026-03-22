@@ -10,44 +10,9 @@ import UIKit
 import CoreLocation
 
 
-private extension View {
-    @ViewBuilder func applyIf<T: View>(_ condition: Bool, transform: (Self) -> T) -> some View {
-        if condition {
-            transform(self)
-        } else {
-            self
-        }
-    }
-}
 
 
-enum DashboardStyle: String, CaseIterable, Identifiable {
-    case dashboard
-    case classic
 
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .dashboard: return "Dashboard"
-        case .classic: return "Classic"
-        }
-    }
-
-    var subtitle: String {
-        switch self {
-        case .dashboard: return "Tiles with quick-read values"
-        case .classic: return "Gauges with a more visual feel"
-        }
-    }
-
-    var symbolName: String {
-        switch self {
-        case .dashboard: return "square.grid.2x2"
-        case .classic: return "gauge"
-        }
-    }
-}
 
 
 struct SettingsView: View {
@@ -87,39 +52,13 @@ struct SettingsView: View {
         AnyShapeStyle(YAWATheme.textSecondary(for: colorScheme))
     }
 
-
-
-    // Dashboard style for the home screen (tiles vs gauges)
-    @AppStorage("dashboardStyle") private var dashboardStyleRaw: String = DashboardStyle.dashboard.rawValue
-
     // Forecast length for the home screen (7 or 10)
     @AppStorage("forecastDaysToShow") private var forecastDaysToShow: Int = 7
 
-    private var dashboardStyle: DashboardStyle {
-        DashboardStyle(rawValue: dashboardStyleRaw) ?? .dashboard
-    }
+
 
     // Radar overlay opacity (used by interactive radar)
     @AppStorage("radarOpacity") private var radarOpacity: Double = 0.80
-
-    @AppStorage("homeEnabled") private var homeEnabled: Bool = false
-    @AppStorage("homeLat") private var homeLat: Double = 0
-    @AppStorage("homeLon") private var homeLon: Double = 0
-
-
-    // One-time defaults from bundled config.plist (optional)
-    @State private var loadedDefaults = false
-    @State private var showKey = false
-    @State private var copied = false
-    @State private var showWeatherApiKey = false
-    @State private var copiedWeatherApiKey = false
-
-    @State private var showingApiKeys = false
-
-    // Draft editing (so the API Keys sheet can Cancel/Back without saving)
-    @State private var draftStationID: String = ""
-    @State private var draftApiKey: String = ""
-
 
 
     @Environment(\.dismiss) private var dismiss
@@ -332,25 +271,4 @@ private extension SettingsView {
         Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
     }
 
-
-    func configValue(_ key: String) throws -> String {
-        guard let url = Bundle.main.url(forResource: "config", withExtension: "plist") else {
-            throw ConfigError.missingConfigFile
-        }
-        let data = try Data(contentsOf: url)
-        let plist = try PropertyListSerialization.propertyList(from: data, options: [], format: nil)
-
-        guard let dict = plist as? [String: Any] else {
-            throw ConfigError.missingConfigFile
-        }
-        guard let value = dict[key] as? String, !value.isEmpty else {
-            throw ConfigError.missingKey(key)
-        }
-        return value
-    }
-
-    enum ConfigError: Error {
-        case missingConfigFile
-        case missingKey(String)
-    }
 }

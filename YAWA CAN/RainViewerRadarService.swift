@@ -52,11 +52,6 @@ final class RainViewerRadarService {
         return RadarFreshness(generatedLagSeconds: genLag, latestFrameLagSeconds: latestLag)
     }
 
-    /// Convenience helper for UI.
-    func isRadarStale(_ maps: RainViewerWeatherMapsResponse, thresholdSeconds: Int = 3600) -> Bool {
-        radarFreshness(from: maps).isStale(thresholdSeconds: thresholdSeconds)
-    }
-
     init(session: URLSession = .shared) {
         self.session = session
     }
@@ -123,14 +118,6 @@ final class RainViewerRadarService {
         return decoded
     }
 
-    /// RainViewer sometimes returns empty arrays; pick *something* usable for UI.
-    func pickDefaultFrame(from maps: RainViewerWeatherMapsResponse) -> RainViewerWeatherMapsResponse.Frame? {
-        if let last = maps.radar.past?.last { return last }
-        if let first = maps.radar.past?.first { return first }
-        if let last = maps.radar.nowcast?.last { return last }
-        if let first = maps.radar.nowcast?.first { return first }
-        return nil
-    }
 }
 
 // MARK: - Models

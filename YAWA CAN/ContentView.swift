@@ -995,56 +995,6 @@ struct ContentView: View {
         .frame(maxWidth: .infinity)
     }
 
-    private struct SunCardData {
-        let progressForArc: Double
-        let isNight: Bool
-    }
-
-    private func sunCardData(sun: SunTimes, timeZone: TimeZone, now: Date) -> SunCardData {
-        let cal = Calendar.current
-        let nowComp = cal.dateComponents(in: timeZone, from: now)
-        let srComp = cal.dateComponents(in: timeZone, from: sun.sunrise)
-        let ssComp = cal.dateComponents(in: timeZone, from: sun.sunset)
-
-        let cal2 = Calendar(identifier: cal.identifier)
-        let nowZ = cal2.date(from: nowComp) ?? now
-        let srZ  = cal2.date(from: srComp) ?? sun.sunrise
-        let ssZ  = cal2.date(from: ssComp) ?? sun.sunset
-
-        if nowZ < srZ || nowZ > ssZ {
-            return SunCardData(progressForArc: 0.5, isNight: true)
-        }
-
-        let denom = max(ssZ.timeIntervalSince(srZ), 1)
-        let raw = nowZ.timeIntervalSince(srZ) / denom
-        let clamped = min(1.0, max(0.0, raw))
-        return SunCardData(progressForArc: clamped, isNight: false)
-    }
-
-    private func sunValueColumn(icon: String, title: String, value: String) -> some View {
-        VStack(spacing: 6) {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.caption)
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(YAWATheme.textSecondary(for: colorScheme).opacity(0.9))
-
-                Text(title)
-                    .font(.caption)
-                    .foregroundStyle(YAWATheme.textSecondary(for: colorScheme).opacity(0.85))
-            }
-            .frame(maxWidth: .infinity)
-
-            Text(value)
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
     private func timeString(_ date: Date, timeZoneID: String?) -> String {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_CA")
@@ -1053,17 +1003,6 @@ struct ContentView: View {
             f.timeZone = tz
         }
         return f.string(from: date)
-    }
-
-    private func metricRow(label: String, value: String) -> some View {
-        HStack {
-            Text(label)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(value)
-                .monospacedDigit()
-        }
-        .font(.callout)
     }
 
     private func metricIconValue(icon: String, value: String) -> some View {
@@ -1148,14 +1087,6 @@ struct ContentView: View {
     private func cToF(_ celsius: Double) -> Double {
         (celsius * 9.0 / 5.0) + 32.0
     }
-
-    private func shortDay(_ date: Date, timeZoneID: String) -> String {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_CA")
-        f.timeZone = TimeZone(identifier: timeZoneID) ?? .current
-        f.dateFormat = "EEE"
-        return f.string(from: date)
-    }
     
     private func weekdayLabel(_ date: Date, timeZoneID: String) -> String {
         let f = DateFormatter()
@@ -1176,12 +1107,6 @@ struct ContentView: View {
     private func tempDisplay(_ celsius: Double) -> String {
         let value = usesUSUnits ? cToF(celsius) : celsius
         return "\(Int(round(value)))°"
-    }
-
-    private func popTextRoundedTo10(_ percent: Int) -> String {
-        let clamped = max(0, min(100, percent))
-        let rounded = Int((Double(clamped) / 10.0).rounded() * 10.0)
-        return "\(rounded)%"
     }
     
     private static let sunLocalTimeFormatter: DateFormatter = {
@@ -1991,29 +1916,6 @@ private struct AllAlertsSheet: View {
 
 // MARK: - Styling
 
-private func alertCardSubtitle(for alert: WeatherAlert) -> String {
-    let lines = alert.summary
-        .components(separatedBy: .newlines)
-        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-        .filter { !$0.isEmpty }
-
-    guard let first = lines.first else { return "" }
-
-    if let timeRange = first.range(
-        of: #"\b\d{1,2}:\d{2}\s?(AM|PM)\s?[A-Z]{2,4}\b"#,
-        options: .regularExpression
-    ) {
-        let issuedTime = String(first[timeRange]).trimmingCharacters(in: .whitespacesAndNewlines)
-        return "Issued \(issuedTime)"
-    }
-
-    if let second = lines.dropFirst().first, !second.isEmpty {
-        return second
-    }
-
-    return "Issued recently"
-}
-
 struct WeatherAlert: Identifiable, Equatable {
     let id = UUID().uuidString  // ← Always unique UUID
     let title: String
@@ -2033,11 +1935,7 @@ struct WeatherAlert: Identifiable, Equatable {
     }
 }
 
-private protocol AlertServiceProtocol {
-    func activeAlerts(for coordinate: CLLocationCoordinate2D, countryCode: String) async throws -> [WeatherAlert]
-}
-
-struct CanadaAlertService: AlertServiceProtocol {
+struct CanadaAlertService {
     
     // Main protocol method – uses tight default delta
     func activeAlerts(
@@ -2648,16 +2546,6 @@ private struct LocationPickerView: View {
         }
     }
 
-    private func hasDuplicateCityNames(in locations: [SavedLocation], cityName: String) -> Bool {
-        let matches = locations.filter {
-            $0.cityName.localizedCaseInsensitiveCompare(cityName) == .orderedSame
-        }
-        return matches.count > 1
-    }
-
-    private func pickerRowTitle(for loc: SavedLocation, in locations: [SavedLocation]) -> String {
-        hasDuplicateCityNames(in: locations, cityName: loc.cityName) ? loc.displayName : loc.cityName
-    }
     
     private func runSearch(expectedQuery: String, generation: Int) async {
         let currentQ = query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -3201,44 +3089,6 @@ private struct DailyForecastDetailSheet: View {
 
 // MARK: - Comfort / Feels Like (YN-style, but metric)
 
-private enum FeelsLikeMode {
-    case windChill
-    case heatIndex
-    case actual
-}
-
-private func computeFeelsLikeMode(tempC: Double, windKph: Double, relativeHumidity: Double?) -> FeelsLikeMode {
-    if tempC <= 10.0, windKph >= 5.0 {
-        return .windChill
-    }
-
-    if tempC >= 26.7, let rh = relativeHumidity, rh >= 40.0 {
-        return .heatIndex
-    }
-
-    return .actual
-}
-
-private func dewPointComfortSubtitleText(for current: CurrentConditions) -> String {
-    let dpC = current.dewPointC
-
-    switch dpC {
-    case ..<10.0:
-        return "Dry air"
-    case 10.0..<12.8:
-        return "Comfortable"
-    case 12.8..<15.6:
-        return "Pleasant"
-    case 15.6..<18.3:
-        return "Slightly humid"
-    case 18.3..<21.1:
-        return "Humid"
-    case 21.1..<23.9:
-        return "Very humid"
-    default:
-        return "Oppressive humidity"
-    }
-}
 
 private func feelsLikeSubtitleText(for current: CurrentConditions) -> String {
     let actualC = current.temperatureC
