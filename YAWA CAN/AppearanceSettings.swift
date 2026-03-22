@@ -53,39 +53,5 @@ final class AppearanceSettings: ObservableObject {
             revision &+= 1
         }
     }
-    var preferredColorScheme: ColorScheme? {
-        switch appearancePreferenceRaw.lowercased() {
-        case "light": return .light
-        case "dark": return .dark
-        default: return nil
-        }
-    }
-
     var isSystemStyle: Bool { stylePreferenceRaw.lowercased() == "system" }
-
-    var skyView: AnyView {
-        isSystemStyle
-        ? AnyView(Color(.systemBackground).ignoresSafeArea())
-        : AnyView(YAWATheme.sky.ignoresSafeArea())
-    }
-
-    // Background behind everything
-    var appBackground: Color {
-        isSystemStyle ? Color(.systemGroupedBackground) : YAWATheme.sky
-    }
-
-    // Cards
-    var card: Color {
-        isSystemStyle ? Color(.secondarySystemGroupedBackground) : YAWATheme.card
-    }
-    // Secondary surface used for larger containers / list row backgrounds.
-    // In themed mode we keep this consistent with the glass card fill (less saturated than the old `card2` blue).
-    var card2: Color {
-        isSystemStyle ? Color(.secondarySystemGroupedBackground) : YAWATheme.card
-    }
-
-    // Text
-    var textPrimary: Color   { isSystemStyle ? Color(.label) : YAWATheme.textPrimary }
-    var textSecondary: Color { isSystemStyle ? Color(.secondaryLabel) : YAWATheme.textSecondary }
-    var textTertiary: Color  { isSystemStyle ? Color(.tertiaryLabel) : YAWATheme.textTertiary }
 }

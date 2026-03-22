@@ -12,29 +12,17 @@ enum YAWATheme {
 
     // MARK: - Brand (shared)
 
-    /// Primary branded sky/background used across YAWA.
+    // Primary branded sky/background used across YAWA.
     static let sky = Color(red: 0.03, green: 0.10, blue: 0.24)
 
-    static let card2 = Color(red: 0.05, green: 0.11, blue: 0.20)
+//    static let card2 = Color(red: 0.05, green: 0.11, blue: 0.20)
 
-    // MARK: - Surfaces
-
-    static let card    = Color(red: 0.02, green: 0.06, blue: 0.13).opacity(0.88)
-    static let divider = Color.white.opacity(0.10)
-    static let cardStroke = Color.white.opacity(0.22)
 
     // MARK: - Text (default for themed/dark)
 
-    static let textPrimary   = Color.white
+
     static let textSecondary = Color.white.opacity(0.80)
-    static let textTertiary  = Color.white.opacity(0.65)
 
-    // MARK: - Accent / Alerts
-
-    static let accent      = Color.yellow.opacity(0.95)
-    static let alertIcon   = Color.red
-    static let alertHeader = Color.yellow.opacity(0.95)
-    static let alert       = Color.yellow.opacity(0.95)
 
     // MARK: - Semantic (adaptive) — mirrors YAWA-PWS
 
@@ -45,11 +33,6 @@ enum YAWATheme {
     /// Alias used by some views (e.g. NOAA/CAN ContentView) — matches `cardFill`.
     static func cardBackground(for scheme: ColorScheme) -> Color {
         cardFill(for: scheme)
-    }
-
-    /// Convenience divider color that matches the current scheme.
-    static func divider(for scheme: ColorScheme) -> Color {
-        scheme == .dark ? divider : Color.black.opacity(0.08)
     }
 
     static func cardFill(for scheme: ColorScheme) -> Color {
@@ -66,8 +49,8 @@ enum YAWATheme {
 
     // MARK: - SF Symbol Colors (match YAWA NOAA)
 
-    /// Returns a consistent accent color for common SF Symbols used in the UI.
-    /// Colors are chosen to read well in both light and dark modes.
+    // Returns a consistent accent color for common SF Symbols used in the UI.
+    // Colors are chosen to read well in both light and dark modes.
     static func symbolColor(_ systemName: String, scheme: ColorScheme) -> Color {
         // Normalize common variants so they share a color.
         let base = systemName

@@ -1230,7 +1230,7 @@ private struct RadarMapViewStage0: UIViewRepresentable {
             iv.center = centerPoint
         }
         
-        func removeCrosshair(from map: MKMapView) {
+        func removeCrosshair(from _: MKMapView) {
             crosshairView?.removeFromSuperview()
             crosshairView = nil
         }
