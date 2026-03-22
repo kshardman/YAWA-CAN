@@ -1936,18 +1936,6 @@ struct WeatherAlert: Identifiable, Equatable {
 
 struct CanadaAlertService {
     
-    // Main protocol method – uses tight default delta
-    func activeAlerts(
-        for coordinate: CLLocationCoordinate2D,
-        countryCode: String
-    ) async throws -> [WeatherAlert] {
-        return try await fetchAlerts(
-            withDelta: 0.35,  // tight city default
-            for: coordinate,
-            countryCode: countryCode
-        )
-    }
-    
     // Reusable helper – accessible from outside the struct (internal access)
     func fetchAlerts(
         withDelta delta: Double,
