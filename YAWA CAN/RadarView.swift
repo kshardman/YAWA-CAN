@@ -238,6 +238,16 @@ struct RadarView: View {
         )
     }
 
+    private var shouldShowRecenterButton: Bool {
+        if zoomStep != 0 { return true }
+
+        let current = CLLocation(latitude: mapCenter.latitude, longitude: mapCenter.longitude)
+        let original = CLLocation(latitude: target.coordinate.latitude, longitude: target.coordinate.longitude)
+
+        return current.distance(from: original) > 5_000
+    }
+
+
     private func stopPlayback() {
         isPlaying = false
         playTask?.cancel()
@@ -620,20 +630,24 @@ struct RadarView: View {
                                 .modifier(GlassCircleButtonModifier(size: 38))
                                 .accessibilityLabel("Zoom out")
 
-                                Button {
-                                    // Recenter / reset to the default framing.
-                                    zoomStep = 0
-                                    mapCenter = target.coordinate
-                                    recenterToken = UUID()
-                                } label: {
-                                    Image(systemName: "location.fill")
-                                        .font(.subheadline.weight(.semibold))
+                                if shouldShowRecenterButton {
+                                    Button {
+                                        // Recenter / reset to the default framing.
+                                        zoomStep = 0
+                                        mapCenter = target.coordinate
+                                        recenterToken = UUID()
+                                    } label: {
+                                        Image(systemName: "location.fill")
+                                            .font(.subheadline.weight(.semibold))
+                                    }
+                                    .modifier(GlassCircleButtonModifier(size: 38))
+                                    .accessibilityLabel("Recenter")
+                                    .transition(.scale.combined(with: .opacity))
                                 }
-                                .modifier(GlassCircleButtonModifier(size: 38))
-                                .accessibilityLabel("Recenter")
                             }
                             .padding(.trailing, 14)
                             .padding(.bottom, 18)
+                            .animation(.easeInOut(duration: 0.18), value: shouldShowRecenterButton)
                         }
                     }
                 } else {
@@ -808,8 +822,8 @@ private struct RadarMapViewStage0: UIViewRepresentable {
         print("[RV]✅ RadarView.swift (interactive) LOADED — \(Date())")
         let map = MKMapView(frame: .zero)
 
-        // Stage 0: no interaction (prevents zoom/pan churn and keeps radar prep stable).
-        map.isScrollEnabled = false
+        // Allow panning again, but keep zoom/rotate/pitch locked so framing stays controlled.
+        map.isScrollEnabled = true
         map.isZoomEnabled = false
         map.isRotateEnabled = false
         map.isPitchEnabled = false
