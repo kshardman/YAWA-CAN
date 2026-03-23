@@ -285,16 +285,22 @@ struct RadarView: View {
         guard !frames.isEmpty else { return }
         guard host != nil else { return }
 
-        if frameIndex >= frames.count - 1 {
-            frameIndex = 0
-            framePath = frames[frameIndex].path
+        // Fast-start prewarm: only warm the current frame plus the next two frames.
+        // This keeps startup responsive while rolling prewarm fills in the rest.
+        let count = frames.count
+        var paths: [String] = []
+
+        func appendIfNeeded(_ path: String) {
+            if !paths.contains(path) {
+                paths.append(path)
+            }
         }
 
-        // Blocking prewarm: do not start ticking frames until prewarm completes.
-        // The first loop is choppy if we only prewarm 2–3 frames; warm the whole
-        // (small) timeline up-front so the first loop is as smooth as the rest.
-        // (RadarTileLayerView.prewarm still caps how many frames it actually fetches.)
-        startupPrewarmPaths = frames.map { $0.path }
+        appendIfNeeded(frames[frameIndex].path)
+        if count >= 2 { appendIfNeeded(frames[(frameIndex + 1) % count].path) }
+        if count >= 3 { appendIfNeeded(frames[(frameIndex + 2) % count].path) }
+
+        startupPrewarmPaths = paths
 
         isPreparingPlayback = true
         startAfterPrewarm = true
@@ -802,8 +808,8 @@ private struct RadarMapViewStage0: UIViewRepresentable {
         print("[RV]✅ RadarView.swift (interactive) LOADED — \(Date())")
         let map = MKMapView(frame: .zero)
 
-        // Stage 0: no interaction (prevents any zoom-out/zoom-in surprises).
-        map.isScrollEnabled = true
+        // Stage 0: no interaction (prevents zoom/pan churn and keeps radar prep stable).
+        map.isScrollEnabled = false
         map.isZoomEnabled = false
         map.isRotateEnabled = false
         map.isPitchEnabled = false
@@ -1855,9 +1861,8 @@ final class RadarTileLayerView: UIView {
         y0 = max(0, min(maxIndex, y0 - 1))
         y1 = max(0, min(maxIndex, y1 + 1))
 
-        // Prewarm more frames up-front so the *first* animation loop isn't choppy.
-        // We still cap this to keep network churn reasonable.
-        let maxFramesToPrewarm = min(13, framePaths.count) // or framePaths.count
+        // Keep startup prewarm intentionally small so playback begins quickly.
+        let maxFramesToPrewarm = min(3, framePaths.count)
         let paths = Array(framePaths.prefix(maxFramesToPrewarm))
         guard !paths.isEmpty else { completion?(); return }
 
