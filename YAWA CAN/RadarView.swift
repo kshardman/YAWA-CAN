@@ -58,7 +58,6 @@ struct RadarView: View {
     @State private var lastRollingPrewarmFrameIndex: Int = -1
     @State private var lastRollingPrewarmAt: CFTimeInterval = 0
 
-
     // MARK: - Debug (frame timestamp)
 
     #if DEBUG
@@ -247,7 +246,6 @@ struct RadarView: View {
         return current.distance(from: original) > 5_000
     }
 
-
     private func stopPlayback() {
         isPlaying = false
         playTask?.cancel()
@@ -261,7 +259,6 @@ struct RadarView: View {
         rollingPrewarmIfNeeded()
 
         #if DEBUG
-        rv0log("advanceFrame index=\(frameIndex) time=\(frames[frameIndex].time) path=\(frames[frameIndex].path)")
         #endif
     }
     private func rollingPrewarmIfNeeded() {
@@ -359,9 +356,6 @@ struct RadarView: View {
     }
 
     private func rv0log(_ msg: String) {
-        #if DEBUG
-        print("[RV0] \(msg)")
-        #endif
     }
 
     private func stateAbbrev(_ state: String?) -> String? {
@@ -440,6 +434,9 @@ struct RadarView: View {
                         currentCenter: $mapCenter,
                         showCrosshair: true,
                         isActive: scenePhase == .active,
+                        onUserPan: {
+                            stopPlayback()
+                        },
                         prewarmToken: prewarmToken,
                         prewarmFramePaths: isPreparingPlayback ? startupPrewarmPaths : rollingPrewarmPaths,
                         onPrewarmFinished: { token in
@@ -571,7 +568,6 @@ struct RadarView: View {
                         .allowsHitTesting(true)
                     }
 
-
                     #if DEBUG
                     // Debug: show the selected frame timestamp so we can verify we’re not seeing stale tiles.
                     VStack {
@@ -591,7 +587,6 @@ struct RadarView: View {
                     }
                     .allowsHitTesting(false)
                     #endif
-
 
                     // Zoom controls (Stage 1B) + Recenter (Stage 1C)
                     VStack {
@@ -745,9 +740,7 @@ struct RadarView: View {
         scheduleTitleGeocode(for: mapCenter)
 
         do {
-            rv0log("fetchWeatherMaps() start target=\(target.title) lat=\(target.latitude) lon=\(target.longitude)")
             let maps = try await service.fetchWeatherMaps()
-            rv0log("frames past=\(maps.radar.past?.count ?? 0) nowcast=\(maps.radar.nowcast?.count ?? 0)")
 
             // Detect stale / delayed feed (server-side issue, not local cache).
             // Show a small banner so users (and us during dev) know when frames are old.
@@ -788,19 +781,16 @@ struct RadarView: View {
             } else {
                 isLoading = false
                 errorText = "No radar frames available."
-                rv0log("no frames available")
                 return
             }
 
             isLoading = false
 
             if let fp = framePath {
-                rv0log("frame selected host=\(maps.host) path=\(fp) frames=\(frames.count) latestTime=\(frames.last?.time ?? 0)")
             }
         } catch {
             isLoading = false
             staleRadarBanner = nil
-            rv0log("fetchWeatherMaps() failed: \(String(describing: error))")
             errorText = "Radar unavailable. Please try again."
         }
     }
@@ -815,6 +805,7 @@ private struct RadarMapViewStage0: UIViewRepresentable {
     @Binding var currentCenter: CLLocationCoordinate2D
     let showCrosshair: Bool
     let isActive: Bool
+    let onUserPan: () -> Void
     
     let prewarmToken: UUID
     let prewarmFramePaths: [String]
@@ -825,7 +816,6 @@ private struct RadarMapViewStage0: UIViewRepresentable {
     let renderPalette: RadarTileLayerView.RenderPalette
 
     func makeUIView(context: Context) -> MKMapView {
-        print("[RV]✅ RadarView.swift (interactive) LOADED — \(Date())")
         let map = MKMapView(frame: .zero)
 
         // Allow panning again, but keep zoom/rotate/pitch locked so framing stays controlled.
@@ -879,25 +869,23 @@ private struct RadarMapViewStage0: UIViewRepresentable {
         if showCrosshair {
             context.coordinator.ensureCrosshair(on: map)
         }
-        #if DEBUG
-        print("[RV0] makeUIView region center=\(region.center.latitude),\(region.center.longitude) span=\(region.span.latitudeDelta),\(region.span.longitudeDelta)")
-        print("[RV0] makeUIView overlay host=\(host) framePath=\(framePath)")
-        #endif
         return map
     }
 
     func updateUIView(_ map: MKMapView, context: Context) {
-        #if DEBUG
-        print("[RV0] updateUIView overlay host=\(host) framePath=\(framePath)")
-        #endif
-
         context.coordinator.setCurrentCenterBinding($currentCenter)
+        context.coordinator.setOnUserPanHandler(onUserPan)
         context.coordinator.attachMapView(map)
         context.coordinator.setFeedStale(isFeedStale)
         context.coordinator.setActive(isActive)
         context.coordinator.setTileHealthHandler(onTileHealth)
         context.coordinator.setRenderPalette(renderPalette)
-        context.coordinator.updateRadar(host: host, framePath: framePath, opacity: opacity)
+
+        let overlayKey = "\(host)|\(framePath)|\(opacity)"
+        if context.coordinator.lastAppliedOverlayKey != overlayKey {
+            context.coordinator.lastAppliedOverlayKey = overlayKey
+            context.coordinator.updateRadar(host: host, framePath: framePath, opacity: opacity)
+        }
 
         // If the map was created with zero bounds, ensure initial region gets applied once layout is real.
         context.coordinator.applyInitialRegionIfNeeded(map, region: region)
@@ -922,6 +910,9 @@ private struct RadarMapViewStage0: UIViewRepresentable {
 
     final class Coordinator: NSObject, MKMapViewDelegate {
         private var isActive: Bool = true
+        private var onUserPanHandler: (() -> Void)?
+        func setOnUserPanHandler(_ handler: @escaping () -> Void) { self.onUserPanHandler = handler }
+
         func setActive(_ active: Bool) {
             guard isActive != active else { return }
             isActive = active
@@ -952,9 +943,6 @@ private struct RadarMapViewStage0: UIViewRepresentable {
             updateCrosshairPosition(on: map)
             updateRadarAfterLayout()
             
-            #if DEBUG
-            print("[RV0] applyRecenter token=\(token) span=\(region.span.latitudeDelta),\(region.span.longitudeDelta)")
-            #endif
         }
 
         private var tileHealthHandler: ((RadarTileLayerView.TileHealth) -> Void)?
@@ -985,12 +973,14 @@ private struct RadarMapViewStage0: UIViewRepresentable {
         private var lastRadarHost: String = ""
         private var lastRadarFramePath: String = ""
         private var lastRadarOpacity: CGFloat = 0.80
+        var lastAppliedOverlayKey: String = ""
         
         private weak var crosshairView: UIImageView?
         
         private var lastPrewarmToken: UUID?
         
         private var userIsInteracting: Bool = false
+        private var didNotifyUserPanThisGesture: Bool = false
         
         func setFeedStale(_ stale: Bool) {
             radarLayerA?.isFeedStale = stale
@@ -1007,7 +997,14 @@ private struct RadarMapViewStage0: UIViewRepresentable {
             // world/placeholder region. Don’t treat that as user interaction.
             guard didApplyInitialRegion else { return }
             if isProgrammaticRegionChange { return }
+
             userIsInteracting = true
+
+            // Pause playback as soon as a real user pan gesture begins, not after the region settles.
+            if !didNotifyUserPanThisGesture {
+                didNotifyUserPanThisGesture = true
+                onUserPanHandler?()
+            }
         }
         
         func prewarmIfNeeded(token: UUID, host: String, framePaths: [String], completion: @escaping () -> Void) {
@@ -1149,9 +1146,6 @@ private struct RadarMapViewStage0: UIViewRepresentable {
             updateCrosshairPosition(on: map)
             updateRadarAfterLayout()
             
-            #if DEBUG
-            print("[RV0] applyInitialRegion span=\(region.span.latitudeDelta),\(region.span.longitudeDelta)")
-            #endif
         }
         
         func applyRegionIfNeeded(_ map: MKMapView, region: MKCoordinateRegion) {
@@ -1193,9 +1187,6 @@ private struct RadarMapViewStage0: UIViewRepresentable {
             updateCrosshairPosition(on: map)
             updateRadarAfterLayout()
             
-            #if DEBUG
-            print("[RV0] applyRegionIfNeeded(zoom) span=\(region.span.latitudeDelta),\(region.span.longitudeDelta)")
-            #endif
         }
         
         private func signature(for region: MKCoordinateRegion) -> String {
@@ -1220,6 +1211,7 @@ private struct RadarMapViewStage0: UIViewRepresentable {
             // During initial setup MapKit can briefly report its default region (often centered in the US)
             // before our initial setRegion fully sticks. Never treat those as user pans.
             guard didApplyInitialRegion else {
+                didNotifyUserPanThisGesture = false
                 updateCrosshairPosition(on: mapView)
                 updateRadarAfterLayout()
                 return
@@ -1228,6 +1220,7 @@ private struct RadarMapViewStage0: UIViewRepresentable {
             // Ignore programmatic changes, and ignore delayed callbacks from a recent programmatic
             // setRegion ONLY if the user was not actively interacting.
             if isProgrammaticRegionChange || (dt <= 0.45 && !userIsInteracting) {
+                didNotifyUserPanThisGesture = false
                 updateCrosshairPosition(on: mapView)
                 updateRadarAfterLayout()
                 return
@@ -1235,11 +1228,11 @@ private struct RadarMapViewStage0: UIViewRepresentable {
 
             // Otherwise: treat as user-driven.
             userIsInteracting = false
+            didNotifyUserPanThisGesture = false
             currentCenterBinding?.wrappedValue = mapView.region.center
 
             #if DEBUG
             let c = mapView.region.center
-            print("[RV0] userPan center=\(c.latitude),\(c.longitude)")
             #endif
 
             updateCrosshairPosition(on: mapView)
@@ -1286,7 +1279,6 @@ private struct RadarMapViewStage0: UIViewRepresentable {
         }
     }
 }
-
 
 // Hybrid radar tile compositor view (for Stage 0, under MapKit labels)
 final class RadarTileLayerView: UIView {
@@ -1427,7 +1419,6 @@ final class RadarTileLayerView: UIView {
         if let bytes { extras.append("bytes=\(bytes)") }
         let extraStr = extras.isEmpty ? "" : " " + extras.joined(separator: " ")
 
-        print("[RV0][tiles] emptyTile \(reason) detected=\(dbgEmptyTileDetected) cacheHits=\(dbgEmptyTileCacheHits) ck=\(cacheKey)\(extraStr)")
     }
 
     private func dbgLogFinalMiss(tk: TileKey, statusCode: Int?, bytes1: Int?, bytes2: Int?) {
@@ -1440,7 +1431,6 @@ final class RadarTileLayerView: UIView {
         let b1 = bytes1.map(String.init) ?? "nil"
         let b2 = bytes2.map(String.init) ?? "nil"
 
-        print("[RV0][tiles] finalMiss status=\(statusText) bytes1=\(b1) bytes2=\(b2) z=\(tk.z) x=\(tk.x) y=\(tk.y) frame=\(tk.framePath) url=\(tk.urlString)")
     }
     #endif
 

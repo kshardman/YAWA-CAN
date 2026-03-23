@@ -5,7 +5,6 @@
 //  Created by Keith Sharman on 3/9/26.
 //
 
-
 import Foundation
 import CoreLocation
 import Combine
@@ -33,7 +32,6 @@ final class WeatherViewModel: ObservableObject {
         let generation = loadGeneration
 
         if currentTask != nil {
-            RefreshLog.log("vm cancelling previous load before generation=\(generation)")
         }
         currentTask?.cancel()
 
@@ -42,8 +40,6 @@ final class WeatherViewModel: ObservableObject {
         }
         errorMessage = nil
 
-        RefreshLog.log("vm load started generation=\(generation) lat=\(latitude) lon=\(longitude) showLoading=\(showLoading)")
-
         let task = Task(priority: .userInitiated) { [service] in
             do {
                 let snapshot = try await service.fetchWeather(
@@ -51,37 +47,30 @@ final class WeatherViewModel: ObservableObject {
                     locationName: nil
                 )
                 guard !Task.isCancelled else {
-                    RefreshLog.log("vm load cancelled generation=\(generation)")
                     return
                 }
 
                 await MainActor.run {
                     guard generation == self.loadGeneration else {
-                        RefreshLog.log("vm stale success dropped generation=\(generation) latest=\(self.loadGeneration)")
                         return
                     }
                     self.snapshot = snapshot
                     self.errorMessage = nil
                     self.isLoading = false
-                    RefreshLog.log("vm load succeeded generation=\(generation)")
                 }
             } catch is CancellationError {
-                RefreshLog.log("vm load cancellation error generation=\(generation)")
                 return
             } catch {
                 guard !Task.isCancelled else {
-                    RefreshLog.log("vm load cancelled after error generation=\(generation)")
                     return
                 }
 
                 await MainActor.run {
                     guard generation == self.loadGeneration else {
-                        RefreshLog.log("vm stale failure dropped generation=\(generation) latest=\(self.loadGeneration)")
                         return
                     }
                     self.errorMessage = error.localizedDescription
                     self.isLoading = false
-                    RefreshLog.log("vm load failed generation=\(generation) error=\(error.localizedDescription)")
                 }
             }
         }
