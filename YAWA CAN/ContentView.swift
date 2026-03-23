@@ -39,10 +39,20 @@ private func normalizedAlertTitle(_ title: String) -> String {
         .joined(separator: " ")
 }
 
+enum RefreshLog {
+    static let enabled = false
+
+    static func log(_ message: @autoclosure () -> String) {
+        guard enabled else { return }
+        print("[YCREFRESH] \(message())")
+    }
+}
+
 struct ContentView: View {
-    @StateObject private var viewModel = WeatherViewModel(service: OpenMeteoWeatherService())
+    @StateObject private var viewModel = WeatherViewModel()
     @StateObject private var locationStore = LocationStore()
     @StateObject private var locationResolver = LocationResolver()
+    private let weatherService = OpenMeteoWeatherService()
 
     @State private var showingLocations = false
     @State private var selected: SavedLocation? = nil
@@ -62,9 +72,33 @@ struct ContentView: View {
     @AppStorage("yawa.can.isCurrentLocationSelected") private var isCurrentLocationSelected: Bool = false
     
     @MainActor
-    private func refreshWeather() async {
-        let fallback = locationStore.favorites.first ?? SavedLocation.toronto
-        var loc = displayedLocation ?? selected ?? locationStore.selected ?? fallback
+    private func refreshWeather(showLoading: Bool = true) async {
+        RefreshLog.log("refresh requested showLoading=\(showLoading) currentLocation=\(isCurrentLocationSelected)")
+
+        if refreshInFlight {
+            pendingRefresh = true
+            pendingRefreshShowsLoading = pendingRefreshShowsLoading || showLoading
+            RefreshLog.log("refresh queued while in flight")
+            return
+        }
+
+        refreshInFlight = true
+        defer {
+            refreshInFlight = false
+
+            if pendingRefresh {
+                let rerunShowsLoading = pendingRefreshShowsLoading
+                pendingRefresh = false
+                pendingRefreshShowsLoading = false
+                RefreshLog.log("running queued refresh showLoading=\(rerunShowsLoading)")
+                Task { @MainActor in
+                    await refreshWeather(showLoading: rerunShowsLoading)
+                }
+            }
+        }
+
+        var loc = selected ?? locationStore.selected ?? SavedLocation.toronto
+        RefreshLog.log("refresh starting target=\(loc.displayName) lat=\(loc.latitude) lon=\(loc.longitude)")
 
         if isCurrentLocationSelected {
             do {
@@ -73,34 +107,41 @@ struct ContentView: View {
                 selected = currentLoc
                 displayedLocation = currentLoc
                 loc = currentLoc
+                RefreshLog.log("one-shot location resolved target=\(currentLoc.displayName) lat=\(currentLoc.latitude) lon=\(currentLoc.longitude)")
             } catch {
-                // If GPS refresh fails, keep using the last known location.
+                RefreshLog.log("one-shot location failed error=\(error.localizedDescription)")
+                // Keep using the most recent selected location if a fresh current-location lookup fails.
             }
         } else {
             selected = loc
         }
 
-        let days = max(1, min(forecastDaysToShow, 10))
-        await viewModel.load(for: loc.coordinate, locationName: loc.displayName, forecastDays: days)
-        if viewModel.snapshot != nil {
-            displayedLocation = loc
-            temperatureAnimationKey = UUID()
-            sunRefreshToken = Date()
-            lastUpdatedAt = Date()
-        }
+        await viewModel.load(
+            latitude: loc.latitude,
+            longitude: loc.longitude,
+            service: weatherService,
+            showLoading: showLoading
+        )
+
+        displayedLocation = loc
+        temperatureAnimationKey = UUID()
+        sunRefreshToken = Date()
+        lastUpdatedAt = Date()
+        RefreshLog.log("refresh completed target=\(loc.displayName)")
     }
     
     @MainActor
     private func refreshOnForegroundIfNeeded() async {
         let now = Date()
-
         if let last = lastForegroundRefreshAt,
            now.timeIntervalSince(last) < 20 {
+            RefreshLog.log("foreground refresh skipped due to throttle")
             return
         }
 
         lastForegroundRefreshAt = now
-        await refreshWeather()
+        RefreshLog.log("foreground refresh triggered")
+        await refreshWeather(showLoading: false)
     }
     
     @State private var sunRefreshToken = Date()
@@ -120,6 +161,9 @@ struct ContentView: View {
     @Environment(\.scenePhase) private var scenePhase
     
     @State private var lastForegroundRefreshAt: Date? = nil
+    @State private var refreshInFlight = false
+    @State private var pendingRefresh = false
+    @State private var pendingRefreshShowsLoading = false
 
     private var appBackground: Color {
         YAWATheme.background(for: colorScheme)
@@ -259,38 +303,29 @@ struct ContentView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
-        .task(id: "\(selectedLocationForAlerts.displayName)|\(selectedLocationForAlerts.countryCode)") {
+        .task(id: "\(selectedLocationForAlerts.latitude),\(selectedLocationForAlerts.longitude)") {
             await loadAlertsForSelectedLocation()
         }
         .sheet(isPresented: $showingLocations) {
             LocationPickerView(
                 store: locationStore,
                 onSelect: { loc in
+                    locationStore.setSelected(loc)
                     selected = loc
                     isCurrentLocationSelected = false
-                    locationStore.setSelected(loc)
-                    UserDefaults.standard.set(loc.displayName, forKey: "yawa.can.selectedLocationDisplayName")
-                    let days = max(1, min(forecastDaysToShow, 10))
-                    Task {
-                        await viewModel.load(for: loc.coordinate, locationName: loc.displayName, forecastDays: days)
-                        if viewModel.snapshot != nil {
-                            displayedLocation = loc
-                            temperatureAnimationKey = UUID()
-                        }
+
+                    Task { @MainActor in
+                        await refreshWeather()
                     }
                 },
                 onSelectCurrentLocation: { loc in
-                    selected = loc
-                    isCurrentLocationSelected = true
                     locationStore.setSelectedCurrentLocation(loc)
-                    UserDefaults.standard.set(loc.displayName, forKey: "yawa.can.selectedLocationDisplayName")
-                    let days = max(1, min(forecastDaysToShow, 10))
-                    Task {
-                        await viewModel.load(for: loc.coordinate, locationName: loc.displayName, forecastDays: days)
-                        if viewModel.snapshot != nil {
-                            displayedLocation = loc
-                            temperatureAnimationKey = UUID()
-                        }
+                    selected = loc
+                    displayedLocation = loc
+                    isCurrentLocationSelected = true
+
+                    Task { @MainActor in
+                        await refreshWeather()
                     }
                 }
             )
@@ -1951,11 +1986,7 @@ struct CanadaAlertService {
             throw URLError(.badURL)
         }
         
-        print("Querying GeoMet API (delta \(delta)): \(url.absoluteString)")
-        
         let (data, _) = try await URLSession.shared.data(from: url)
-        
-        print("Received \(data.count) bytes from GeoMet")
         
         struct Response: Decodable {
             let features: [Feature]
@@ -2007,8 +2038,6 @@ struct CanadaAlertService {
         
         let decoder = JSONDecoder()
         let response = try decoder.decode(Response.self, from: data)
-        
-        print("Decoded \(response.features.count) raw features")
         
         let alerts = response.features
             .map { $0.properties }
@@ -2284,7 +2313,7 @@ private final class LocationResolver: NSObject, ObservableObject, CLLocationMana
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let loc = locations.first else {
+        guard let loc = locations.last else {
             pendingLocation?.resume(throwing: LocationError.noLocation)
             pendingLocation = nil
             return
