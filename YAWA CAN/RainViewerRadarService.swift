@@ -89,32 +89,6 @@ final class RainViewerRadarService {
 
         let decoded = try decoder.decode(RainViewerWeatherMapsResponse.self, from: data)
 
-        #if DEBUG
-        let age = http.value(forHTTPHeaderField: "Age") ?? "-"
-        let date = http.value(forHTTPHeaderField: "Date") ?? "-"
-        let cacheControl = http.value(forHTTPHeaderField: "Cache-Control") ?? "-"
-        let expires = http.value(forHTTPHeaderField: "Expires") ?? "-"
-
-        let generated = decoded.generated ?? 0
-        let now = Int(Date().timeIntervalSince1970)
-        let deltaSec = (generated > 0) ? max(0, now - generated) : 0
-        let deltaHr = Double(deltaSec) / 3600.0
-
-        let past = decoded.radar.past ?? []
-        let nowcast = decoded.radar.nowcast ?? []
-        let latest = (past + nowcast).map { $0.time }.max() ?? 0
-
-        print("[RVAPI] weather-maps.json status=\(http.statusCode) Age=\(age) Date=\(date) Cache-Control=\(cacheControl) Expires=\(expires)")
-        print("[RVAPI] url=\(url.absoluteString)")
-        print("[RVAPI] json version=\(decoded.version ?? "-") generated=\(generated) now=\(now) deltaHr=\(String(format: "%.2f", deltaHr)) latestFrame=\(latest)")
-        let freshness = radarFreshness(from: decoded, now: now)
-        if freshness.isStale(thresholdSeconds: 3600) {
-            print("[RVAPI] ⚠️ STALE FEED (>=1h): \(freshness.summary)")
-        } else {
-            print("[RVAPI] ✅ fresh: \(freshness.summary)")
-        }
-        #endif
-
         return decoded
     }
 

@@ -786,8 +786,6 @@ struct RadarView: View {
 
             isLoading = false
 
-            if let fp = framePath {
-            }
         } catch {
             isLoading = false
             staleRadarBanner = nil
@@ -1231,10 +1229,6 @@ private struct RadarMapViewStage0: UIViewRepresentable {
             didNotifyUserPanThisGesture = false
             currentCenterBinding?.wrappedValue = mapView.region.center
 
-            #if DEBUG
-            let c = mapView.region.center
-            #endif
-
             updateCrosshairPosition(on: mapView)
             updateRadarAfterLayout()
         }
@@ -1413,12 +1407,10 @@ final class RadarTileLayerView: UIView {
         // Throttle logs so we don’t spam the console.
         if now - dbgLastEmptyLogAt < 1.0 { return }
         dbgLastEmptyLogAt = now
-
-        var extras: [String] = []
-        if let ttl { extras.append(String(format: "ttl=%.1fs", ttl)) }
-        if let bytes { extras.append("bytes=\(bytes)") }
-        let extraStr = extras.isEmpty ? "" : " " + extras.joined(separator: " ")
-
+        _ = reason
+        _ = cacheKey
+        _ = ttl
+        _ = bytes
     }
 
     private func dbgLogFinalMiss(tk: TileKey, statusCode: Int?, bytes1: Int?, bytes2: Int?) {
@@ -1426,11 +1418,10 @@ final class RadarTileLayerView: UIView {
         // Separate throttle for final miss logging so we capture failures without flooding.
         if now - dbgLastEmptyLogAt < 0.35 { return }
         dbgLastEmptyLogAt = now
-
-        let statusText = statusCode.map(String.init) ?? "nil"
-        let b1 = bytes1.map(String.init) ?? "nil"
-        let b2 = bytes2.map(String.init) ?? "nil"
-
+        _ = tk
+        _ = statusCode
+        _ = bytes1
+        _ = bytes2
     }
     #endif
 

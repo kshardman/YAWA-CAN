@@ -46,7 +46,7 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
         let (data, _) = try await URLSession.shared.data(from: url)
         let decoded = try JSONDecoder().decode(OpenMeteoResponse.self, from: data)
 
-        let name = locationName ?? "Unknown"
+//        let name = locationName ?? "Unknown"
 
         // Current
         let code = decoded.current.weather_code

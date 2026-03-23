@@ -2319,10 +2319,11 @@ private final class LocationResolver: NSObject, ObservableObject, CLLocationMana
             return
         }
 
-        CLGeocoder().reverseGeocodeLocation(loc) { [weak self] placemarks, error in
-            guard let self else { return }
-            guard let cont = self.pendingLocation else { return }
-            self.pendingLocation = nil
+        let continuation = pendingLocation
+        pendingLocation = nil
+
+        CLGeocoder().reverseGeocodeLocation(loc) { placemarks, error in
+            guard let cont = continuation else { return }
 
             if error != nil {
                 cont.resume(throwing: LocationError.reverseGeocodeFailed)
@@ -2346,7 +2347,7 @@ private final class LocationResolver: NSObject, ObservableObject, CLLocationMana
         }
     }
     
-    private static func normalizedAdministrativeArea(_ administrativeArea: String, countryCode: String) -> String {
+    nonisolated private static func normalizedAdministrativeArea(_ administrativeArea: String, countryCode: String) -> String {
         guard countryCode == "MX" else { return administrativeArea }
 
         let normalized = administrativeArea.trimmingCharacters(in: .whitespacesAndNewlines)
