@@ -431,12 +431,12 @@ struct RadarView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                if let host, let framePath {
+                if let host, let currentFramePath = framePath {
                     RadarMapViewStage0(
                         recenterToken: recenterToken,
                         region: fixedRegion,
                         host: host,
-                        framePath: framePath,
+                        framePath: currentFramePath,
                         currentCenter: $mapCenter,
                         showCrosshair: true,
                         isActive: scenePhase == .active,
@@ -632,9 +632,15 @@ struct RadarView: View {
 
                                 if shouldShowRecenterButton {
                                     Button {
-                                        // Recenter / reset to the default framing.
+                                        // Recenter / reset to the default framing, and jump back
+                                        // to the newest frame so the result feels deterministic.
+                                        stopPlayback()
                                         zoomStep = 0
                                         mapCenter = target.coordinate
+                                        if !frames.isEmpty {
+                                            frameIndex = max(0, frames.count - 1)
+                                            framePath = frames[frameIndex].path
+                                        }
                                         recenterToken = UUID()
                                     } label: {
                                         Image(systemName: "location.fill")
@@ -1034,33 +1040,51 @@ private struct RadarMapViewStage0: UIViewRepresentable {
         
         func attachRadarLayer(to map: MKMapView) {
             if radarLayerA != nil || radarLayerB != nil { return }
-            
+
             func makeLayer() -> RadarTileLayerView {
-                let v = RadarTileLayerView()
+                let v = RadarTileLayerView(frame: map.bounds)
                 v.isUserInteractionEnabled = false
-                v.translatesAutoresizingMaskIntoConstraints = false
+                v.translatesAutoresizingMaskIntoConstraints = true
+                v.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+                v.clipsToBounds = false
                 v.onTileHealthUpdate = tileHealthHandler
                 return v
             }
-            
+
             let a = makeLayer()
             let b = makeLayer()
-            
+
             // Place under MapKit labels by inserting into the overlay container when available.
             if let overlayContainer = map.subviews.first(where: { String(describing: type(of: $0)).contains("Overlay") }) {
+                a.frame = overlayContainer.bounds
+                b.frame = overlayContainer.bounds
                 overlayContainer.addSubview(a)
                 overlayContainer.addSubview(b)
             } else {
+                a.frame = map.bounds
+                b.frame = map.bounds
                 map.addSubview(a)
                 map.addSubview(b)
             }
-            
+
             a.alpha = 1.0
             b.alpha = 0.0
-            
+
             radarLayerA = a
             radarLayerB = b
             activeRadarIsA = true
+        }
+
+        func layoutRadarLayers() {
+            guard let map = mapViewRef else { return }
+
+            if let overlayContainer = map.subviews.first(where: { String(describing: type(of: $0)).contains("Overlay") }) {
+                radarLayerA?.frame = overlayContainer.bounds
+                radarLayerB?.frame = overlayContainer.bounds
+            } else {
+                radarLayerA?.frame = map.bounds
+                radarLayerB?.frame = map.bounds
+            }
         }
         
         func updateRadar(host: String, framePath: String, opacity: CGFloat) {
@@ -1083,13 +1107,15 @@ private struct RadarMapViewStage0: UIViewRepresentable {
             guard let map = mapViewRef else { return }
             guard let active = activeRadarLayer else { return }
             guard !lastRadarHost.isEmpty, !lastRadarFramePath.isEmpty else { return }
-            
+
+            layoutRadarLayers()
+
             // Try now (if we have bounds), then again shortly after.
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 active.update(mapView: map, host: self.lastRadarHost, framePath: self.lastRadarFramePath, opacity: self.lastRadarOpacity)
             }
-            
+
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
                 guard let self else { return }
                 active.update(mapView: map, host: self.lastRadarHost, framePath: self.lastRadarFramePath, opacity: self.lastRadarOpacity)
@@ -1181,13 +1207,16 @@ private struct RadarMapViewStage0: UIViewRepresentable {
         func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
             // Called continuously during pans/scrolls. Keep the radar compositor in sync so
             // tiles don't appear to "stick" until the gesture ends.
+            layoutRadarLayers()
             updateCrosshairPosition(on: mapView)
             updateRadarAfterLayout()
         }
         
         func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
             let dt = CACurrentMediaTime() - lastProgrammaticRegionChangeAt
-            
+
+            layoutRadarLayers()
+
             // During initial setup MapKit can briefly report its default region (often centered in the US)
             // before our initial setRegion fully sticks. Never treat those as user pans.
             guard didApplyInitialRegion else {
@@ -1195,7 +1224,7 @@ private struct RadarMapViewStage0: UIViewRepresentable {
                 updateRadarAfterLayout()
                 return
             }
-            
+
             // Ignore programmatic changes, and ignore delayed callbacks from a recent programmatic
             // setRegion ONLY if the user was not actively interacting.
             if isProgrammaticRegionChange || (dt <= 0.45 && !userIsInteracting) {
@@ -1203,22 +1232,23 @@ private struct RadarMapViewStage0: UIViewRepresentable {
                 updateRadarAfterLayout()
                 return
             }
-            
+
             // Otherwise: treat as user-driven.
             userIsInteracting = false
             currentCenterBinding?.wrappedValue = mapView.region.center
-            
+
             #if DEBUG
             let c = mapView.region.center
             print("[RV0] userPan center=\(c.latitude),\(c.longitude)")
             #endif
-            
+
             updateCrosshairPosition(on: mapView)
             updateRadarAfterLayout()
         }
         
         func mapViewDidFinishRenderingMap(_ mapView: MKMapView, fullyRendered: Bool) {
             guard fullyRendered else { return }
+            layoutRadarLayers()
             updateCrosshairPosition(on: mapView)
             updateRadarAfterLayout()
         }
@@ -1352,6 +1382,9 @@ final class RadarTileLayerView: UIView {
 
     private var negativeCache: [String: Date] = [:]
     private let negativeTTL: TimeInterval = 45
+    private var rateLimitCache: [String: Date] = [:]
+    private let rateLimitTTLNormal: TimeInterval = 25
+    private let rateLimitTTLStale: TimeInterval = 45
 
     // Short-lived cache for "empty but 200" tiles (provider hiccup / blank PNG).
     // We treat these as a miss so we never paint blank squares.
@@ -1641,9 +1674,16 @@ final class RadarTileLayerView: UIView {
         recordTileEvent(isEmpty: false)
 
         // Opportunistic cleanup (keeps dicts from growing unbounded).
+        let now = Date()
         if emptyTileCache.count > 512 {
-            let now = Date()
             emptyTileCache = emptyTileCache.filter { $0.value.expiresAt > now }
+        }
+        if negativeCache.count > 512 {
+            negativeCache = negativeCache.filter { now.timeIntervalSince($0.value) < negativeTTL }
+        }
+        if rateLimitCache.count > 512 {
+            let ttl = isFeedStale ? rateLimitTTLStale : rateLimitTTLNormal
+            rateLimitCache = rateLimitCache.filter { now.timeIntervalSince($0.value) < ttl }
         }
 
         // Short-lived cache for "empty" tiles (non-404). Prevents blank squares from being painted.
@@ -1664,7 +1704,14 @@ final class RadarTileLayerView: UIView {
         }
 
         // Negative cache (404)
-        if let t = negativeCache[ck], Date().timeIntervalSince(t) < negativeTTL {
+        if let t = negativeCache[ck], now.timeIntervalSince(t) < negativeTTL {
+            completion(nil)
+            return
+        }
+
+        // Rate-limit cache (429). Back off per exact tile so we do not hammer RainViewer.
+        let rateLimitTTL = isFeedStale ? rateLimitTTLStale : rateLimitTTLNormal
+        if let t = rateLimitCache[ck], now.timeIntervalSince(t) < rateLimitTTL {
             completion(nil)
             return
         }
@@ -1724,6 +1771,16 @@ final class RadarTileLayerView: UIView {
                 return
             }
 
+            // If RainViewer is rate-limiting us, do NOT retry with a cache-buster.
+            // That only increases pressure and makes 429 storms worse.
+            if statusCode == 429 {
+                DispatchQueue.main.async {
+                    self.rateLimitCache[ck] = Date()
+                }
+                self.drain(ck, img: nil)
+                return
+            }
+
             let bytes1 = data1?.count
             var bytes2: Int? = nil
             func decodeAndValidate(_ data: Data?) -> UIImage? {
@@ -1765,6 +1822,13 @@ final class RadarTileLayerView: UIView {
                 let (data2, st2) = fetchData(bustedURL, cachePolicy: .reloadIgnoringLocalCacheData, timeout: 3.0)
                 bytes2 = data2?.count
                 if let st2 { statusCode = st2 }
+                if statusCode == 429 {
+                    DispatchQueue.main.async {
+                        self.rateLimitCache[ck] = Date()
+                    }
+                    self.drain(ck, img: nil)
+                    return
+                }
 
                 if statusCode == 404 {
                     self.drain(ck, img: nil)
@@ -1811,6 +1875,14 @@ final class RadarTileLayerView: UIView {
             if statusCode == 404 {
                 DispatchQueue.main.async {
                     self.negativeCache[ck] = Date()
+                }
+                self.drain(ck, img: nil)
+                return
+            }
+
+            if statusCode == 429 {
+                DispatchQueue.main.async {
+                    self.rateLimitCache[ck] = Date()
                 }
                 self.drain(ck, img: nil)
                 return
