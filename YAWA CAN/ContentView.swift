@@ -409,7 +409,7 @@ struct ContentView: View {
     // MARK: - Tiles
 
     private func currentTile(_ snap: WeatherSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center) {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
@@ -456,7 +456,7 @@ struct ContentView: View {
             HStack(alignment: .center, spacing: 12) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(currentTemperatureValueText(snap.current.temperatureC))
-                        .font(.system(size: 56, weight: .semibold, design: .rounded))
+                        .font(.system(size: 60, weight: .semibold, design: .rounded))
                         .monospacedDigit()
                         .contentTransition(.numericText())
                         .opacity(viewModel.isLoading ? 0.82 : 1.0)
@@ -498,7 +498,8 @@ struct ContentView: View {
                     .opacity(0.9)
 
                 Text("Comfort")
-                    .font(.headline)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
 
                 Spacer()
             }
@@ -752,8 +753,7 @@ struct ContentView: View {
             let days: [DailyForecastDay] = Array(snap.daily.prefix(daysToShow))
             
             ForEach(Array(days.enumerated()), id: \.offset) { idx, day in
-                let weekdayW: CGFloat = 40
-                let dateW: CGFloat = 32
+                let dayDateW: CGFloat = 78
                 let iconW: CGFloat = 36
                 
                 let sym = day.symbolName
@@ -768,22 +768,22 @@ struct ContentView: View {
                     )
                 } label: {
                     HStack(spacing: 4) {
-                        // Left block: weekday/date/icon/PoP (unchanged)
+                        // Left block: weekday/date/icon/PoP (modified)
                         HStack(spacing: 4) {
-                            HStack(spacing: 2) {
+                            VStack(alignment: .leading, spacing: 2) {
                                 Text(weekdayLabel(day.date, timeZoneID: snap.timeZoneID))
                                     .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
                                     .lineLimit(1)
-                                    .frame(width: weekdayW, alignment: .leading)
+                                    .minimumScaleFactor(0.9)
                                 
                                 Text(dateLabel(day.date, timeZoneID: snap.timeZoneID))
                                     .font(.caption)
-                                    .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+                                    .foregroundStyle(YAWATheme.textSecondary(for: colorScheme).opacity(0.75))
                                     .monospacedDigit()
                                     .lineLimit(1)
-                                    .frame(width: dateW, alignment: .leading)
                             }
+                            .frame(width: dayDateW, alignment: .leading)
                             
                             let rawPop = day.precipChancePercent
                             let roundedPop = max(0, min(100, Int((Double(rawPop) / 10.0).rounded() * 10.0)))
@@ -814,7 +814,7 @@ struct ContentView: View {
                             }
                             .frame(width: iconW, height: 34, alignment: .center)
                         }
-                        .frame(width: weekdayW + dateW + 4 + iconW + 2, alignment: .leading)
+                        .frame(width: dayDateW + 4 + iconW, alignment: .leading)
                         
                         // Forecast text
                         Text(refinedDailyRowConditionText(for: day))
@@ -906,7 +906,8 @@ struct ContentView: View {
                         .opacity(0.85)
 
                     Text("Radar")
-                        .font(.headline)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
                         .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
 
                     Spacer()
@@ -942,7 +943,8 @@ struct ContentView: View {
                     .opacity(0.9)
 
                 Text("Sun")
-                    .font(.headline)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
 
                 Spacer()
             }
@@ -1124,9 +1126,20 @@ struct ContentView: View {
     }
     
     private func weekdayLabel(_ date: Date, timeZoneID: String) -> String {
+        let tz = TimeZone(identifier: timeZoneID) ?? .current
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = tz
+
+        if cal.isDateInToday(date) {
+            return "Today"
+        }
+        if cal.isDateInTomorrow(date) {
+            return "Tomorrow"
+        }
+
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_CA")
-        f.timeZone = TimeZone(identifier: timeZoneID) ?? .current
+        f.timeZone = tz
         f.dateFormat = "EEE"
         return f.string(from: date)
     }

@@ -28,7 +28,7 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
             .init(name: "current", value: "temperature_2m,apparent_temperature,dew_point_2m,relative_humidity_2m,pressure_msl,wind_speed_10m,wind_direction_10m,weather_code,cloud_cover"),
 
             // hourly temps for chart
-            .init(name: "hourly", value: "temperature_2m,precipitation_probability"),
+            .init(name: "hourly", value: "temperature_2m,precipitation_probability,weather_code,cloud_cover"),
 
             // daily forecast
             .init(name: "daily", value: "sunrise,sunset,temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code,cloud_cover_mean"),
@@ -150,13 +150,39 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
 
             guard let date = cal.date(from: comps) else { return nil }
 
-            let mapped = mapWeather(code: codes[i])
             let precipChance = roundPrecipToNearest10(pops[i])
+
+            let noonCodeAndCloud: (code: Int, cloud: Int?) = {
+                let noon = date
+                let hourlyDates = decoded.hourly.time.compactMap { parseOpenMeteoDateTime($0, timeZoneID: decoded.timezone) }
+
+                var bestIndex: Int?
+                var bestDistance: TimeInterval = .greatestFiniteMagnitude
+
+                for (idx, hourlyDate) in hourlyDates.enumerated() {
+                    if !cal.isDate(hourlyDate, inSameDayAs: date) { continue }
+                    let distance = abs(hourlyDate.timeIntervalSince(noon))
+                    if distance < bestDistance {
+                        bestDistance = distance
+                        bestIndex = idx
+                    }
+                }
+
+                if let idx = bestIndex,
+                   idx < decoded.hourly.weather_code.count,
+                   idx < decoded.hourly.cloud_cover.count {
+                    return (decoded.hourly.weather_code[idx], decoded.hourly.cloud_cover[idx])
+                } else {
+                    return (codes[i], Int(clouds[i].rounded()))
+                }
+            }()
+
+            let mapped = mapWeather(code: noonCodeAndCloud.code)
             let refinedDaily = refineDailySky(
                 mapped: mapped,
-                weatherCode: codes[i],
+                weatherCode: noonCodeAndCloud.code,
                 precipChancePercent: precipChance,
-                cloudCoverPercent: Int(clouds[i].rounded())
+                cloudCoverPercent: noonCodeAndCloud.cloud ?? Int(clouds[i].rounded())
             )
 
             return DailyForecastDay(
@@ -293,6 +319,8 @@ private struct OpenMeteoResponse: Decodable {
         let time: [String]
         let temperature_2m: [Double]
         let precipitation_probability: [Double]
+        let weather_code: [Int]
+        let cloud_cover: [Int?]
     }
 
     struct Daily: Decodable {
