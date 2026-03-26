@@ -207,8 +207,8 @@ struct ContentView: View {
                                 currentTile(snap)
                                 dailyTile(snap)
                                 radarCard()
-                                sunTile(snap)
                                 comfortTile(snap)
+                                sunTile(snap)
                             } else if !viewModel.isLoading && viewModel.errorMessage == nil {
                                 Text("No weather loaded yet.")
                                     .foregroundStyle(.secondary)
@@ -952,15 +952,67 @@ struct ContentView: View {
             if let sun = snap.sun {
                 let tz = TimeZone(identifier: snap.timeZoneID) ?? .current
                 let now = sunRefreshToken
-                let isNight = !(now >= sun.sunrise && now <= sun.sunset)
-                let t = sunProgress(sunrise: sun.sunrise, sunset: sun.sunset, now: now)
-                let progressForArc = isNight ? 0.5 : t
+                let sunState: (sunrise: Date, sunset: Date, isNight: Bool, progressForArc: Double) = {
+                    let cal: Calendar = {
+                        var c = Calendar(identifier: .gregorian)
+                        c.timeZone = tz
+                        return c
+                    }()
+
+                    var sunrise = sun.sunrise
+                    var sunset = sun.sunset
+
+                    let inProvidedWindow = (now >= sunrise && now <= sunset)
+
+                    if !inProvidedWindow, now < sunrise {
+                        if let srPrev = cal.date(byAdding: .day, value: -1, to: sunrise),
+                           let ssPrev = cal.date(byAdding: .day, value: -1, to: sunset),
+                           now >= srPrev && now <= ssPrev {
+                            sunrise = srPrev
+                            sunset = ssPrev
+                        }
+                    }
+
+                    if !(now >= sunrise && now <= sunset), now > sunset {
+                        if let srNext = cal.date(byAdding: .day, value: 1, to: sunrise),
+                           let ssNext = cal.date(byAdding: .day, value: 1, to: sunset),
+                           now >= srNext && now <= ssNext {
+                            sunrise = srNext
+                            sunset = ssNext
+                        }
+                    }
+
+                    let isNight = !(now >= sunrise && now <= sunset)
+                    let dayProgress = sunProgress(sunrise: sunrise, sunset: sunset, now: now)
+
+                    let progressForArc: Double
+                    if isNight {
+                        let nightStart: Date
+                        let nightEnd: Date
+
+                        if now < sunrise {
+                            nightStart = cal.date(byAdding: .day, value: -1, to: sunset)
+                                ?? sunset.addingTimeInterval(-24 * 60 * 60)
+                            nightEnd = sunrise
+                        } else {
+                            nightStart = sunset
+                            nightEnd = cal.date(byAdding: .day, value: 1, to: sunrise)
+                                ?? sunrise.addingTimeInterval(24 * 60 * 60)
+                        }
+
+                        progressForArc = sunProgress(sunrise: nightStart, sunset: nightEnd, now: now)
+                    } else {
+                        progressForArc = dayProgress
+                    }
+
+                    return (sunrise, sunset, isNight, progressForArc)
+                }()
 
                 ZStack(alignment: .top) {
                     HStack(spacing: 0) {
                         sunValueColumn(
                             title: "Sunrise",
-                            value: timeString(sun.sunrise, timeZoneID: snap.timeZoneID)
+                            value: timeString(sunState.sunrise, timeZoneID: snap.timeZoneID)
                         )
                         .frame(maxWidth: .infinity)
 
@@ -968,19 +1020,19 @@ struct ContentView: View {
 
                         sunValueColumn(
                             title: "Sunset",
-                            value: timeString(sun.sunset, timeZoneID: snap.timeZoneID)
+                            value: timeString(sunState.sunset, timeZoneID: snap.timeZoneID)
                         )
                         .frame(maxWidth: .infinity)
                     }
 
                     SunArcView(
-                        progress: progressForArc,
+                        progress: sunState.progressForArc,
                         arcRiseFraction: 0.32,
                         height: 72,
                         arcLineWidth: 0,
                         markerSize: 14,
                         isThemed: (colorScheme == .dark),
-                        isNight: isNight,
+                        isNight: sunState.isNight,
                         showsArc: false,
                         showsHorizon: true,
                         horizonLineWidth: 1.5,

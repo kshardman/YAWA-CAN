@@ -191,19 +191,19 @@ struct SunArcView: View {
                 // Marker
                 if isNight {
                     let moonForeground: Color = (colorScheme == .light)
-                        ? Color.black.opacity(0.60)   // strong enough to show on white
-                        : (isThemed ? Color.white.opacity(0.92)
-                                    : Color.primary.opacity(0.90))
+                        ? Color.black.opacity(0.54)
+                        : (isThemed ? Color.white.opacity(0.86)
+                                    : Color.primary.opacity(0.84))
 
                     let moonShadowColor: Color = (colorScheme == .light)
-                        ? Color.white.opacity(0.60)  // subtle rim so it doesn't look flat
-                        : (isThemed ? Color.black.opacity(0.12)
-                                    : Color.black.opacity(0.20))
+                        ? Color.white.opacity(0.48)
+                        : (isThemed ? Color.black.opacity(0.10)
+                                    : Color.black.opacity(0.16))
 
                     Image(systemName: "moon.stars.fill")
                         .font(
                             .system(
-                                size: (colorScheme == .light ? markerSize + 2 : markerSize + 1) + (isThemed ? 1 : 0),
+                                size: (colorScheme == .light ? markerSize + 1 : markerSize) + (isThemed ? 0.5 : 0),
                                 weight: .semibold
                             )
                         )
