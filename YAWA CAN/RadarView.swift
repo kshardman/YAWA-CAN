@@ -625,7 +625,7 @@ struct RadarView: View {
                                 .modifier(GlassCircleButtonModifier(size: 38))
                                 .accessibilityLabel("Zoom out")
 
-                                if shouldShowRecenterButton {
+                                ZStack {
                                     Button {
                                         // Recenter / reset to the default framing, and jump back
                                         // to the newest frame so the result feels deterministic.
@@ -643,8 +643,10 @@ struct RadarView: View {
                                     }
                                     .modifier(GlassCircleButtonModifier(size: 38))
                                     .accessibilityLabel("Recenter")
-                                    .transition(.scale.combined(with: .opacity))
+                                    .opacity(shouldShowRecenterButton ? 1 : 0)
+                                    .allowsHitTesting(shouldShowRecenterButton)
                                 }
+                                .frame(width: 38, height: 38)
                             }
                             .padding(.trailing, 14)
                             .padding(.bottom, 18)
