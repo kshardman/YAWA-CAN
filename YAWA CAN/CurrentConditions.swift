@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct CurrentConditions: Equatable {
+struct CurrentConditions: Codable, Equatable {
     let temperatureC: Double
 
     /// “Feels like” temperature (Open-Meteo: `apparent_temperature`).
@@ -55,7 +55,7 @@ struct CurrentConditions: Equatable {
     }
 }
 
-struct DailyForecastDay: Identifiable, Equatable {
+struct DailyForecastDay: Codable, Identifiable, Equatable {
     var id: Date { Calendar.current.startOfDay(for: date) }
     let date: Date
     let highC: Double
@@ -65,7 +65,7 @@ struct DailyForecastDay: Identifiable, Equatable {
     let conditionText: String
 }
 
-struct SunTimes: Equatable {
+struct SunTimes: Codable, Equatable {
     let sunrise: Date
     let sunset: Date
 }

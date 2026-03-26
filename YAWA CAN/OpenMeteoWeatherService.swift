@@ -46,7 +46,7 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
         let (data, _) = try await URLSession.shared.data(from: url)
         let decoded = try JSONDecoder().decode(OpenMeteoResponse.self, from: data)
 
-//        let name = locationName ?? "Unknown"
+        let name = locationName ?? "Unknown"
 
         // Current
         let code = decoded.current.weather_code
@@ -77,6 +77,7 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
         // Hourly data: keep the full hourly forecast range so the UI can slice by day.
         let hourlyTimes = decoded.hourly.time
         let hourlyTemps = decoded.hourly.temperature_2m
+        let hourlyCodes = decoded.hourly.weather_code
         let hourlyPrecip = decoded.hourly.precipitation_probability
 
         let sun: SunTimes? = {
@@ -90,12 +91,13 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
         }()
         
         return WeatherSnapshot(
- //           locationName: name,
+            locationName: name,
             timeZoneID: decoded.timezone,
             current: current,
             daily: daily,
             hourlyTempsC: hourlyTemps,
             hourlyTimeISO: hourlyTimes,
+            hourlyWeatherCodes: hourlyCodes,
             hourlyPrecipChancePercent: hourlyPrecip,
             sun: sun
         )

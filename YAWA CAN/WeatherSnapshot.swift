@@ -7,13 +7,36 @@
 
 import Foundation
 
-struct WeatherSnapshot: Equatable {
+struct WeatherSnapshot: Codable, Equatable {
     let timeZoneID: String
+    let locationName: String?
     let current: CurrentConditions
     let daily: [DailyForecastDay]
     let hourlyTempsC: [Double]
     let hourlyTimeISO: [String]
+    let hourlyWeatherCodes: [Int]
     let hourlyPrecipChancePercent: [Double]
     let sun: SunTimes?
-}
 
+    init(
+        locationName: String? = nil,
+        timeZoneID: String,
+        current: CurrentConditions,
+        daily: [DailyForecastDay],
+        hourlyTempsC: [Double],
+        hourlyTimeISO: [String],
+        hourlyWeatherCodes: [Int],
+        hourlyPrecipChancePercent: [Double],
+        sun: SunTimes?
+    ) {
+        self.locationName = locationName
+        self.timeZoneID = timeZoneID
+        self.current = current
+        self.daily = daily
+        self.hourlyTempsC = hourlyTempsC
+        self.hourlyTimeISO = hourlyTimeISO
+        self.hourlyWeatherCodes = hourlyWeatherCodes
+        self.hourlyPrecipChancePercent = hourlyPrecipChancePercent
+        self.sun = sun
+    }
+}

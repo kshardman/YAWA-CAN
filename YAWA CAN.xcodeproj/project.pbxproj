@@ -6,8 +6,42 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		A08E576D2F7589C400BFB6C6 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A08E576C2F7589C400BFB6C6 /* WidgetKit.framework */; };
+		A08E576F2F7589C400BFB6C6 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A08E576E2F7589C400BFB6C6 /* SwiftUI.framework */; };
+		A08E577C2F7589C500BFB6C6 /* YCWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = A08E576A2F7589C400BFB6C6 /* YCWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A08E577A2F7589C500BFB6C6 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A00EA9112F5F754800085232 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A08E57692F7589C400BFB6C6;
+			remoteInfo = YCWidgetExtension;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		A08E577D2F7589C500BFB6C6 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				A08E577C2F7589C500BFB6C6 /* YCWidgetExtension.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
 		A00EA9192F5F754800085232 /* YAWA CAN.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "YAWA CAN.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A08E576A2F7589C400BFB6C6 /* YCWidgetExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = YCWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		A08E576C2F7589C400BFB6C6 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		A08E576E2F7589C400BFB6C6 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		A08E57832F758BA200BFB6C6 /* YCWidgetExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = YCWidgetExtension.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -21,6 +55,22 @@
 			);
 			target = A00EA9182F5F754800085232 /* YAWA CAN */;
 		};
+		A08E57812F7589C500BFB6C6 /* Exceptions for "YCWidget" folder in "YCWidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = A08E57692F7589C400BFB6C6 /* YCWidgetExtension */;
+		};
+		A08E57852F758CBD00BFB6C6 /* Exceptions for "YAWA CAN" folder in "YCWidgetExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				CurrentConditions.swift,
+				WeatherSnapshot.swift,
+				YAWATheme.swift,
+			);
+			target = A08E57692F7589C400BFB6C6 /* YCWidgetExtension */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -28,8 +78,17 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				A00CE1832F68E47A00F38B27 /* Exceptions for "YAWA CAN" folder in "YAWA CAN" target */,
+				A08E57852F758CBD00BFB6C6 /* Exceptions for "YAWA CAN" folder in "YCWidgetExtension" target */,
 			);
 			path = "YAWA CAN";
+			sourceTree = "<group>";
+		};
+		A08E57702F7589C400BFB6C6 /* YCWidget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				A08E57812F7589C500BFB6C6 /* Exceptions for "YCWidget" folder in "YCWidgetExtension" target */,
+			);
+			path = YCWidget;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -42,13 +101,25 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A08E57672F7589C400BFB6C6 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A08E576F2F7589C400BFB6C6 /* SwiftUI.framework in Frameworks */,
+				A08E576D2F7589C400BFB6C6 /* WidgetKit.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		A00EA9102F5F754800085232 = {
 			isa = PBXGroup;
 			children = (
+				A08E57832F758BA200BFB6C6 /* YCWidgetExtension.entitlements */,
 				A00EA91B2F5F754800085232 /* YAWA CAN */,
+				A08E57702F7589C400BFB6C6 /* YCWidget */,
+				A08E576B2F7589C400BFB6C6 /* Frameworks */,
 				A00EA91A2F5F754800085232 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -57,8 +128,18 @@
 			isa = PBXGroup;
 			children = (
 				A00EA9192F5F754800085232 /* YAWA CAN.app */,
+				A08E576A2F7589C400BFB6C6 /* YCWidgetExtension.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		A08E576B2F7589C400BFB6C6 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				A08E576C2F7589C400BFB6C6 /* WidgetKit.framework */,
+				A08E576E2F7589C400BFB6C6 /* SwiftUI.framework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -71,10 +152,12 @@
 				A00EA9152F5F754800085232 /* Sources */,
 				A00EA9162F5F754800085232 /* Frameworks */,
 				A00EA9172F5F754800085232 /* Resources */,
+				A08E577D2F7589C500BFB6C6 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				A08E577B2F7589C500BFB6C6 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				A00EA91B2F5F754800085232 /* YAWA CAN */,
@@ -85,6 +168,28 @@
 			productName = "YAWA CAN";
 			productReference = A00EA9192F5F754800085232 /* YAWA CAN.app */;
 			productType = "com.apple.product-type.application";
+		};
+		A08E57692F7589C400BFB6C6 /* YCWidgetExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A08E57802F7589C500BFB6C6 /* Build configuration list for PBXNativeTarget "YCWidgetExtension" */;
+			buildPhases = (
+				A08E57662F7589C400BFB6C6 /* Sources */,
+				A08E57672F7589C400BFB6C6 /* Frameworks */,
+				A08E57682F7589C400BFB6C6 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				A08E57702F7589C400BFB6C6 /* YCWidget */,
+			);
+			name = YCWidgetExtension;
+			packageProductDependencies = (
+			);
+			productName = YCWidgetExtension;
+			productReference = A08E576A2F7589C400BFB6C6 /* YCWidgetExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -97,6 +202,9 @@
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
 					A00EA9182F5F754800085232 = {
+						CreatedOnToolsVersion = 26.2;
+					};
+					A08E57692F7589C400BFB6C6 = {
 						CreatedOnToolsVersion = 26.2;
 					};
 				};
@@ -116,12 +224,20 @@
 			projectRoot = "";
 			targets = (
 				A00EA9182F5F754800085232 /* YAWA CAN */,
+				A08E57692F7589C400BFB6C6 /* YCWidgetExtension */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		A00EA9172F5F754800085232 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A08E57682F7589C400BFB6C6 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -138,7 +254,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A08E57662F7589C400BFB6C6 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A08E577B2F7589C500BFB6C6 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A08E57692F7589C400BFB6C6 /* YCWidgetExtension */;
+			targetProxy = A08E577A2F7589C500BFB6C6 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		A00EA9242F5F754900085232 /* Debug */ = {
@@ -267,8 +398,9 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "YAWA CAN/YAWA CAN.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 37;
+				CURRENT_PROJECT_VERSION = 38;
 				DEVELOPMENT_TEAM = 9WPZ4893L6;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -289,6 +421,10 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "kpsorg.YAWA-CAN";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -303,8 +439,9 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = "YAWA CAN/YAWA CAN.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 37;
+				CURRENT_PROJECT_VERSION = 38;
 				DEVELOPMENT_TEAM = 9WPZ4893L6;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -325,8 +462,82 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "kpsorg.YAWA-CAN";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		A08E577E2F7589C500BFB6C6 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = YCWidgetExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 38;
+				DEVELOPMENT_TEAM = 9WPZ4893L6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = YCWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = YCWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "kpsorg.YAWA-CAN.YCWidget";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		A08E577F2F7589C500BFB6C6 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_WIDGET_BACKGROUND_COLOR_NAME = WidgetBackground;
+				CODE_SIGN_ENTITLEMENTS = YCWidgetExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 38;
+				DEVELOPMENT_TEAM = 9WPZ4893L6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = YCWidget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = YCWidget;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "kpsorg.YAWA-CAN.YCWidget";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
@@ -351,6 +562,15 @@
 			buildConfigurations = (
 				A00EA9272F5F754900085232 /* Debug */,
 				A00EA9282F5F754900085232 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A08E57802F7589C500BFB6C6 /* Build configuration list for PBXNativeTarget "YCWidgetExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A08E577E2F7589C500BFB6C6 /* Debug */,
+				A08E577F2F7589C500BFB6C6 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

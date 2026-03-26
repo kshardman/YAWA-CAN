@@ -119,6 +119,7 @@ struct ContentView: View {
         await viewModel.load(
             latitude: loc.latitude,
             longitude: loc.longitude,
+            locationName: loc.displayName,
             service: weatherService,
             showLoading: showLoading
         )

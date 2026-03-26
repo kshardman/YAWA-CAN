@@ -132,4 +132,39 @@ enum YAWATheme {
     static func textTertiary(for scheme: ColorScheme) -> Color {
         scheme == .dark ? Color.white.opacity(0.70) : Color.secondary.opacity(0.85)
     }
+    // MARK: - Widget styling
+
+    static func widgetBackground(for scheme: ColorScheme) -> some ShapeStyle {
+        if scheme == .dark {
+            return LinearGradient(
+                colors: [
+                    Color(red: 0.07, green: 0.14, blue: 0.28),
+                    Color(red: 0.03, green: 0.08, blue: 0.18)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        } else {
+            return LinearGradient(
+                colors: [
+                    Color.white,
+                    Color(red: 0.95, green: 0.97, blue: 1.00)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        }
+    }
+
+    static func widgetPrimaryTempColor(for scheme: ColorScheme) -> Color {
+        textPrimary(for: scheme)
+    }
+
+    static func widgetSecondaryTextColor(for scheme: ColorScheme) -> Color {
+        textSecondary(for: scheme)
+    }
+
+    static func widgetDividerColor(for scheme: ColorScheme) -> Color {
+        scheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.08)
+    }
 }

@@ -25,6 +25,7 @@ final class WeatherViewModel: ObservableObject {
     func load(
         latitude: Double,
         longitude: Double,
+        locationName: String?,
         service: OpenMeteoWeatherService,
         showLoading: Bool = true
     ) async {
@@ -44,7 +45,7 @@ final class WeatherViewModel: ObservableObject {
             do {
                 let snapshot = try await service.fetchWeather(
                     coordinate: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
-                    locationName: nil
+                    locationName: locationName
                 )
                 guard !Task.isCancelled else {
                     return
@@ -55,6 +56,7 @@ final class WeatherViewModel: ObservableObject {
                         return
                     }
                     self.snapshot = snapshot
+                    YCWidgetShared.save(snapshot: snapshot)
                     self.errorMessage = nil
                     self.isLoading = false
                 }
