@@ -321,7 +321,7 @@ struct RadarView: View {
         isPlaying = true
 
         playTask = Task { [frameInterval] in
-            let loopPause: UInt64 = 1_000_000_000 // 1.0s pause at the end before rewinding
+            let loopPause: UInt64 = 1_200_000_000 // 1.2s pause at the end before rewinding
 
             while !Task.isCancelled {
                 // If we’re currently displaying the most recent frame (end of the timeline),
@@ -762,8 +762,13 @@ struct RadarView: View {
             }
 
             // Stage 0/1: build a simple frame list (prefer past frames for now).
-            let pastFrames = maps.radar.past ?? []
+            let allPastFrames = maps.radar.past ?? []
             let nowcastFrames = maps.radar.nowcast ?? []
+
+            // Keep the playback window tighter so the loop returns to “now” faster.
+            // RainViewer past frames are typically ~10 minutes apart, so 9 frames ≈ 90 minutes.
+            let maxPastFrames = 9
+            let pastFrames = Array(allPastFrames.suffix(maxPastFrames))
 
             // Minimal plan: animate through past frames. (We can revisit nowcast later.)
             frames = pastFrames.map { FrameInfo(time: $0.time, path: $0.path) }
