@@ -39,7 +39,7 @@ struct RadarView: View {
         let path: String
     }
 
-    @State private var zoomStep: Int = 0
+    @State private var zoomStep: Int = -3
     @State private var mapCenter: CLLocationCoordinate2D
     @State private var mapTitle: String
 
@@ -595,7 +595,58 @@ struct RadarView: View {
                             Spacer()
 
                             VStack(spacing: 10) {
-                                // On-map Play/Pause (one-handed)
+                                VStack(spacing: 10) {
+                                    Button {
+                                        // Closer (smaller span)
+                                        zoomStep = max(zoomStep - 1, -6)
+                                    } label: {
+                                        Image(systemName: "plus")
+                                            .font(.subheadline.weight(.semibold))
+                                    }
+                                    .modifier(GlassCircleButtonModifier(size: 38))
+                                    .opacity(zoomStep <= -6 ? 0.42 : 1)
+                                    .disabled(zoomStep <= -6)
+                                    .accessibilityLabel("Zoom in")
+
+                                    Button {
+                                        // Farther (larger span)
+                                        zoomStep = min(zoomStep + 1, 6)
+                                    } label: {
+                                        Image(systemName: "minus")
+                                            .font(.subheadline.weight(.semibold))
+                                    }
+                                    .modifier(GlassCircleButtonModifier(size: 38))
+                                    .opacity(zoomStep >= 6 ? 0.42 : 1)
+                                    .disabled(zoomStep >= 6)
+                                    .accessibilityLabel("Zoom out")
+
+                                    ZStack {
+                                        Button {
+                                            // Recenter / reset to the default framing, and jump back
+                                            // to the newest frame so the result feels deterministic.
+                                            stopPlayback()
+                                            zoomStep = -3
+                                            mapCenter = target.coordinate
+                                            if !frames.isEmpty {
+                                                frameIndex = max(0, frames.count - 1)
+                                                framePath = frames[frameIndex].path
+                                            }
+                                            recenterToken = UUID()
+                                        } label: {
+                                            Image(systemName: "location.fill")
+                                                .font(.subheadline.weight(.semibold))
+                                        }
+                                        .modifier(GlassCircleButtonModifier(size: 38))
+                                        .accessibilityLabel("Recenter")
+                                        .opacity(shouldShowRecenterButton ? 1 : 0)
+                                        .allowsHitTesting(shouldShowRecenterButton)
+                                    }
+                                    .frame(width: 38, height: 38)
+                                }
+
+                                Spacer()
+                                    .frame(height: 6)
+
                                 Button {
                                     togglePlayback()
                                 } label: {
@@ -605,48 +656,6 @@ struct RadarView: View {
                                 .disabled(frames.isEmpty)
                                 .modifier(GlassCircleButtonModifier(size: 44))
                                 .accessibilityLabel(isPlaying ? "Pause" : "Play")
-                                Button {
-                                    // Closer (smaller span)
-                                    zoomStep = max(zoomStep - 1, -6)
-                                } label: {
-                                    Image(systemName: "plus")
-                                        .font(.subheadline.weight(.semibold))
-                                }
-                                .modifier(GlassCircleButtonModifier(size: 38))
-                                .accessibilityLabel("Zoom in")
-
-                                Button {
-                                    // Farther (larger span)
-                                    zoomStep = min(zoomStep + 1, 6)
-                                } label: {
-                                    Image(systemName: "minus")
-                                        .font(.subheadline.weight(.semibold))
-                                }
-                                .modifier(GlassCircleButtonModifier(size: 38))
-                                .accessibilityLabel("Zoom out")
-
-                                ZStack {
-                                    Button {
-                                        // Recenter / reset to the default framing, and jump back
-                                        // to the newest frame so the result feels deterministic.
-                                        stopPlayback()
-                                        zoomStep = 0
-                                        mapCenter = target.coordinate
-                                        if !frames.isEmpty {
-                                            frameIndex = max(0, frames.count - 1)
-                                            framePath = frames[frameIndex].path
-                                        }
-                                        recenterToken = UUID()
-                                    } label: {
-                                        Image(systemName: "location.fill")
-                                            .font(.subheadline.weight(.semibold))
-                                    }
-                                    .modifier(GlassCircleButtonModifier(size: 38))
-                                    .accessibilityLabel("Recenter")
-                                    .opacity(shouldShowRecenterButton ? 1 : 0)
-                                    .allowsHitTesting(shouldShowRecenterButton)
-                                }
-                                .frame(width: 38, height: 38)
                             }
                             .padding(.trailing, 14)
                             .padding(.bottom, 18)
@@ -995,6 +1004,11 @@ private struct RadarMapViewStage0: UIViewRepresentable {
         func setRenderPalette(_ palette: RadarTileLayerView.RenderPalette) {
             radarLayerA?.renderPalette = palette
             radarLayerB?.renderPalette = palette
+            if let map = mapViewRef {
+                let isDark = (map.traitCollection.userInterfaceStyle == .dark)
+                radarLayerA?.isDarkMode = isDark
+                radarLayerB?.isDarkMode = isDark
+            }
         }
         
         func mapView(_ mapView: MKMapView, regionWillChangeAnimated animated: Bool) {
@@ -1038,6 +1052,9 @@ private struct RadarMapViewStage0: UIViewRepresentable {
         
         func attachMapView(_ map: MKMapView) {
             self.mapViewRef = map
+            let isDark = (map.traitCollection.userInterfaceStyle == .dark)
+            radarLayerA?.isDarkMode = isDark
+            radarLayerB?.isDarkMode = isDark
         }
         
         func attachRadarLayer(to map: MKMapView) {
@@ -1095,12 +1112,16 @@ private struct RadarMapViewStage0: UIViewRepresentable {
             // Track last requested radar params.
             lastRadarHost = host
             lastRadarFramePath = framePath
-            lastRadarOpacity = opacity
+
+            // Normalize opacity per mode so the same user-facing setting feels more consistent
+            // between Light and Dark Mode.
+            guard let active = activeRadarLayer else { return }
+            let adjustedOpacity = active.effectiveOpacity(opacity)
+            lastRadarOpacity = adjustedOpacity
             
             // Use a single active layer update. The double-buffer layer crossfade was causing
             // visible flashing when tiles arrive asynchronously.
-            guard let active = activeRadarLayer else { return }
-            active.update(mapView: map, host: host, framePath: framePath, opacity: opacity)
+            active.update(mapView: map, host: host, framePath: framePath, opacity: adjustedOpacity)
             
             updateRadarAfterLayout()
         }
@@ -1203,6 +1224,9 @@ private struct RadarMapViewStage0: UIViewRepresentable {
         func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
             // Called continuously during pans/scrolls. Keep the radar compositor in sync so
             // tiles don't appear to "stick" until the gesture ends.
+            let isDark = (mapView.traitCollection.userInterfaceStyle == .dark)
+            radarLayerA?.isDarkMode = isDark
+            radarLayerB?.isDarkMode = isDark
             layoutRadarLayers()
             updateCrosshairPosition(on: mapView)
             updateRadarAfterLayout()
@@ -1325,6 +1349,19 @@ final class RadarTileLayerView: UIView {
 
     // Default to the previous look.
     var renderPalette: RenderPalette = .nwsClassic
+    var isDarkMode: Bool = false
+
+    fileprivate func effectiveOpacity(_ opacity: CGFloat) -> CGFloat {
+        if isDarkMode {
+            // Dark mode is already dialed — leave it strong but controlled
+            let boosted = opacity * 1.12
+            return min(0.92, boosted)
+        } else {
+            // Light mode needs a bit more presence at higher settings (like 70%)
+            let boosted = opacity * 1.05
+            return min(0.90, boosted)
+        }
+    }
 
     private let memCache = NSCache<NSString, UIImage>()
 
@@ -1536,7 +1573,8 @@ final class RadarTileLayerView: UIView {
                 }
 
                 iv.frame = tileFrame
-                iv.alpha = opacity
+                let adjustedOpacity = effectiveOpacity(opacity)
+                iv.alpha = adjustedOpacity
 
                 // Set image (cached or fetch).
                 if let img = memCache.object(forKey: ck as NSString) {
@@ -1573,7 +1611,7 @@ final class RadarTileLayerView: UIView {
                                     v.image = img
                                 }
                             }
-                            v.alpha = opacity
+                            v.alpha = self.effectiveOpacity(opacity)
                         }
                     }
                 }
@@ -2085,10 +2123,26 @@ final class RadarTileLayerView: UIView {
             let gg = max(0, min(1, ng * scale))
             let bb = max(0, min(1, nb * scale))
 
+            // Let low-intensity precip breathe a bit more so city labels are easier to read,
+            // while keeping stronger returns visually authoritative. In Dark Mode, keep
+            // light precip slightly stronger so it does not feel ghosted against the dark basemap.
+            let alphaScale: Float
+            if intensity < 0.45 {
+                let t = max(0, min(1, intensity / 0.45))
+                if isDarkMode {
+                    alphaScale = lerp(0.82, 0.96, t)
+                } else {
+                    alphaScale = lerp(0.72, 0.92, t)
+                }
+            } else {
+                alphaScale = 1.0
+            }
+            let aa = max(0, min(255, Int(Float(a) * alphaScale)))
+
             ptr[o]     = UInt8(max(0, min(255, Int(rr * 255.0))))
             ptr[o + 1] = UInt8(max(0, min(255, Int(gg * 255.0))))
             ptr[o + 2] = UInt8(max(0, min(255, Int(bb * 255.0))))
-            // alpha unchanged
+            ptr[o + 3] = UInt8(aa)
         }
 
         guard let outCG = ctx.makeImage() else { return nil }

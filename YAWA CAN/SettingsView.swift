@@ -158,10 +158,15 @@ private extension SettingsView {
         Section {
             Picker("Opacity", selection: $radarOpacity) {
                 Text("50%").tag(0.50)
-                Text("65%").tag(0.65)
+                Text("70%").tag(0.70)
                 Text("80%").tag(0.80)
             }
             .pickerStyle(.segmented)
+            .onAppear {
+                if abs(radarOpacity - 0.65) < 0.001 {
+                    radarOpacity = 0.70
+                }
+            }
 
             Text("Adjust how strongly the radar overlay is drawn on the map.")
                 .font(.caption)
