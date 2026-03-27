@@ -8,6 +8,7 @@
 import SwiftUI
 import UIKit
 import CoreLocation
+import UserNotifications
 
 
 
@@ -17,6 +18,7 @@ import CoreLocation
 
 struct SettingsView: View {
     @StateObject private var appearanceSettings = AppearanceSettings()
+    @StateObject private var notifications = NotificationCoordinator()
     @Environment(\.colorScheme) private var colorScheme
 
     private var appearanceModeBinding: Binding<String> {
@@ -73,6 +75,7 @@ struct SettingsView: View {
                     appearanceSection
                     forecastSection
                     radarSection
+                    notificationsSection
 //                    homeSection
                     privacySection
                     attributionSection
@@ -113,6 +116,9 @@ struct SettingsView: View {
                     )
                     .clipShape(Capsule())
                 }
+            }
+            .task {
+                await notifications.refreshAuthorizationStatus()
             }
             // .task {
             //     await notifications.refreshAuthorizationStatus()
@@ -182,6 +188,150 @@ private extension SettingsView {
         .listRowSeparator(.hidden)
     }
 
+    var notificationsSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(notificationStatusText)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(primaryText)
+
+                Text("Forecast alerts are still in development. This temporary section is only for testing notification permission and delivery.")
+                    .font(.caption)
+                    .foregroundStyle(secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.vertical, 2)
+
+            Button {
+                Task {
+                    let granted = await notifications.requestAuthorizationIfNeeded()
+                    print("[N1] granted=\(granted)")
+                }
+            } label: {
+                HStack {
+                    Text("Request Notification Access")
+                        .foregroundStyle(primaryText)
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+            }
+
+            Button {
+                Task {
+                    let granted = await notifications.requestAuthorizationIfNeeded()
+                    print("[N1] granted=\(granted)")
+
+                    if granted {
+                        let store = NotificationStore()
+                        var prefs = store.loadPreferences()
+                        prefs.forecastAlertsEnabled = true
+                        store.savePreferences(prefs)
+                        print("[N1] forecastAlertsEnabled set to true")
+
+                        await notifications.scheduleTestNotification()
+                    }
+                }
+            } label: {
+                HStack {
+                    Text("Request Access + Send Test")
+                        .foregroundStyle(primaryText)
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+            }
+
+            Button {
+                let store = NotificationStore()
+                store.clearAllNotificationState()
+                print("[N1] cleared notification debug state")
+            } label: {
+                HStack {
+                    Text("Clear Notification Debug State")
+                        .foregroundStyle(primaryText)
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+            }
+
+            Button {
+                Task {
+                    let candidate = NotificationCandidate(
+                        id: "precipSoon|debug|\(Int(Date().timeIntervalSince1970))",
+                        kind: .precipSoon,
+                        title: "Rain starting soon",
+                        body: "Rain is likely in debug mode within the next 2 hours.",
+                        fireDate: Date().addingTimeInterval(10),
+                        relevanceScore: 100
+                    )
+
+                    let content = UNMutableNotificationContent()
+                    content.title = candidate.title
+                    content.body = candidate.body
+                    content.sound = .default
+
+                    let interval = max(1, candidate.fireDate.timeIntervalSinceNow)
+                    let trigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)
+                    let request = UNNotificationRequest(
+                        identifier: "yc.forecast.\(candidate.id)",
+                        content: content,
+                        trigger: trigger
+                    )
+
+                    do {
+                        try await UNUserNotificationCenter.current().add(request)
+                        print("[N1] forced precipSoon debug notification scheduled")
+                    } catch {
+                        print("[N1] forced precipSoon debug notification failed: \(error)")
+                    }
+                }
+            } label: {
+                HStack {
+                    Text("Force precipSoon Debug Notification")
+                        .foregroundStyle(primaryText)
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+            }
+
+            Button {
+                notifications.openSystemSettings()
+            } label: {
+                HStack {
+                    Text("Open iPhone Notification Settings")
+                        .foregroundStyle(primaryText)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(AnyShapeStyle(YAWATheme.textSecondary(for: colorScheme).opacity(0.9)))
+                }
+                .contentShape(Rectangle())
+            }
+        } header: {
+            Text("Notifications")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(primaryText)
+        }
+        .textCase(nil)
+        .listRowBackground(rowBackgroundView)
+        .listRowSeparator(.hidden)
+    }
+
+    private var notificationStatusText: String {
+        switch notifications.authorizationStatus {
+        case .authorized:
+            return "Status: Allowed"
+        case .provisional:
+            return "Status: Provisional"
+        case .ephemeral:
+            return "Status: Ephemeral"
+        case .denied:
+            return "Status: Denied"
+        case .notDetermined:
+            return "Status: Not Requested"
+        @unknown default:
+            return "Status: Unknown"
+        }
+    }
 
     var privacySection: some View {
         Section(header: Text("Privacy").font(.subheadline.weight(.semibold)).foregroundStyle(primaryText)) {

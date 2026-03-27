@@ -230,6 +230,11 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
         precipChancePercent: Int,
         cloudCoverPercent: Int?
     ) -> (symbol: String, text: String) {
+        // High daily precip chance should override misleading sun/clear presentation.
+        if precipChancePercent >= 80 {
+            return ("cloud.rain.fill", "Rain likely")
+        }
+
         // Keep active precip/fog/thunder wording when conditions are meaningful.
         switch weatherCode {
         case 45, 48, 56, 57, 66, 67, 71, 73, 75, 77, 85, 86, 95, 96, 99:
@@ -250,6 +255,10 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
             }
 
         case 0, 1, 2, 3:
+            if precipChancePercent >= 60 {
+                return ("cloud.rain.fill", "Rain possible")
+            }
+
             guard let cloud = cloudCoverPercent else { return mapped }
 
             if cloud <= 12 {
