@@ -2880,7 +2880,7 @@ private struct DailyForecastDetailSheet: View {
                                         .font(.caption2)
                                         .foregroundStyle(.secondary.opacity(0.72))
                                     Text(windGustText ?? "—")
-                                        .font(.subheadline.weight(.regular))
+                                        .font(.title3.weight(.medium))
                                         .foregroundStyle(.secondary.opacity(colorScheme == .dark ? 0.82 : 0.72))
                                         .monospacedDigit()
                                 }
@@ -2903,6 +2903,7 @@ private struct DailyForecastDetailSheet: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
+                    .padding(.bottom, -2)
 
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Discussion")
@@ -3046,6 +3047,25 @@ private struct DailyForecastDetailSheet: View {
         return gustKPH >= 45
     }
 
+    private var windSummarySentence: String? {
+        guard let gustKPH = day.windGustKPH else { return nil }
+
+        let gustValue = usesUSUnits ? gustKPH * 0.621371 : gustKPH
+        let breezyThreshold = usesUSUnits ? 22.0 : 35.0
+        let windyThreshold = usesUSUnits ? 30.0 : 45.0
+        let veryWindyThreshold = usesUSUnits ? 40.0 : 60.0
+
+        if gustValue >= veryWindyThreshold {
+            return "Very windy, with strong gusts at times."
+        } else if gustValue >= windyThreshold {
+            return "Windy conditions expected."
+        } else if gustValue >= breezyThreshold {
+            return "Breezy at times."
+        } else {
+            return nil
+        }
+    }
+
     private var windyFlagColor: Color {
         colorScheme == .dark ? Color.cyan.opacity(0.95) : Color.blue.opacity(0.82)
     }
@@ -3160,6 +3180,10 @@ private struct DailyForecastDetailSheet: View {
             }
         } else {
             sentences.append("Dry conditions expected.")
+        }
+
+        if let windSentence = windSummarySentence {
+            sentences.append(windSentence)
         }
 
         return sentences.joined(separator: " ")
