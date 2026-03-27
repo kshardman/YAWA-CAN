@@ -31,7 +31,7 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
             .init(name: "hourly", value: "temperature_2m,precipitation_probability,weather_code,cloud_cover"),
 
             // daily forecast
-            .init(name: "daily", value: "sunrise,sunset,temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code,cloud_cover_mean"),
+            .init(name: "daily", value: "sunrise,sunset,temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code,cloud_cover_mean,wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant"),
 
             .init(name: "forecast_days", value: String(days)),
             .init(name: "timezone", value: "auto"),
@@ -127,8 +127,13 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
         let pops  = decoded.daily.precipitation_probability_max
         let codes = decoded.daily.weather_code
         let clouds = decoded.daily.cloud_cover_mean
+        let windSpeeds = decoded.daily.wind_speed_10m_max
+        let gusts = decoded.daily.wind_gusts_10m_max
+        let windDirections = decoded.daily.wind_direction_10m_dominant
+        let sunrises = decoded.daily.sunrise
+        let sunsets = decoded.daily.sunset
 
-        let available = min(times.count, highs.count, lows.count, pops.count, codes.count, clouds.count)
+        let available = min(times.count, highs.count, lows.count, pops.count, codes.count, clouds.count, windSpeeds.count, gusts.count, windDirections.count, sunrises.count, sunsets.count)
         let count = min(available, max(1, maxDays))
 
         let tz = TimeZone(identifier: decoded.timezone) ?? .current
@@ -192,6 +197,11 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
                 highC: highs[i],
                 lowC: lows[i],
                 precipChancePercent: precipChance,
+                windSpeedKPH: windSpeeds[i],
+                windGustKPH: gusts[i],
+                windDirectionDegrees: windDirections[i],
+                sunrise: parseOpenMeteoDateTime(sunrises[i], timeZoneID: decoded.timezone),
+                sunset: parseOpenMeteoDateTime(sunsets[i], timeZoneID: decoded.timezone),
                 symbolName: refinedDaily.symbol,
                 conditionText: refinedDaily.text
             )
@@ -343,5 +353,8 @@ private struct OpenMeteoResponse: Decodable {
         let precipitation_probability_max: [Int?]
         let weather_code: [Int]
         let cloud_cover_mean: [Double]
+        let wind_speed_10m_max: [Double]
+        let wind_gusts_10m_max: [Double]
+        let wind_direction_10m_dominant: [Double]
     }
 }

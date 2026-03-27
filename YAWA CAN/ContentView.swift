@@ -1602,7 +1602,7 @@ private struct AlertDetailSheet: View {
 
                     Divider().opacity(0.18)
 
-                    VStack(alignment: .leading, spacing: 10) {
+                    VStack(alignment: .leading, spacing: 8) {
                         ForEach(summarySections(from: alert.summary)) { section in
                             if let title = section.title {
                                 VStack(alignment: .leading, spacing: 6) {
@@ -2825,41 +2825,83 @@ private struct DailyForecastDetailSheet: View {
 
                     Divider().opacity(0.18)
 
-                    HStack(alignment: .firstTextBaseline, spacing: 0) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("High")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                            Text(temperatureText(day.highC))
-                                .font(.title3.weight(.semibold))
-                                .monospacedDigit()
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Low")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                            Text(temperatureText(day.lowC))
-                                .font(.title3.weight(.semibold))
-                                .monospacedDigit()
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                        if roundedPrecipChance > 0 {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(alignment: .firstTextBaseline, spacing: 0) {
                             VStack(alignment: .leading, spacing: 3) {
-                                Text("Precip")
+                                Text("High")
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
-                                Text("\(roundedPrecipChance)%")
+                                Text(temperatureText(day.highC))
                                     .font(.title3.weight(.semibold))
                                     .monospacedDigit()
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
+
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("Low")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                Text(temperatureText(day.lowC))
+                                    .font(.title3.weight(.semibold))
+                                    .monospacedDigit()
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                            if roundedPrecipChance > 0 {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("Precip")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                    Text("\(roundedPrecipChance)%")
+                                        .font(.title3.weight(.semibold))
+                                        .monospacedDigit()
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+
+                        if shouldShowWindRow {
+                            HStack(alignment: .firstTextBaseline, spacing: 16) {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("Wind")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                    Text(windLineText)
+                                        .font(.title3.weight(.medium))
+                                        .foregroundStyle(.primary)
+                                        .monospacedDigit()
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.9)
+                                }
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Gust")
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary.opacity(0.72))
+                                    Text(windGustText ?? "—")
+                                        .font(.subheadline.weight(.regular))
+                                        .foregroundStyle(.secondary.opacity(colorScheme == .dark ? 0.82 : 0.72))
+                                        .monospacedDigit()
+                                }
+
+                                Spacer(minLength: 8)
+
+                                if isWindyFlagVisible {
+                                    Text("Windy")
+                                        .font(.caption2.weight(.semibold))
+                                        .foregroundStyle(windyFlagColor)
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 3)
+                                        .background(
+                                            Capsule()
+                                                .fill(windyFlagColor.opacity(colorScheme == .dark ? 0.16 : 0.10))
+                                        )
+                                        .fixedSize()
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
-
-                    Divider().opacity(0.18)
 
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Discussion")
@@ -2872,6 +2914,7 @@ private struct DailyForecastDetailSheet: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
+
 
                     if !hourlyTempsForDay.isEmpty {
                         Divider().opacity(0.18)
@@ -2935,7 +2978,7 @@ private struct DailyForecastDetailSheet: View {
                 .padding(.bottom, 12)
             }
             .background(sheetBackground)
-            .scrollIndicators(.hidden)
+            .scrollIndicators(.never)
             .mask(
                 LinearGradient(
                     stops: [
@@ -2955,6 +2998,46 @@ private struct DailyForecastDetailSheet: View {
     private var roundedPrecipChance: Int {
         let clamped = max(0, min(100, day.precipChancePercent))
         return Int((Double(clamped) / 10.0).rounded() * 10.0)
+    }
+
+    private var windSpeedText: String? {
+        guard let windKPH = day.windSpeedKPH else { return nil }
+        let value = usesUSUnits ? windKPH * 0.621371 : windKPH
+        let rounded = Int(round(value))
+        return "\(rounded)"
+    }
+
+    private var windDirectionText: String? {
+        guard let degrees = day.windDirectionDegrees else { return nil }
+        return cardinalDirection(for: degrees)
+    }
+
+    private var windLineText: String {
+        let speed = windSpeedText ?? "—"
+        if let direction = windDirectionText {
+            return "\(direction) \(speed)"
+        }
+        return speed
+    }
+
+    private var windGustText: String? {
+        guard let gustKPH = day.windGustKPH else { return nil }
+        let value = usesUSUnits ? gustKPH * 0.621371 : gustKPH
+        let rounded = Int(round(value))
+        return "\(rounded)"
+    }
+
+    private var shouldShowWindRow: Bool {
+        windSpeedText != nil || windGustText != nil || windDirectionText != nil
+    }
+
+    private var isWindyFlagVisible: Bool {
+        guard let gustKPH = day.windGustKPH else { return false }
+        return gustKPH >= 45
+    }
+
+    private var windyFlagColor: Color {
+        colorScheme == .dark ? Color.cyan.opacity(0.95) : Color.blue.opacity(0.82)
     }
 
     private var sheetBackground: some View {
@@ -3098,6 +3181,15 @@ private struct DailyForecastDetailSheet: View {
         f.dateFormat = "EEEE, MMM d"
         return f.string(from: date)
     }
+
+    private func cardinalDirection(for degrees: Double) -> String {
+        let normalized = degrees.truncatingRemainder(dividingBy: 360)
+        let positive = normalized >= 0 ? normalized : normalized + 360
+        let directions = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
+        let index = Int((positive / 22.5).rounded()) % directions.count
+        return directions[index]
+    }
+
     
     private struct HourlyPoint: Identifiable {
         let id: String

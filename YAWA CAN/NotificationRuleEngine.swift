@@ -112,6 +112,7 @@ enum NotificationRuleEngine {
         }
 
         let gust = tomorrowPoint.windGustMaxKPH ?? 0
+        print("[N1] windyTomorrow gust=\(gust) location=\(snapshot.locationName)")
         guard gust >= 45 else { return nil }
 
         let fireDate = fireDateForWindTomorrow(now: now, calendar: calendar)

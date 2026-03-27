@@ -61,6 +61,11 @@ struct DailyForecastDay: Codable, Identifiable, Equatable {
     let highC: Double
     let lowC: Double
     let precipChancePercent: Int
+    let windSpeedKPH: Double?
+    let windGustKPH: Double?
+    let windDirectionDegrees: Double?
+    let sunrise: Date?
+    let sunset: Date?
     let symbolName: String
     let conditionText: String
 }

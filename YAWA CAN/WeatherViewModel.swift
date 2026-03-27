@@ -166,7 +166,7 @@ final class WeatherViewModel: ObservableObject {
                 precipitationProbabilityMax: Double(day.precipChancePercent),
                 precipitationAmountMM: nil,
                 windSpeedMaxKPH: nil,
-                windGustMaxKPH: nil
+                windGustMaxKPH: day.windGustKPH
             )
         }
 
