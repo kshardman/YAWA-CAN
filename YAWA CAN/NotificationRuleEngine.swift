@@ -127,14 +127,14 @@ enum NotificationRuleEngine {
         )
     }
 
-    private static func isMeaningfulPrecipitation(
+    nonisolated private static func isMeaningfulPrecipitation(
         _ entry: (date: Date, point: ForecastNotificationSnapshot.HourlyPoint)
     ) -> Bool {
         let probability = entry.point.precipitationProbability ?? 0
         return probability >= 60
     }
 
-    private static func isSnowLike(point: ForecastNotificationSnapshot.HourlyPoint) -> Bool {
+    nonisolated private static func isSnowLike(point: ForecastNotificationSnapshot.HourlyPoint) -> Bool {
         if let weatherCode = point.weatherCode, snowWeatherCodes.contains(weatherCode) {
             return true
         }
@@ -146,7 +146,7 @@ enum NotificationRuleEngine {
         return false
     }
 
-    private static var snowWeatherCodes: Set<Int> {
+    nonisolated private static var snowWeatherCodes: Set<Int> {
         [71, 73, 75, 77, 85, 86]
     }
 

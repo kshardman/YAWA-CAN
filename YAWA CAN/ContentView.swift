@@ -2768,6 +2768,7 @@ private struct DailyForecastDetailSheet: View {
 
     @State private var currentIndex: Int
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dismiss) private var dismiss
 
     init(days: [DailyForecastDay], initialIndex: Int, hourlyTempsC: [Double], hourlyTimeISO: [String], hourlyPrecipChancePercent: [Double], timeZoneID: String, usesUSUnits: Bool) {
         self.days = days
@@ -2990,6 +2991,15 @@ private struct DailyForecastDetailSheet: View {
                     startPoint: .top,
                     endPoint: .bottom
                 )
+            )
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 20)
+                    .onEnded { value in
+                        let horizontal = value.translation.width
+                        let vertical = value.translation.height
+                        guard abs(vertical) > abs(horizontal), vertical > 80 else { return }
+                        dismiss()
+                    }
             )
         }
         .fontDesign(.rounded)
