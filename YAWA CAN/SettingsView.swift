@@ -244,6 +244,7 @@ private extension SettingsView {
                 let store = NotificationStore()
                 store.clearAllNotificationState()
                 print("[N1] cleared notification debug state")
+                NotificationCenter.default.post(name: .ycNotificationDebugStateCleared, object: nil)
             } label: {
                 HStack {
                     Text("Clear Notification Debug State")
@@ -261,7 +262,11 @@ private extension SettingsView {
                         title: "Rain starting soon",
                         body: "Rain is likely in debug mode within the next 2 hours.",
                         fireDate: Date().addingTimeInterval(10),
-                        relevanceScore: 100
+                        relevanceScore: 100,
+                        locationName: "Debug Location",
+                        locationLatitude: 0,
+                        locationLongitude: 0,
+                        targetDateISO: nil
                     )
 
                     let content = UNMutableNotificationContent()

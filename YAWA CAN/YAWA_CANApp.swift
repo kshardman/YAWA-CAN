@@ -7,6 +7,7 @@
 
 import SwiftUI
 import SwiftData
+import UserNotifications
 #if canImport(WidgetKit)
 import WidgetKit
 #endif
@@ -50,6 +51,10 @@ enum YCWidgetShared {
 
 @main
 struct YAWA_CANApp: App {
+    init() {
+        UNUserNotificationCenter.current().delegate = NotificationResponseBridge.shared
+    }
+
     @AppStorage(AppearanceSettings.appearanceKey)
     private var appearancePreferenceRaw: String = "system"
 

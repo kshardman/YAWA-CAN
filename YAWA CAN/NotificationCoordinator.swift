@@ -3,6 +3,57 @@ import Combine
 import UserNotifications
 import UIKit
 
+extension Notification.Name {
+    static let ycNotificationRouteReceived = Notification.Name("ycNotificationRouteReceived")
+    static let ycNotificationDebugStateCleared = Notification.Name("ycNotificationDebugStateCleared")
+}
+
+struct NotificationRoute: Equatable {
+    let kind: String
+    let locationName: String
+    let latitude: Double
+    let longitude: Double
+    let targetDateISO: String?
+
+    init?(userInfo: [AnyHashable: Any]) {
+        guard
+            let kind = userInfo["kind"] as? String,
+            let locationName = userInfo["locationName"] as? String,
+            let latitude = userInfo["latitude"] as? Double,
+            let longitude = userInfo["longitude"] as? Double
+        else {
+            return nil
+        }
+
+        self.kind = kind
+        self.locationName = locationName
+        self.latitude = latitude
+        self.longitude = longitude
+
+        let rawDateISO = userInfo["targetDateISO"] as? String
+        self.targetDateISO = (rawDateISO?.isEmpty == false) ? rawDateISO : nil
+    }
+}
+
+final class NotificationResponseBridge: NSObject, UNUserNotificationCenterDelegate {
+    static let shared = NotificationResponseBridge()
+
+    private override init() {
+        super.init()
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse
+    ) async {
+        guard let route = NotificationRoute(userInfo: response.notification.request.content.userInfo) else { return }
+
+        await MainActor.run {
+            NotificationCenter.default.post(name: .ycNotificationRouteReceived, object: route)
+        }
+    }
+}
+
 @MainActor
 final class NotificationCoordinator: ObservableObject {
     @Published private(set) var authorizationStatus: UNAuthorizationStatus = .notDetermined
@@ -85,7 +136,7 @@ final class NotificationCoordinator: ObservableObject {
 
         let alreadyDelivered = store.loadDeliveredIDs()
         guard !alreadyDelivered.contains(winner.id) else {
-            print("[N1] reevaluate aborted: winner already delivered id=\(winner.id)")
+            print("[N1] reevaluate aborted: winner already scheduled/notified id=\(winner.id)")
             return
         }
 
@@ -93,6 +144,13 @@ final class NotificationCoordinator: ObservableObject {
         content.title = winner.title
         content.body = winner.body
         content.sound = .default
+        content.userInfo = [
+            "kind": routeKindString(for: winner.kind),
+            "locationName": winner.locationName,
+            "latitude": winner.locationLatitude,
+            "longitude": winner.locationLongitude,
+            "targetDateISO": winner.targetDateISO ?? ""
+        ]
 
         let interval = max(1, winner.fireDate.timeIntervalSinceNow)
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)
@@ -103,6 +161,11 @@ final class NotificationCoordinator: ObservableObject {
         do {
             try await center.add(request)
             print("[N1] scheduled requestID=\(requestID) interval=\(interval)")
+
+            let appState = await MainActor.run { UIApplication.shared.applicationState }
+            if appState == .active {
+                print("[N1] note: YC is active, so the notification banner may not appear while the app is open")
+            }
 
             var delivered = alreadyDelivered
             delivered.insert(winner.id)
@@ -115,6 +178,15 @@ final class NotificationCoordinator: ObservableObject {
             store.saveLastDeliveredDayString(formatter.string(from: Date()))
         } catch {
             print("[N1] failed to schedule notification: \(error)")
+        }
+    }
+
+    private func routeKindString(for kind: NotificationCandidate.Kind) -> String {
+        switch kind {
+        case .precipSoon:
+            return "precipSoon"
+        case .windyTomorrow:
+            return "windyTomorrow"
         }
     }
 

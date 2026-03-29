@@ -84,7 +84,11 @@ enum NotificationRuleEngine {
             title: title,
             body: body,
             fireDate: now.addingTimeInterval(60),
-            relevanceScore: 100
+            relevanceScore: 100,
+            locationName: snapshot.locationName,
+            locationLatitude: snapshot.locationLatitude,
+            locationLongitude: snapshot.locationLongitude,
+            targetDateISO: firstIncoming.point.timeISO
         )
         print("[N1] precipSoon candidate built id=\(candidate.id)")
         return candidate
@@ -122,8 +126,12 @@ enum NotificationRuleEngine {
             kind: .windyTomorrow,
             title: "Windy tomorrow",
             body: "Gusty conditions are expected tomorrow in \(snapshot.locationName).",
-            fireDate: fireDate,
-            relevanceScore: 80
+            fireDate: Date().addingTimeInterval(10),
+            relevanceScore: 80,
+            locationName: snapshot.locationName,
+            locationLatitude: snapshot.locationLatitude,
+            locationLongitude: snapshot.locationLongitude,
+            targetDateISO: tomorrowPoint.dateISO
         )
     }
 

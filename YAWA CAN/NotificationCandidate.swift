@@ -18,4 +18,8 @@ struct NotificationCandidate: Equatable, Hashable {
     let body: String
     let fireDate: Date
     let relevanceScore: Int
+    let locationName: String
+    let locationLatitude: Double
+    let locationLongitude: Double
+    let targetDateISO: String?
 }

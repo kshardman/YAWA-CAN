@@ -68,6 +68,7 @@ struct ContentView: View {
     @State private var showingAllAlerts = false
     
     @State private var usedWideDelta = false
+    @State private var pendingNotificationRoute: NotificationRoute? = nil
     
     @AppStorage("yawa.can.isCurrentLocationSelected") private var isCurrentLocationSelected: Bool = false
     
@@ -277,6 +278,10 @@ struct ContentView: View {
                 await refreshWeather()
             }
         }
+        .onChange(of: viewModel.snapshot) { _, newSnapshot in
+            guard let newSnapshot else { return }
+            applyPendingNotificationRouteIfPossible(snapshot: newSnapshot)
+        }
         .onChange(of: scenePhase) { _, newPhase in
             guard newPhase == .active else { return }
             Task { @MainActor in
@@ -338,6 +343,13 @@ struct ContentView: View {
             RadarView(target: target)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ycNotificationRouteReceived)) { note in
+            guard let route = note.object as? NotificationRoute else { return }
+            handleNotificationRoute(route)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ycNotificationDebugStateCleared)) { _ in
+            clearNotificationRouteUIState()
         }
     }
 
@@ -1274,6 +1286,139 @@ struct ContentView: View {
         gen.impactOccurred()
     }
     
+    private func clearNotificationRouteUIState() {
+        pendingNotificationRoute = nil
+        selectedDaySelection = nil
+        print("[N1] cleared in-app notification route UI state")
+    }
+
+    private func handleNotificationRoute(_ route: NotificationRoute) {
+        let routedLocation = SavedLocation(
+            id: UUID(),
+            displayName: route.locationName,
+            latitude: route.latitude,
+            longitude: route.longitude,
+            countryCode: inferredCountryCode(for: route.locationName)
+        )
+
+        pendingNotificationRoute = route
+        selected = routedLocation
+        displayedLocation = routedLocation
+        isCurrentLocationSelected = false
+        locationStore.setSelected(routedLocation)
+
+        Task { @MainActor in
+            await refreshWeather(showLoading: true)
+            if let snapshot = viewModel.snapshot {
+                applyPendingNotificationRouteIfPossible(snapshot: snapshot)
+            }
+        }
+
+        print("[N1] tapped notification kind=\(route.kind) location=\(route.locationName) targetDateISO=\(route.targetDateISO ?? "nil")")
+    }
+
+    private func applyPendingNotificationRouteIfPossible(snapshot: WeatherSnapshot) {
+        guard let route = pendingNotificationRoute else { return }
+        guard let targetDateISO = route.targetDateISO else { return }
+        guard route.kind == "windyTomorrow" || route.kind == "precipSoon" else {
+            pendingNotificationRoute = nil
+            return
+        }
+
+        let selectedName = (selected?.displayName ?? displayedLocation?.displayName ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let routeName = route.locationName.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let sameCoordinates = abs(route.latitude - snapshotLocationLatitude) < 0.001 &&
+            abs(route.longitude - snapshotLocationLongitude) < 0.001
+        let sameName = !selectedName.isEmpty && selectedName.caseInsensitiveCompare(routeName) == .orderedSame
+
+        guard sameCoordinates || sameName else {
+            print("[N1] pending route waiting for matching location kind=\(route.kind) route=\(route.locationName) selected=\(selectedName)")
+            return
+        }
+
+        let daysToShow = max(1, min(forecastDaysToShow, 10))
+        let days = Array(snapshot.daily.prefix(daysToShow))
+        guard !days.isEmpty else { return }
+
+        let tz = TimeZone(identifier: snapshot.timeZoneID) ?? .current
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = tz
+
+        let dayFormatter = DateFormatter()
+        dayFormatter.calendar = cal
+        dayFormatter.timeZone = tz
+        dayFormatter.locale = Locale(identifier: "en_US_POSIX")
+        dayFormatter.dateFormat = "yyyy-MM-dd"
+
+        let hourlyFormatter = DateFormatter()
+        hourlyFormatter.calendar = cal
+        hourlyFormatter.timeZone = tz
+        hourlyFormatter.locale = Locale(identifier: "en_US_POSIX")
+        hourlyFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm"
+
+        let targetDate: Date?
+        if route.kind == "precipSoon" {
+            targetDate = hourlyFormatter.date(from: targetDateISO) ?? dayFormatter.date(from: targetDateISO)
+        } else {
+            targetDate = dayFormatter.date(from: targetDateISO)
+        }
+
+        guard let targetDate else {
+            pendingNotificationRoute = nil
+            print("[N1] route date parse failed kind=\(route.kind) targetDateISO=\(targetDateISO)")
+            return
+        }
+
+        guard let matchIndex = days.firstIndex(where: { cal.isDate($0.date, inSameDayAs: targetDate) }) else {
+            pendingNotificationRoute = nil
+            print("[N1] no forecast day matched route kind=\(route.kind) targetDateISO=\(targetDateISO)")
+            return
+        }
+
+        selectedDaySelection = ForecastDetailSelection(
+            days: days,
+            initialIndex: matchIndex,
+            hourlyTempsC: snapshot.hourlyTempsC,
+            hourlyTimeISO: snapshot.hourlyTimeISO,
+            hourlyPrecipChancePercent: snapshot.hourlyPrecipChancePercent,
+            timeZoneID: snapshot.timeZoneID
+        )
+        forecastDetailDetent = .fraction(0.70)
+        pendingNotificationRoute = nil
+
+        print("[N1] opened forecast detail from notification route kind=\(route.kind) index=\(matchIndex) dateISO=\(targetDateISO)")
+    }
+
+    private var snapshotLocationLatitude: Double {
+        displayedLocation?.latitude ?? selected?.latitude ?? locationStore.selected?.latitude ?? 0
+    }
+
+    private var snapshotLocationLongitude: Double {
+        displayedLocation?.longitude ?? selected?.longitude ?? locationStore.selected?.longitude ?? 0
+    }
+
+    private func inferredCountryCode(for displayName: String) -> String {
+        let upper = displayName.uppercased()
+
+        let canadianSuffixes = [
+            ", AB", ", BC", ", MB", ", NB", ", NL", ", NS", ", NT", ", NU", ", ON", ", PE", ", QC", ", SK", ", YT"
+        ]
+        if canadianSuffixes.contains(where: { upper.hasSuffix($0) }) {
+            return "CA"
+        }
+
+        let usSuffixes = [
+            ", AL", ", AK", ", AZ", ", AR", ", CA", ", CO", ", CT", ", DE", ", FL", ", GA", ", HI", ", ID", ", IL", ", IN", ", IA", ", KS", ", KY", ", LA", ", ME", ", MD", ", MA", ", MI", ", MN", ", MS", ", MO", ", MT", ", NE", ", NV", ", NH", ", NJ", ", NM", ", NY", ", NC", ", ND", ", OH", ", OK", ", OR", ", PA", ", RI", ", SC", ", SD", ", TN", ", TX", ", UT", ", VT", ", VA", ", WA", ", WV", ", WI", ", WY"
+        ]
+        if usSuffixes.contains(where: { upper.hasSuffix($0) }) {
+            return "US"
+        }
+
+        return "CA"
+    }
+
     private func openRadar() {
         let loc = selected ?? locationStore.selected ?? SavedLocation.toronto
 
@@ -3369,6 +3514,7 @@ private func comfortSummaryText(for current: CurrentConditions) -> String {
         return baseComfort
     }
 }
+
 
 #Preview {
     ContentView()
