@@ -56,6 +56,10 @@ final class NotificationResponseBridge: NSObject, UNUserNotificationCenterDelega
 
 @MainActor
 final class NotificationCoordinator: ObservableObject {
+    private let schedulingCooldownInterval: TimeInterval = 15 * 60
+    private let lastScheduledAtKey = "yc.notifications.lastScheduledAt"
+
+
     @Published private(set) var authorizationStatus: UNAuthorizationStatus = .notDetermined
 
     private let center: UNUserNotificationCenter
@@ -149,6 +153,15 @@ final class NotificationCoordinator: ObservableObject {
             return
         }
 
+        if let lastScheduledAt = UserDefaults.standard.object(forKey: lastScheduledAtKey) as? Date {
+            let elapsed = Date().timeIntervalSince(lastScheduledAt)
+            guard elapsed >= schedulingCooldownInterval else {
+                let remaining = schedulingCooldownInterval - elapsed
+                print("[N1] \(logPrefix) aborted: cooldown active remaining=\(remaining)")
+                return
+            }
+        }
+
         let content = UNMutableNotificationContent()
         content.title = winner.title
         content.body = winner.body
@@ -170,6 +183,7 @@ final class NotificationCoordinator: ObservableObject {
         do {
             try await center.add(request)
             print("[N1] scheduled requestID=\(requestID) interval=\(interval)")
+            print("[N1] notification content title=\(content.title) body=\(content.body)")
 
             let appState = await MainActor.run { UIApplication.shared.applicationState }
             if appState == .active {
@@ -179,6 +193,7 @@ final class NotificationCoordinator: ObservableObject {
             var delivered = alreadyDelivered
             delivered.insert(winner.id)
             store.saveDeliveredIDs(delivered)
+            UserDefaults.standard.set(Date(), forKey: lastScheduledAtKey)
 
             let formatter = DateFormatter()
             formatter.calendar = calendar

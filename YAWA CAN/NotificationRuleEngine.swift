@@ -90,7 +90,7 @@ enum NotificationRuleEngine {
         let candidate = NotificationCandidate(
             id: "precipSoon|\(locationKey(for: snapshot))|\(firstIncoming.point.timeISO)",
             kind: .precipSoon,
-            title: title,
+            title: "\(title) — \(snapshot.locationName)",
             body: body,
             fireDate: now.addingTimeInterval(60),
             relevanceScore: 100,
@@ -174,7 +174,7 @@ enum NotificationRuleEngine {
         let candidate = NotificationCandidate(
             id: "notableForecast|\(locationKey(for: snapshot))|\(category.rawValue)|\(severity?.rawValue ?? "none")|\(dateISO ?? "undated")",
             kind: .notableForecast,
-            title: title,
+            title: "\(title) — \(snapshot.locationName)",
             body: body,
             fireDate: Date().addingTimeInterval(10),
             relevanceScore: relevanceScore(category: category, severity: severity),
@@ -228,19 +228,27 @@ enum NotificationRuleEngine {
     ) -> String {
         switch (category, severity) {
         case (.flooding, .warning):
-            return "Serious flooding is possible in \(locationName)."
+            return "Tap to view the flood alert in YC."
         case (.flooding, .watch):
-            return "Flooding may develop in \(locationName)."
-        case (.winterWeather, .warning), (.winterWeather, .watch), (.winterWeather, .advisory):
-            return "Snow or icy conditions are possible in \(locationName)."
-        case (.thunder, .warning), (.thunder, .watch):
-            return "Stormy conditions are possible in \(locationName)."
+            return "Tap to view the flood watch in YC."
+        case (.winterWeather, .warning):
+            return "Tap to view the winter weather warning in YC."
+        case (.winterWeather, .watch):
+            return "Tap to view the winter weather watch in YC."
+        case (.winterWeather, .advisory):
+            return "Tap to view the winter weather advisory in YC."
+        case (.thunder, .warning):
+            return "Tap to view the thunderstorm warning in YC."
+        case (.thunder, .watch):
+            return "Tap to view the thunderstorm watch in YC."
         case (.specialStatement, .statement):
-            return "Notable weather is expected in \(locationName)."
-        case (.wind, .warning), (.wind, .watch):
-            return "Strong winds are possible in \(locationName)."
+            return "Tap to view the alert in YC."
+        case (.wind, .warning):
+            return "Tap to view the wind warning in YC."
+        case (.wind, .watch):
+            return "Tap to view the wind watch in YC."
         default:
-            return "Notable weather is expected in \(locationName)."
+            return "Tap to view the alert in YC."
         }
     }
 
@@ -330,13 +338,29 @@ enum NotificationRuleEngine {
         category: NotableForecastCategory,
         severity: AlertSeverityClass?
     ) -> Int {
-        switch severity {
-        case .warning: return 95
-        case .watch: return 88
-        case .advisory: return 80
-        case .statement: return 72
-        case nil: return 65
-        }
+        let base: Int = {
+            switch severity {
+            case .warning: return 95
+            case .watch: return 85
+            case .advisory: return 75
+            case .statement: return 60
+            case nil: return 50
+            }
+        }()
+
+        let categoryBonus: Int = {
+            switch category {
+            case .flooding: return 5
+            case .winterWeather: return 4
+            case .thunder: return 3
+            case .wind: return 2
+            case .specialStatement: return 0
+            case .heat, .cold, .airQuality, .fog: return 0
+            case .unknown: return -5
+            }
+        }()
+
+        return base + categoryBonus
     }
 
     nonisolated private static func isMeaningfulPrecipitation(

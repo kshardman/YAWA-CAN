@@ -16,6 +16,12 @@ struct MonitoredFavoriteLocation {
     let countryCode: String
 }
 
+private struct EvaluatedFavoriteCandidate {
+    let candidate: NotificationCandidate
+    let alertExpiresAt: Date?
+    let favoriteOrder: Int
+}
+
 @MainActor
 final class FavoritesNotificationMonitor {
     private let weatherService = OpenMeteoWeatherService()
@@ -23,13 +29,19 @@ final class FavoritesNotificationMonitor {
     private let coordinator = NotificationCoordinator()
 
     func evaluateFavorites(_ favorites: [MonitoredFavoriteLocation]) async {
-        let monitoredFavorites = Array(favorites.prefix(10))
+        let monitoredFavorites = favorites
         guard !monitoredFavorites.isEmpty else {
             print("[N1] favorites monitor: no favorites to evaluate")
             return
         }
 
-        var allCandidates: [NotificationCandidate] = []
+        let favoriteOrderByName: [String: Int] = Dictionary(
+            uniqueKeysWithValues: monitoredFavorites.enumerated().map { index, favorite in
+                (favorite.displayName, index)
+            }
+        )
+
+        var allCandidates: [EvaluatedFavoriteCandidate] = []
 
         for favorite in monitoredFavorites {
             do {
@@ -84,7 +96,20 @@ final class FavoritesNotificationMonitor {
                     print("[N1] favorites monitor candidates for \(favorite.displayName): \(candidates.map { $0.id })")
                 }
 
-                allCandidates.append(contentsOf: candidates)
+                let favoriteOrder = favoriteOrderByName[favorite.displayName] ?? Int.max
+                let evaluatedCandidates = candidates.map {
+                    EvaluatedFavoriteCandidate(
+                        candidate: $0,
+                        alertExpiresAt: topAlert?.expiresAt,
+                        favoriteOrder: favoriteOrder
+                    )
+                }
+
+                for entry in evaluatedCandidates {
+                    print("[N1] favorites monitor candidate detail id=\(entry.candidate.id) score=\(entry.candidate.relevanceScore) fireDate=\(entry.candidate.fireDate) expiresAt=\(entry.alertExpiresAt?.description ?? "nil") favoriteOrder=\(entry.favoriteOrder)")
+                }
+
+                allCandidates.append(contentsOf: evaluatedCandidates)
             } catch {
                 print("[N1] favorites monitor error for \(favorite.displayName): \(error.localizedDescription)")
             }
@@ -95,14 +120,37 @@ final class FavoritesNotificationMonitor {
             return
         }
 
-        let winner = allCandidates.sorted {
-            if $0.relevanceScore != $1.relevanceScore {
-                return $0.relevanceScore > $1.relevanceScore
+        let winningEntry = allCandidates.sorted {
+            if $0.candidate.relevanceScore != $1.candidate.relevanceScore {
+                return $0.candidate.relevanceScore > $1.candidate.relevanceScore
             }
-            return $0.fireDate < $1.fireDate
+
+            switch ($0.alertExpiresAt, $1.alertExpiresAt) {
+            case let (lhs?, rhs?) where lhs != rhs:
+                return lhs < rhs
+            case (_?, nil):
+                return true
+            case (nil, _?):
+                return false
+            default:
+                break
+            }
+
+            if $0.candidate.fireDate != $1.candidate.fireDate {
+                return $0.candidate.fireDate < $1.candidate.fireDate
+            }
+
+            if $0.favoriteOrder != $1.favoriteOrder {
+                return $0.favoriteOrder < $1.favoriteOrder
+            }
+
+            return $0.candidate.id < $1.candidate.id
         }.first!
 
+        let winner = winningEntry.candidate
+
         print("[N1] favorites monitor winner id=\(winner.id)")
+        print("[N1] favorites monitor winner location=\(winner.locationName) favoriteOrder=\(winningEntry.favoriteOrder) expiresAt=\(winningEntry.alertExpiresAt?.description ?? "nil")")
 
         let timeZone = TimeZone.current
         var calendar = Calendar.current
