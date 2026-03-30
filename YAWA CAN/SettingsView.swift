@@ -19,6 +19,7 @@ import UserNotifications
 struct SettingsView: View {
     @StateObject private var appearanceSettings = AppearanceSettings()
     @StateObject private var notifications = NotificationCoordinator()
+    @State private var isPresentingShare = false
     let monitoredFavorites: [MonitoredFavoriteLocation]
     @Environment(\.colorScheme) private var colorScheme
 
@@ -242,9 +243,17 @@ private extension SettingsView {
             }
 
             Button {
+                lightHaptic()
                 let store = NotificationStore()
                 store.clearAllNotificationState()
-                print("[N1] cleared notification debug state")
+                let defaults = UserDefaults.standard
+                for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("yc.notifications.lastScheduledAt.") {
+                    defaults.removeObject(forKey: key)
+                }
+                defaults.removeObject(forKey: "yc.notifications.lastFavoritesMonitorScheduleAt")
+                AppLogger.log("[N1] cleared notification debug state")
+                AppLogger.log("[N1] cleared notification cooldown timestamps")
+                AppLogger.log("[N1] cleared favorites-monitor suppression timestamp")
                 NotificationCenter.default.post(name: .ycNotificationDebugStateCleared, object: nil)
             } label: {
                 HStack {
@@ -278,7 +287,12 @@ private extension SettingsView {
                     content.body = candidate.body
                     content.sound = .default
 
-                    let interval = max(1, candidate.fireDate.timeIntervalSinceNow)
+//                    let interval = max(1, candidate.fireDate.timeIntervalSinceNow)
+#if DEBUG
+let interval: TimeInterval = 15
+#else
+let interval = max(1, candidate.fireDate.timeIntervalSinceNow)
+#endif
                     let trigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)
                     let request = UNNotificationRequest(
                         identifier: "yc.forecast.\(candidate.id)",
@@ -303,6 +317,52 @@ private extension SettingsView {
             }
 
             Button {
+                lightHaptic()
+
+                guard !isPresentingShare else {
+                    AppLogger.log("[N1] share log tapped while share presentation already in progress")
+                    return
+                }
+
+                guard let url = AppLogger.exportURL() else {
+                    AppLogger.log("[N1] share log tapped but no log file exists yet")
+                    return
+                }
+
+                isPresentingShare = true
+                AppLogger.log("[N1] share log tapped url=\(url.path)")
+
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 300_000_000)
+                    SharePresenter.present(items: [url])
+
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    isPresentingShare = false
+                }
+            } label: {
+                HStack {
+                    Text("Share Notification Log")
+                        .foregroundStyle(primaryText)
+                    Spacer()
+                    Image(systemName: "square.and.arrow.up")
+                        .foregroundStyle(AnyShapeStyle(YAWATheme.textSecondary(for: colorScheme).opacity(0.9)))
+                }
+                .contentShape(Rectangle())
+            }
+
+            Button(role: .destructive) {
+                lightHaptic()
+                AppLogger.clear()
+            } label: {
+                HStack {
+                    Text("Clear Notification Log")
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+            }
+
+            Button {
+                lightHaptic()
                 Task {
                     let monitor = FavoritesNotificationMonitor()
                     await monitor.evaluateFavorites(monitoredFavorites)
@@ -317,6 +377,7 @@ private extension SettingsView {
             }
 
             Button {
+                lightHaptic()
                 notifications.openSystemSettings()
             } label: {
                 HStack {
@@ -447,6 +508,12 @@ private extension SettingsView {
 
     private var buildNumber: String {
         Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
+    }
+
+    private func lightHaptic() {
+        let gen = UIImpactFeedbackGenerator(style: .light)
+        gen.prepare()
+        gen.impactOccurred()
     }
 
 }

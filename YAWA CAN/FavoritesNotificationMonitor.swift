@@ -20,6 +20,10 @@ private struct EvaluatedFavoriteCandidate {
     let candidate: NotificationCandidate
     let alertExpiresAt: Date?
     let favoriteOrder: Int
+
+    var isOfficialAlert: Bool {
+        candidate.kind == .notableForecast
+    }
 }
 
 @MainActor
@@ -31,19 +35,14 @@ final class FavoritesNotificationMonitor {
     func evaluateFavorites(_ favorites: [MonitoredFavoriteLocation]) async {
         let monitoredFavorites = favorites
         guard !monitoredFavorites.isEmpty else {
-            print("[N1] favorites monitor: no favorites to evaluate")
+            AppLogger.log("[N1] favorites monitor: no favorites to evaluate")
             return
         }
 
-        let favoriteOrderByName: [String: Int] = Dictionary(
-            uniqueKeysWithValues: monitoredFavorites.enumerated().map { index, favorite in
-                (favorite.displayName, index)
-            }
-        )
+        var didFindAnyCandidates = false
+        var localWinners: [EvaluatedFavoriteCandidate] = []
 
-        var allCandidates: [EvaluatedFavoriteCandidate] = []
-
-        for favorite in monitoredFavorites {
+        for (favoriteOrder, favorite) in monitoredFavorites.enumerated() {
             do {
                 let weather = try await weatherService.fetchWeather(
                     coordinate: CLLocationCoordinate2D(
@@ -75,7 +74,7 @@ final class FavoritesNotificationMonitor {
                     location: favorite,
                     alert: topAlert
                 ) else {
-                    print("[N1] favorites monitor: snapshot unavailable for \(favorite.displayName)")
+                    AppLogger.log("[N1] favorites monitor: snapshot unavailable for \(favorite.displayName)")
                     continue
                 }
 
@@ -93,10 +92,9 @@ final class FavoritesNotificationMonitor {
                 )
 
                 if !candidates.isEmpty {
-                    print("[N1] favorites monitor candidates for \(favorite.displayName): \(candidates.map { $0.id })")
+                    AppLogger.log("[N1] favorites monitor candidates for \(favorite.displayName): \(candidates.map { $0.id })")
                 }
 
-                let favoriteOrder = favoriteOrderByName[favorite.displayName] ?? Int.max
                 let evaluatedCandidates = candidates.map {
                     EvaluatedFavoriteCandidate(
                         candidate: $0,
@@ -106,21 +104,67 @@ final class FavoritesNotificationMonitor {
                 }
 
                 for entry in evaluatedCandidates {
-                    print("[N1] favorites monitor candidate detail id=\(entry.candidate.id) score=\(entry.candidate.relevanceScore) fireDate=\(entry.candidate.fireDate) expiresAt=\(entry.alertExpiresAt?.description ?? "nil") favoriteOrder=\(entry.favoriteOrder)")
+                    AppLogger.log("[N1] favorites monitor candidate detail id=\(entry.candidate.id) score=\(entry.candidate.relevanceScore) fireDate=\(entry.candidate.fireDate) expiresAt=\(entry.alertExpiresAt?.description ?? "nil") favoriteOrder=\(entry.favoriteOrder)")
                 }
 
-                allCandidates.append(contentsOf: evaluatedCandidates)
+                if !evaluatedCandidates.isEmpty {
+                    didFindAnyCandidates = true
+
+                    let winningEntry = evaluatedCandidates.sorted {
+                        if $0.isOfficialAlert != $1.isOfficialAlert {
+                            return $0.isOfficialAlert && !$1.isOfficialAlert
+                        }
+
+                        if $0.candidate.relevanceScore != $1.candidate.relevanceScore {
+                            return $0.candidate.relevanceScore > $1.candidate.relevanceScore
+                        }
+
+                        switch ($0.alertExpiresAt, $1.alertExpiresAt) {
+                        case let (lhs?, rhs?) where lhs != rhs:
+                            return lhs < rhs
+                        case (_?, nil):
+                            return true
+                        case (nil, _?):
+                            return false
+                        default:
+                            break
+                        }
+
+                        if $0.candidate.fireDate != $1.candidate.fireDate {
+                            return $0.candidate.fireDate < $1.candidate.fireDate
+                        }
+
+                        if $0.favoriteOrder != $1.favoriteOrder {
+                            return $0.favoriteOrder < $1.favoriteOrder
+                        }
+
+                        return $0.candidate.id < $1.candidate.id
+                    }.first!
+
+                    let winner = winningEntry.candidate
+
+                    AppLogger.log("[N1] favorites monitor local winner id=\(winner.id)")
+                    AppLogger.log("[N1] favorites monitor local winner officialAlert=\(winningEntry.isOfficialAlert)")
+                    AppLogger.log("[N1] favorites monitor local winner location=\(winner.locationName) favoriteOrder=\(winningEntry.favoriteOrder) expiresAt=\(winningEntry.alertExpiresAt?.description ?? "nil")")
+
+                    localWinners.append(winningEntry)
+                }
             } catch {
-                print("[N1] favorites monitor error for \(favorite.displayName): \(error.localizedDescription)")
+                AppLogger.log("[N1] favorites monitor error for \(favorite.displayName): \(error.localizedDescription)")
             }
         }
 
-        guard !allCandidates.isEmpty else {
-            print("[N1] favorites monitor: no candidates")
-            return
+        if !didFindAnyCandidates {
+            AppLogger.log("[N1] favorites monitor: no candidates")
         }
 
-        let winningEntry = allCandidates.sorted {
+        guard !localWinners.isEmpty else { return }
+
+        let sortedWinners = localWinners.sorted {
+            if $0.isOfficialAlert != $1.isOfficialAlert {
+                return $0.isOfficialAlert && !$1.isOfficialAlert
+            }
+
             if $0.candidate.relevanceScore != $1.candidate.relevanceScore {
                 return $0.candidate.relevanceScore > $1.candidate.relevanceScore
             }
@@ -145,23 +189,24 @@ final class FavoritesNotificationMonitor {
             }
 
             return $0.candidate.id < $1.candidate.id
-        }.first!
+        }
 
-        let winner = winningEntry.candidate
+        AppLogger.log("[N1] favorites monitor scheduling allWinners=\(sortedWinners.count)")
 
-        print("[N1] favorites monitor winner id=\(winner.id)")
-        print("[N1] favorites monitor winner location=\(winner.locationName) favoriteOrder=\(winningEntry.favoriteOrder) expiresAt=\(winningEntry.alertExpiresAt?.description ?? "nil")")
+        let localTimeZone = TimeZone.current
+        var localCalendar = Calendar.current
+        localCalendar.timeZone = localTimeZone
 
-        let timeZone = TimeZone.current
-        var calendar = Calendar.current
-        calendar.timeZone = timeZone
-
-        await coordinator.scheduleCandidateIfNeeded(
-            winner,
-            calendar: calendar,
-            timeZone: timeZone,
-            logPrefix: "favorites-monitor"
-        )
+        for winningEntry in sortedWinners {
+            let winner = winningEntry.candidate
+            AppLogger.log("[N1] favorites monitor scheduled winner id=\(winner.id)")
+            await coordinator.scheduleCandidateIfNeeded(
+                winner,
+                calendar: localCalendar,
+                timeZone: localTimeZone,
+                logPrefix: "favorites-monitor"
+            )
+        }
     }
 
     private func makeSnapshot(

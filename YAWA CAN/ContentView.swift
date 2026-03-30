@@ -1301,7 +1301,7 @@ struct ContentView: View {
     private func clearNotificationRouteUIState() {
         pendingNotificationRoute = nil
         selectedDaySelection = nil
-        print("[N1] cleared in-app notification route UI state")
+        AppLogger.log("[N1] cleared in-app notification route UI state")
     }
 
     private func handleNotificationRoute(_ route: NotificationRoute) {
@@ -1346,13 +1346,13 @@ struct ContentView: View {
         let sameName = !selectedName.isEmpty && selectedName.caseInsensitiveCompare(routeName) == .orderedSame
 
         guard sameCoordinates || sameName else {
-            print("[N1] pending route waiting for matching location kind=\(route.kind) route=\(route.locationName) selected=\(selectedName)")
+            AppLogger.log("[N1] pending route waiting for matching location kind=\(route.kind) route=\(route.locationName) selected=\(selectedName)")
             return
         }
 
         if route.kind == "notableForecast" {
             pendingNotificationRoute = nil
-            print("[N1] notableForecast route applied to main screen only")
+            AppLogger.log("[N1] notableForecast route applied to main screen only")
             return
         }
 
@@ -1385,13 +1385,13 @@ struct ContentView: View {
 
         guard let targetDate else {
             pendingNotificationRoute = nil
-            print("[N1] route date parse failed kind=\(route.kind) targetDateISO=\(targetDateISO)")
+            AppLogger.log("[N1] route date parse failed kind=\(route.kind) targetDateISO=\(targetDateISO)")
             return
         }
 
         guard let matchIndex = days.firstIndex(where: { cal.isDate($0.date, inSameDayAs: targetDate) }) else {
             pendingNotificationRoute = nil
-            print("[N1] no forecast day matched route kind=\(route.kind) targetDateISO=\(targetDateISO)")
+            AppLogger.log("[N1] no forecast day matched route kind=\(route.kind) targetDateISO=\(targetDateISO)")
             return
         }
 
@@ -1406,7 +1406,7 @@ struct ContentView: View {
         forecastDetailDetent = .fraction(0.70)
         pendingNotificationRoute = nil
 
-        print("[N1] opened forecast detail from notification route kind=\(route.kind) index=\(matchIndex) dateISO=\(targetDateISO)")
+        AppLogger.log("[N1] opened forecast detail from notification route kind=\(route.kind) index=\(matchIndex) dateISO=\(targetDateISO)")
     }
 
     private var snapshotLocationLatitude: Double {

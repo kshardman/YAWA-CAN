@@ -57,7 +57,15 @@ final class NotificationResponseBridge: NSObject, UNUserNotificationCenterDelega
 @MainActor
 final class NotificationCoordinator: ObservableObject {
     private let schedulingCooldownInterval: TimeInterval = 15 * 60
-    private let lastScheduledAtKey = "yc.notifications.lastScheduledAt"
+    private let favoritesMonitorSuppressionInterval: TimeInterval = 2 * 60
+    private let lastScheduledAtKeyPrefix = "yc.notifications.lastScheduledAt."
+    private let lastFavoritesMonitorScheduleAtKey = "yc.notifications.lastFavoritesMonitorScheduleAt"
+    private func lastScheduledAtKey(for locationName: String) -> String {
+        let sanitized = locationName
+            .lowercased()
+            .replacingOccurrences(of: " ", with: "_")
+        return lastScheduledAtKeyPrefix + sanitized
+    }
 
 
     @Published private(set) var authorizationStatus: UNAuthorizationStatus = .notDetermined
@@ -149,15 +157,26 @@ final class NotificationCoordinator: ObservableObject {
     ) async {
         let alreadyDelivered = store.loadDeliveredIDs()
         guard !alreadyDelivered.contains(winner.id) else {
-            print("[N1] \(logPrefix) aborted: winner already scheduled/notified id=\(winner.id)")
+            AppLogger.log("[N1] \(logPrefix) aborted: winner already scheduled/notified id=\(winner.id)")
             return
         }
+        let cooldownKey = lastScheduledAtKey(for: winner.locationName)
 
-        if let lastScheduledAt = UserDefaults.standard.object(forKey: lastScheduledAtKey) as? Date {
+        if logPrefix != "favorites-monitor",
+           let lastFavoritesMonitorScheduleAt = UserDefaults.standard.object(forKey: lastFavoritesMonitorScheduleAtKey) as? Date {
+            let elapsedSinceFavoritesMonitor = Date().timeIntervalSince(lastFavoritesMonitorScheduleAt)
+            if elapsedSinceFavoritesMonitor < favoritesMonitorSuppressionInterval {
+                let remaining = favoritesMonitorSuppressionInterval - elapsedSinceFavoritesMonitor
+                AppLogger.log("[N1] \(logPrefix) aborted: favorites-monitor suppression active location=\(winner.locationName) remaining=\(remaining)")
+                return
+            }
+        }
+
+        if let lastScheduledAt = UserDefaults.standard.object(forKey: cooldownKey) as? Date {
             let elapsed = Date().timeIntervalSince(lastScheduledAt)
             guard elapsed >= schedulingCooldownInterval else {
                 let remaining = schedulingCooldownInterval - elapsed
-                print("[N1] \(logPrefix) aborted: cooldown active remaining=\(remaining)")
+                AppLogger.log("[N1] \(logPrefix) aborted: cooldown active location=\(winner.locationName) remaining=\(remaining)")
                 return
             }
         }
@@ -174,7 +193,11 @@ final class NotificationCoordinator: ObservableObject {
             "targetDateISO": winner.targetDateISO ?? ""
         ]
 
+        #if DEBUG
+        let interval: TimeInterval = 15
+        #else
         let interval = max(1, winner.fireDate.timeIntervalSinceNow)
+        #endif
         let trigger = UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)
 
         let requestID = "yc.forecast.\(winner.id)"
@@ -182,18 +205,21 @@ final class NotificationCoordinator: ObservableObject {
 
         do {
             try await center.add(request)
-            print("[N1] scheduled requestID=\(requestID) interval=\(interval)")
-            print("[N1] notification content title=\(content.title) body=\(content.body)")
+            AppLogger.log("[N1] scheduled requestID=\(requestID) interval=\(interval)")
+            AppLogger.log("[N1] notification content title=\(content.title) body=\(content.body)")
 
             let appState = await MainActor.run { UIApplication.shared.applicationState }
             if appState == .active {
-                print("[N1] note: YC is active, so the notification banner may not appear while the app is open")
+                AppLogger.log("[N1] note: YC is active, so the notification banner may not appear while the app is open")
             }
 
             var delivered = alreadyDelivered
             delivered.insert(winner.id)
             store.saveDeliveredIDs(delivered)
-            UserDefaults.standard.set(Date(), forKey: lastScheduledAtKey)
+            UserDefaults.standard.set(Date(), forKey: cooldownKey)
+            if logPrefix == "favorites-monitor" {
+                UserDefaults.standard.set(Date(), forKey: lastFavoritesMonitorScheduleAtKey)
+            }
 
             let formatter = DateFormatter()
             formatter.calendar = calendar
@@ -201,7 +227,7 @@ final class NotificationCoordinator: ObservableObject {
             formatter.dateFormat = "yyyy-MM-dd"
             store.saveLastDeliveredDayString(formatter.string(from: Date()))
         } catch {
-            print("[N1] failed to schedule notification: \(error)")
+            AppLogger.log("[N1] failed to schedule notification: \(error)")
         }
     }
 
