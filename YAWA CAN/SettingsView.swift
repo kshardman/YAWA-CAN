@@ -19,6 +19,7 @@ import UserNotifications
 struct SettingsView: View {
     @StateObject private var appearanceSettings = AppearanceSettings()
     @StateObject private var notifications = NotificationCoordinator()
+    let monitoredFavorites: [MonitoredFavoriteLocation]
     @Environment(\.colorScheme) private var colorScheme
 
     private var appearanceModeBinding: Binding<String> {
@@ -295,6 +296,20 @@ private extension SettingsView {
             } label: {
                 HStack {
                     Text("Force precipSoon Debug Notification")
+                        .foregroundStyle(primaryText)
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+            }
+
+            Button {
+                Task {
+                    let monitor = FavoritesNotificationMonitor()
+                    await monitor.evaluateFavorites(monitoredFavorites)
+                }
+            } label: {
+                HStack {
+                    Text("Run Favorites Notification Monitor")
                         .foregroundStyle(primaryText)
                     Spacer()
                 }

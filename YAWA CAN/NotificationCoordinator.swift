@@ -134,9 +134,18 @@ final class NotificationCoordinator: ObservableObject {
         }
         print("[N1] winner id=\(winner.id) fireDate=\(winner.fireDate)")
 
+        await scheduleCandidateIfNeeded(winner, calendar: calendar, timeZone: timeZone, logPrefix: "reevaluate")
+    }
+
+    func scheduleCandidateIfNeeded(
+        _ winner: NotificationCandidate,
+        calendar: Calendar,
+        timeZone: TimeZone,
+        logPrefix: String = "monitor"
+    ) async {
         let alreadyDelivered = store.loadDeliveredIDs()
         guard !alreadyDelivered.contains(winner.id) else {
-            print("[N1] reevaluate aborted: winner already scheduled/notified id=\(winner.id)")
+            print("[N1] \(logPrefix) aborted: winner already scheduled/notified id=\(winner.id)")
             return
         }
 

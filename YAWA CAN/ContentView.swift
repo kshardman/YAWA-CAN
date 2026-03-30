@@ -337,7 +337,16 @@ struct ContentView: View {
             )
         }
         .sheet(isPresented: $showingSettings) {
-            SettingsView()
+            SettingsView(
+                monitoredFavorites: locationStore.favorites.map {
+                    MonitoredFavoriteLocation(
+                        displayName: $0.displayName,
+                        latitude: $0.latitude,
+                        longitude: $0.longitude,
+                        countryCode: $0.countryCode
+                    )
+                }
+            )
         }
         .sheet(item: $radarTarget) { target in
             RadarView(target: target)
