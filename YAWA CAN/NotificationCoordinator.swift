@@ -187,6 +187,8 @@ final class NotificationCoordinator: ObservableObject {
             return "precipSoon"
         case .windyTomorrow:
             return "windyTomorrow"
+        case .notableForecast:
+            return "notableForecast"
         }
     }
 

@@ -4,7 +4,14 @@
 //
 //  Created by Keith Sharman on 3/26/26.
 //
+import Foundation
 
+struct ForecastAlertSummary: Codable, Equatable, Hashable {
+    let title: String
+    let severity: String
+    let areaName: String
+    let expiresAt: Date?
+}
 
 struct ForecastNotificationSnapshot: Codable, Equatable {
     struct HourlyPoint: Codable, Equatable {
@@ -32,6 +39,7 @@ struct ForecastNotificationSnapshot: Codable, Equatable {
     let locationName: String
     let locationLatitude: Double
     let locationLongitude: Double
+    let forecastAlertSummary: ForecastAlertSummary?
     let timezoneIdentifier: String
 
     let hourly: [HourlyPoint]

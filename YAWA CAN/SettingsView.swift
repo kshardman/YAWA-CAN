@@ -266,7 +266,10 @@ private extension SettingsView {
                         locationName: "Debug Location",
                         locationLatitude: 0,
                         locationLongitude: 0,
-                        targetDateISO: nil
+                        targetDateISO: nil,
+                        notableCategory: nil,
+                        severityClass: nil,
+                        sourceHeadline: nil
                     )
 
                     let content = UNMutableNotificationContent()

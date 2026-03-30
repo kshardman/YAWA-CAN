@@ -613,6 +613,7 @@ struct ContentView: View {
     private func loadAlertsForSelectedLocation() async {
         guard selectedLocationForAlerts.countryCode == "CA" else {
             activeAlerts = []
+            viewModel.updateNotificationSnapshotForecastAlert(nil)
             isLoadingAlerts = false
             return
         }
@@ -650,12 +651,14 @@ struct ContentView: View {
             }
             
             activeAlerts = alerts.sorted { ($0.expiresAt ?? .distantFuture) < ($1.expiresAt ?? .distantFuture) }
+            viewModel.updateNotificationSnapshotForecastAlert(activeAlerts.first)
             
             print("Final active alerts count: \(activeAlerts.count)")
             
         } catch {
             print("Alert fetch FAILED: \(error.localizedDescription)")
             activeAlerts = []
+            viewModel.updateNotificationSnapshotForecastAlert(nil)
         }
     }
 
@@ -1320,7 +1323,7 @@ struct ContentView: View {
     private func applyPendingNotificationRouteIfPossible(snapshot: WeatherSnapshot) {
         guard let route = pendingNotificationRoute else { return }
         guard let targetDateISO = route.targetDateISO else { return }
-        guard route.kind == "windyTomorrow" || route.kind == "precipSoon" else {
+        guard route.kind == "windyTomorrow" || route.kind == "precipSoon" || route.kind == "notableForecast" else {
             pendingNotificationRoute = nil
             return
         }
@@ -1335,6 +1338,12 @@ struct ContentView: View {
 
         guard sameCoordinates || sameName else {
             print("[N1] pending route waiting for matching location kind=\(route.kind) route=\(route.locationName) selected=\(selectedName)")
+            return
+        }
+
+        if route.kind == "notableForecast" {
+            pendingNotificationRoute = nil
+            print("[N1] notableForecast route applied to main screen only")
             return
         }
 

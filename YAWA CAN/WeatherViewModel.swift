@@ -20,6 +20,9 @@ final class WeatherViewModel: ObservableObject {
 
     private var currentTask: Task<Void, Never>?
     private var loadGeneration: Int = 0
+    private var lastNotificationLatitude: Double?
+    private var lastNotificationLongitude: Double?
+    private var lastNotificationLocationName: String?
 
     deinit {
         currentTask?.cancel()
@@ -101,6 +104,9 @@ final class WeatherViewModel: ObservableObject {
         locationName: String?
     ) async {
         let resolvedName = locationName ?? "Unknown Location"
+        lastNotificationLatitude = latitude
+        lastNotificationLongitude = longitude
+        lastNotificationLocationName = resolvedName
         print("[N1] WeatherViewModel load succeeded for \(resolvedName)")
 
         guard let notificationSnapshot = makeNotificationSnapshot(
@@ -175,9 +181,51 @@ final class WeatherViewModel: ObservableObject {
             locationName: locationName,
             locationLatitude: latitude,
             locationLongitude: longitude,
+            forecastAlertSummary: nil,
             timezoneIdentifier: timezoneIdentifier,
             hourly: hourly,
             daily: daily
         )
     }
+    
+    func updateNotificationSnapshotForecastAlert(_ alert: WeatherAlert?) {
+        guard let baseSnapshot = snapshot else { return }
+        guard let latitude = lastNotificationLatitude,
+              let longitude = lastNotificationLongitude,
+              let locationName = lastNotificationLocationName,
+              let notificationSnapshot = makeNotificationSnapshot(
+                from: baseSnapshot,
+                latitude: latitude,
+                longitude: longitude,
+                locationName: locationName
+              ) else { return }
+
+        let alertSummary: ForecastAlertSummary? = alert.map {
+            ForecastAlertSummary(
+                title: $0.title,
+                severity: $0.severity,
+                areaName: $0.areaName,
+                expiresAt: $0.expiresAt
+            )
+        }
+
+        let updatedSnapshot = ForecastNotificationSnapshot(
+            generatedAtISO: notificationSnapshot.generatedAtISO,
+            locationName: notificationSnapshot.locationName,
+            locationLatitude: notificationSnapshot.locationLatitude,
+            locationLongitude: notificationSnapshot.locationLongitude,
+            forecastAlertSummary: alertSummary,
+            timezoneIdentifier: notificationSnapshot.timezoneIdentifier,
+            hourly: notificationSnapshot.hourly,
+            daily: notificationSnapshot.daily
+        )
+
+        Task {
+            await notificationCoordinator.reevaluateAndScheduleIfNeeded(
+                snapshot: updatedSnapshot,
+                selectedLocationKey: updatedSnapshot.locationName
+            )
+        }
+    }
+
 }

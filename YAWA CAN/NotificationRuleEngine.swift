@@ -28,6 +28,15 @@ enum NotificationRuleEngine {
             candidates.append(wind)
         }
 
+        if let notable = makeNotableForecastCandidate(
+            snapshot: snapshot,
+            now: now,
+            calendar: calendar,
+            timeZone: timeZone
+        ) {
+            candidates.append(notable)
+        }
+
         return candidates.sorted { $0.relevanceScore > $1.relevanceScore }
     }
 
@@ -88,7 +97,10 @@ enum NotificationRuleEngine {
             locationName: snapshot.locationName,
             locationLatitude: snapshot.locationLatitude,
             locationLongitude: snapshot.locationLongitude,
-            targetDateISO: firstIncoming.point.timeISO
+            targetDateISO: firstIncoming.point.timeISO,
+            notableCategory: nil,
+            severityClass: nil,
+            sourceHeadline: nil
         )
         print("[N1] precipSoon candidate built id=\(candidate.id)")
         return candidate
@@ -131,8 +143,200 @@ enum NotificationRuleEngine {
             locationName: snapshot.locationName,
             locationLatitude: snapshot.locationLatitude,
             locationLongitude: snapshot.locationLongitude,
-            targetDateISO: tomorrowPoint.dateISO
+            targetDateISO: tomorrowPoint.dateISO,
+            notableCategory: nil,
+            severityClass: nil,
+            sourceHeadline: nil
         )
+    }
+
+    private static func makeNotableForecastCandidate(
+        snapshot: ForecastNotificationSnapshot,
+        now: Date,
+        calendar: Calendar,
+        timeZone: TimeZone
+    ) -> NotificationCandidate? {
+        guard let alert = snapshot.forecastAlertSummary else { return nil }
+
+        let combinedText = "\(alert.title) \(alert.severity)"
+        let category = parseNotableCategory(from: combinedText)
+        let severity = parseSeverityClass(from: combinedText)
+
+        guard qualifiesAsNotableForecast(category: category, severity: severity) else {
+            print("[N1] notableForecast filtered out title=\(alert.title) severity=\(alert.severity)")
+            return nil
+        }
+
+        let title = normalizedNotableForecastTitle(category: category, severity: severity, fallback: alert.title)
+        let body = normalizedNotableForecastBody(category: category, severity: severity, locationName: snapshot.locationName)
+        let dateISO = dayISOFromAlertExpiry(alert.expiresAt, calendar: calendar, timeZone: timeZone)
+
+        let candidate = NotificationCandidate(
+            id: "notableForecast|\(locationKey(for: snapshot))|\(category.rawValue)|\(severity?.rawValue ?? "none")|\(dateISO ?? "undated")",
+            kind: .notableForecast,
+            title: title,
+            body: body,
+            fireDate: Date().addingTimeInterval(10),
+            relevanceScore: relevanceScore(category: category, severity: severity),
+            locationName: snapshot.locationName,
+            locationLatitude: snapshot.locationLatitude,
+            locationLongitude: snapshot.locationLongitude,
+            targetDateISO: dateISO,
+            notableCategory: category,
+            severityClass: severity,
+            sourceHeadline: alert.title
+        )
+        print("[N1] notableForecast candidate built id=\(candidate.id) title=\(candidate.title)")
+        return candidate
+    }
+
+    private static func normalizedNotableForecastTitle(
+        category: NotableForecastCategory,
+        severity: AlertSeverityClass?,
+        fallback: String
+    ) -> String {
+        switch (category, severity) {
+        case (.flooding, .warning):
+            return "Flood warning"
+        case (.flooding, .watch):
+            return "Flood watch"
+        case (.winterWeather, .warning):
+            return "Winter weather warning"
+        case (.winterWeather, .watch):
+            return "Winter weather watch"
+        case (.winterWeather, .advisory):
+            return "Winter weather advisory"
+        case (.thunder, .warning):
+            return "Thunderstorm warning"
+        case (.thunder, .watch):
+            return "Thunderstorm watch"
+        case (.specialStatement, .statement):
+            return "Special weather statement"
+        case (.wind, .warning):
+            return "Wind warning"
+        case (.wind, .watch):
+            return "Wind watch"
+        default:
+            return fallback
+        }
+    }
+
+    private static func normalizedNotableForecastBody(
+        category: NotableForecastCategory,
+        severity: AlertSeverityClass?,
+        locationName: String
+    ) -> String {
+        switch (category, severity) {
+        case (.flooding, .warning):
+            return "Serious flooding is possible in \(locationName)."
+        case (.flooding, .watch):
+            return "Flooding may develop in \(locationName)."
+        case (.winterWeather, .warning), (.winterWeather, .watch), (.winterWeather, .advisory):
+            return "Snow or icy conditions are possible in \(locationName)."
+        case (.thunder, .warning), (.thunder, .watch):
+            return "Stormy conditions are possible in \(locationName)."
+        case (.specialStatement, .statement):
+            return "Notable weather is expected in \(locationName)."
+        case (.wind, .warning), (.wind, .watch):
+            return "Strong winds are possible in \(locationName)."
+        default:
+            return "Notable weather is expected in \(locationName)."
+        }
+    }
+
+    private static func dayISOFromAlertExpiry(
+        _ expiresAt: Date?,
+        calendar: Calendar,
+        timeZone: TimeZone
+    ) -> String? {
+        guard let expiresAt else { return nil }
+        let formatter = DateFormatter()
+        var cal = calendar
+        cal.timeZone = timeZone
+        formatter.calendar = cal
+        formatter.timeZone = timeZone
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: expiresAt)
+    }
+
+    private static func parseSeverityClass(from text: String) -> AlertSeverityClass? {
+        let lower = text.lowercased()
+
+        if lower.contains("warning") { return .warning }
+        if lower.contains("watch") { return .watch }
+        if lower.contains("advisory") { return .advisory }
+        if lower.contains("statement") { return .statement }
+
+        return nil
+    }
+
+    private static func parseNotableCategory(from text: String) -> NotableForecastCategory {
+        let lower = text.lowercased()
+
+        if lower.contains("special weather statement") {
+            return .specialStatement
+        }
+        if lower.contains("flood") {
+            return .flooding
+        }
+        if lower.contains("freezing rain") || lower.contains("ice") || lower.contains("icy") ||
+            lower.contains("winter") || lower.contains("snow") || lower.contains("blizzard") {
+            return .winterWeather
+        }
+        if lower.contains("wind") {
+            return .wind
+        }
+        if lower.contains("thunder") || lower.contains("storm") {
+            return .thunder
+        }
+        if lower.contains("heat") {
+            return .heat
+        }
+        if lower.contains("cold") || lower.contains("freeze") || lower.contains("frost") {
+            return .cold
+        }
+        if lower.contains("air quality") || lower.contains("smoke") {
+            return .airQuality
+        }
+        if lower.contains("fog") {
+            return .fog
+        }
+
+        return .unknown
+    }
+
+    private static func qualifiesAsNotableForecast(
+        category: NotableForecastCategory,
+        severity: AlertSeverityClass?
+    ) -> Bool {
+        switch (category, severity) {
+        case (.flooding, .warning), (.flooding, .watch):
+            return true
+        case (.winterWeather, .warning), (.winterWeather, .watch), (.winterWeather, .advisory):
+            return true
+        case (.thunder, .warning), (.thunder, .watch):
+            return true
+        case (.specialStatement, .statement):
+            return true
+        case (.wind, .warning), (.wind, .watch):
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static func relevanceScore(
+        category: NotableForecastCategory,
+        severity: AlertSeverityClass?
+    ) -> Int {
+        switch severity {
+        case .warning: return 95
+        case .watch: return 88
+        case .advisory: return 80
+        case .statement: return 72
+        case nil: return 65
+        }
     }
 
     nonisolated private static func isMeaningfulPrecipitation(
