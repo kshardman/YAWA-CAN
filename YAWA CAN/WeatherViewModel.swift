@@ -121,11 +121,7 @@ final class WeatherViewModel: ObservableObject {
 
         notificationStore.saveSnapshot(notificationSnapshot)
         print("[N1] notification snapshot saved for \(notificationSnapshot.locationName)")
-
-        await notificationCoordinator.reevaluateAndScheduleIfNeeded(
-            snapshot: notificationSnapshot,
-            selectedLocationKey: notificationSnapshot.locationName
-        )
+        print("[N1] notification reevaluate deferred until alert summary is attached for \(notificationSnapshot.locationName)")
     }
 
     private func makeNotificationSnapshot(
@@ -219,6 +215,9 @@ final class WeatherViewModel: ObservableObject {
             hourly: notificationSnapshot.hourly,
             daily: notificationSnapshot.daily
         )
+
+        notificationStore.saveSnapshot(updatedSnapshot)
+        print("[N1] notification snapshot alert-updated for \(updatedSnapshot.locationName) alert=\(alertSummary?.title ?? "none")")
 
         Task {
             await notificationCoordinator.reevaluateAndScheduleIfNeeded(

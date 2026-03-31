@@ -167,14 +167,15 @@ enum NotificationRuleEngine {
             return nil
         }
 
-        let title = normalizedNotableForecastTitle(category: category, severity: severity, fallback: alert.title)
-        let body = normalizedNotableForecastBody(category: category, severity: severity, locationName: snapshot.locationName)
+        let normalizedTitle = normalizedNotableForecastTitle(category: category, severity: severity, fallback: alert.title)
+        let title = sentenceCaseAlertTitle(alert.title)
+        let body = snapshot.locationName
         let dateISO = dayISOFromAlertExpiry(alert.expiresAt, calendar: calendar, timeZone: timeZone)
 
         let candidate = NotificationCandidate(
             id: "notableForecast|\(locationKey(for: snapshot))|\(category.rawValue)|\(severity?.rawValue ?? "none")|\(dateISO ?? "undated")",
             kind: .notableForecast,
-            title: "\(title) — \(snapshot.locationName)",
+            title: title,
             body: body,
             fireDate: Date().addingTimeInterval(10),
             relevanceScore: relevanceScore(category: category, severity: severity),
@@ -187,6 +188,7 @@ enum NotificationRuleEngine {
             sourceHeadline: alert.title
         )
         print("[N1] notableForecast candidate built id=\(candidate.id) title=\(candidate.title)")
+        print("[N1] notableForecast normalizedTitle=\(normalizedTitle) sourceHeadline=\(alert.title)")
         return candidate
     }
 
@@ -219,6 +221,21 @@ enum NotificationRuleEngine {
         default:
             return fallback
         }
+    }
+
+
+    private static func sentenceCaseAlertTitle(_ title: String) -> String {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return title }
+
+        return trimmed
+            .split(separator: " ")
+            .map { word in
+                let lower = word.lowercased()
+                guard let first = lower.first else { return String(word) }
+                return String(first).uppercased() + lower.dropFirst()
+            }
+            .joined(separator: " ")
     }
 
     private static func normalizedNotableForecastBody(
