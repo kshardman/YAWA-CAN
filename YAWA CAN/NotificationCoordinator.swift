@@ -140,7 +140,21 @@ final class NotificationCoordinator: ObservableObject {
         )
         print("[N1] candidates count=\(candidates.count)")
 
-        guard let winner = candidates.sorted(by: { $0.relevanceScore > $1.relevanceScore }).first else {
+        guard let winner = candidates.sorted(by: { lhs, rhs in
+            if lhs.kind == .notableForecast && rhs.kind != .notableForecast {
+                return true
+            }
+            if lhs.kind != .notableForecast && rhs.kind == .notableForecast {
+                return false
+            }
+            if lhs.relevanceScore != rhs.relevanceScore {
+                return lhs.relevanceScore > rhs.relevanceScore
+            }
+            if lhs.fireDate != rhs.fireDate {
+                return lhs.fireDate < rhs.fireDate
+            }
+            return lhs.id < rhs.id
+        }).first else {
             print("[N1] reevaluate complete: no winning candidate")
             return
         }

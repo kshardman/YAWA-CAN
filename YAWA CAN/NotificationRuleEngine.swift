@@ -299,6 +299,10 @@ enum NotificationRuleEngine {
     private static func parseNotableCategory(from text: String) -> NotableForecastCategory {
         let lower = text.lowercased()
 
+        if lower.contains("fog advisory") {
+            return .specialStatement
+        }
+
         if lower.contains("special weather statement") {
             return .specialStatement
         }
@@ -335,20 +339,7 @@ enum NotificationRuleEngine {
         category: NotableForecastCategory,
         severity: AlertSeverityClass?
     ) -> Bool {
-        switch (category, severity) {
-        case (.flooding, .warning), (.flooding, .watch):
-            return true
-        case (.winterWeather, .warning), (.winterWeather, .watch), (.winterWeather, .advisory):
-            return true
-        case (.thunder, .warning), (.thunder, .watch):
-            return true
-        case (.specialStatement, .statement):
-            return true
-        case (.wind, .warning), (.wind, .watch):
-            return true
-        default:
-            return false
-        }
+        return true
     }
 
     private static func relevanceScore(

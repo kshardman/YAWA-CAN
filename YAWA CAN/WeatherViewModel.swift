@@ -184,17 +184,32 @@ final class WeatherViewModel: ObservableObject {
         )
     }
     
-    func updateNotificationSnapshotForecastAlert(_ alert: WeatherAlert?) {
+    func updateNotificationSnapshotForecastAlert(
+        _ alert: WeatherAlert?,
+        expectedLocationName: String,
+        expectedLatitude: Double,
+        expectedLongitude: Double
+    ) {
         guard let baseSnapshot = snapshot else { return }
         guard let latitude = lastNotificationLatitude,
               let longitude = lastNotificationLongitude,
-              let locationName = lastNotificationLocationName,
-              let notificationSnapshot = makeNotificationSnapshot(
-                from: baseSnapshot,
-                latitude: latitude,
-                longitude: longitude,
-                locationName: locationName
-              ) else { return }
+              let locationName = lastNotificationLocationName else { return }
+
+        let sameLocation = abs(latitude - expectedLatitude) < 0.0001 &&
+            abs(longitude - expectedLongitude) < 0.0001 &&
+            locationName == expectedLocationName
+
+        guard sameLocation else {
+            print("[N1] notification alert update ignored due to location mismatch expected=\(expectedLocationName) actual=\(locationName)")
+            return
+        }
+
+        guard let notificationSnapshot = makeNotificationSnapshot(
+            from: baseSnapshot,
+            latitude: latitude,
+            longitude: longitude,
+            locationName: locationName
+        ) else { return }
 
         let alertSummary: ForecastAlertSummary? = alert.map {
             ForecastAlertSummary(

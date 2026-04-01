@@ -71,6 +71,7 @@ struct ContentView: View {
     @State private var pendingNotificationRoute: NotificationRoute? = nil
     
     @AppStorage("yawa.can.isCurrentLocationSelected") private var isCurrentLocationSelected: Bool = false
+    @AppStorage("yc.notifications.lastFavoritesMonitorAutoRunAt") private var lastFavoritesMonitorAutoRunAt: Double = 0
     
     @MainActor
     private func refreshWeather(showLoading: Bool = true) async {
@@ -609,9 +610,19 @@ struct ContentView: View {
 
     @State private var activeAlerts: [WeatherAlert] = []
     @State private var isLoadingAlerts = false
+    @StateObject private var notificationCoordinator = NotificationCoordinator()
+    private let favoritesNotificationMonitor = FavoritesNotificationMonitor()
     
     private var selectedLocationForAlerts: SavedLocation {
         selected ?? displayedLocation ?? locationStore.selected ?? .toronto
+    }
+
+    private func effectiveCountryCode(for location: SavedLocation) -> String {
+        let inferred = inferredCountryCode(for: location.displayName)
+        if inferred == "US" || inferred == "CA" {
+            return inferred
+        }
+        return location.countryCode
     }
 
     private var activeAlertsForSelectedLocation: [WeatherAlert] {
@@ -620,54 +631,98 @@ struct ContentView: View {
     
     @MainActor
     private func loadAlertsForSelectedLocation() async {
-        guard selectedLocationForAlerts.countryCode == "CA" else {
+        let requestedLocation = selectedLocationForAlerts
+        let requestedLatitude = requestedLocation.latitude
+        let requestedLongitude = requestedLocation.longitude
+        let requestedName = requestedLocation.displayName
+        let requestedCountryCode = effectiveCountryCode(for: requestedLocation)
+
+        guard requestedCountryCode == "CA" else {
             activeAlerts = []
-            viewModel.updateNotificationSnapshotForecastAlert(nil)
+            viewModel.updateNotificationSnapshotForecastAlert(
+                nil,
+                expectedLocationName: requestedName,
+                expectedLatitude: requestedLatitude,
+                expectedLongitude: requestedLongitude
+            )
             isLoadingAlerts = false
+            print("=== Skipping alert fetch for non-CA location: \(requestedName) countryCode=\(requestedCountryCode) ===")
             return
         }
-        
+
         isLoadingAlerts = true
         defer { isLoadingAlerts = false }
-        
+
         do {
-            print("=== Starting alert fetch for: \(selectedLocationForAlerts.displayName) ===")
-            print("Coordinates: \(selectedLocationForAlerts.coordinate.latitude), \(selectedLocationForAlerts.coordinate.longitude)")
-            
+            print("=== Starting alert fetch for: \(requestedName) ===")
+            print("Coordinates: \(requestedLatitude), \(requestedLongitude)")
+
             // Tight city delta first
             let tightDelta = 0.20
             let wideDelta = 0.75   // regional fallback
-            
+
             print("Trying tight city delta \(tightDelta)...")
-            
+
             var alerts = try await CanadaAlertService().fetchAlerts(
                 withDelta: tightDelta,
-                for: selectedLocationForAlerts.coordinate,
-                countryCode: selectedLocationForAlerts.countryCode
+                for: CLLocationCoordinate2D(latitude: requestedLatitude, longitude: requestedLongitude),
+                countryCode: requestedCountryCode
             )
-            
+
             // If nothing, widen
             if alerts.isEmpty {
                 usedWideDelta = true
                 print("No alerts → widening to delta \(wideDelta)...")
                 alerts = try await CanadaAlertService().fetchAlerts(
                     withDelta: wideDelta,
-                    for: selectedLocationForAlerts.coordinate,
-                    countryCode: selectedLocationForAlerts.countryCode
+                    for: CLLocationCoordinate2D(latitude: requestedLatitude, longitude: requestedLongitude),
+                    countryCode: requestedCountryCode
                 )
             } else {
                 print("Found \(alerts.count) alerts in tight range")
             }
-            
+
+            let currentLocation = selectedLocationForAlerts
+            let currentCountryCode = effectiveCountryCode(for: currentLocation)
+            let isStillSameLocation = abs(currentLocation.latitude - requestedLatitude) < 0.0001 &&
+                abs(currentLocation.longitude - requestedLongitude) < 0.0001 &&
+                currentCountryCode == requestedCountryCode
+
+            guard isStillSameLocation else {
+                print("Alert fetch result ignored because location changed from \(requestedName) to \(currentLocation.displayName)")
+                return
+            }
+
             activeAlerts = alerts.sorted { ($0.expiresAt ?? .distantFuture) < ($1.expiresAt ?? .distantFuture) }
-            viewModel.updateNotificationSnapshotForecastAlert(activeAlerts.first)
-            
+            viewModel.updateNotificationSnapshotForecastAlert(
+                activeAlerts.first,
+                expectedLocationName: requestedName,
+                expectedLatitude: requestedLatitude,
+                expectedLongitude: requestedLongitude
+            )
+
             print("Final active alerts count: \(activeAlerts.count)")
-            
+
         } catch {
+            let currentLocation = selectedLocationForAlerts
+            let currentCountryCode = effectiveCountryCode(for: currentLocation)
+            let isStillSameLocation = abs(currentLocation.latitude - requestedLatitude) < 0.0001 &&
+                abs(currentLocation.longitude - requestedLongitude) < 0.0001 &&
+                currentCountryCode == requestedCountryCode
+
+            guard isStillSameLocation else {
+                print("Alert fetch failure ignored because location changed from \(requestedName) to \(currentLocation.displayName)")
+                return
+            }
+
             print("Alert fetch FAILED: \(error.localizedDescription)")
             activeAlerts = []
-            viewModel.updateNotificationSnapshotForecastAlert(nil)
+            viewModel.updateNotificationSnapshotForecastAlert(
+                nil,
+                expectedLocationName: requestedName,
+                expectedLatitude: requestedLatitude,
+                expectedLongitude: requestedLongitude
+            )
         }
     }
 
@@ -1435,6 +1490,39 @@ struct ContentView: View {
         }
 
         return "CA"
+    }
+
+    @MainActor
+    private func maybeRunFavoritesMonitorOnForeground() {
+        let now = Date().timeIntervalSince1970
+        let throttle: TimeInterval = 45 * 60
+        let elapsed = now - lastFavoritesMonitorAutoRunAt
+
+        guard elapsed >= throttle else {
+            AppLogger.log("[N1] auto favorites monitor skipped: throttle active remaining=\(throttle - elapsed)")
+            return
+        }
+
+        lastFavoritesMonitorAutoRunAt = now
+        AppLogger.log("[N1] auto favorites monitor starting on foreground")
+
+        Task {
+            let monitoredFavorites = locationStore.favorites.map {
+                MonitoredFavoriteLocation(
+                    displayName: $0.displayName,
+                    latitude: $0.latitude,
+                    longitude: $0.longitude,
+                    countryCode: effectiveCountryCode(for: $0)
+                )
+            }
+            await favoritesNotificationMonitor.evaluateFavorites(monitoredFavorites)
+        }
+    }
+
+    @MainActor
+    private func clearFavoritesMonitorAutoRunThrottle() {
+        lastFavoritesMonitorAutoRunAt = 0
+        AppLogger.log("[N1] cleared favorites-monitor auto-run throttle")
     }
 
     private func openRadar() {
