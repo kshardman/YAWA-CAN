@@ -74,4 +74,10 @@ final class NotificationStore {
         defaults.removeObject(forKey: Keys.lastDeliveredDayString)
         defaults.removeObject(forKey: Keys.snapshot)
     }
+
+    func fullResetForTesting() {
+        defaults.removeObject(forKey: Keys.deliveredIDs)
+        defaults.removeObject(forKey: Keys.lastDeliveredDayString)
+        defaults.removeObject(forKey: Keys.snapshot)
+    }
 }

@@ -169,7 +169,11 @@ enum NotificationRuleEngine {
 
         let normalizedTitle = normalizedNotableForecastTitle(category: category, severity: severity, fallback: alert.title)
         let title = sentenceCaseAlertTitle(alert.title)
-        let body = snapshot.locationName
+        let body = notableForecastBody(
+            locationName: snapshot.locationName,
+            issuedAt: alert.issuedAt,
+            timeZone: timeZone
+        )
         let dateISO = dayISOFromAlertExpiry(alert.expiresAt, calendar: calendar, timeZone: timeZone)
 
         let candidate = NotificationCandidate(
@@ -267,6 +271,21 @@ enum NotificationRuleEngine {
         default:
             return "Tap to view the alert in YC."
         }
+    }
+
+    private static func notableForecastBody(
+        locationName: String,
+        issuedAt: Date?,
+        timeZone: TimeZone
+    ) -> String {
+        guard let issuedAt else { return locationName }
+
+        let formatter = DateFormatter()
+        formatter.timeZone = timeZone
+        formatter.locale = Locale.current
+        formatter.dateFormat = "MMM d, h:mm a"
+
+        return "\(locationName) • Issued \(formatter.string(from: issuedAt))"
     }
 
     private static func dayISOFromAlertExpiry(

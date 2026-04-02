@@ -242,6 +242,7 @@ private extension SettingsView {
                 .contentShape(Rectangle())
             }
 
+
             Button {
                 lightHaptic()
                 let store = NotificationStore()
@@ -258,6 +259,35 @@ private extension SettingsView {
             } label: {
                 HStack {
                     Text("Clear Notification Debug State")
+                        .foregroundStyle(primaryText)
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+            }
+
+            Button {
+                lightHaptic()
+                Task {
+                    let store = NotificationStore()
+                    store.fullResetForTesting()
+
+                    let defaults = UserDefaults.standard
+                    for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("yc.notifications.lastScheduledAt.") {
+                        defaults.removeObject(forKey: key)
+                    }
+                    defaults.removeObject(forKey: "yc.notifications.lastFavoritesMonitorScheduleAt")
+
+                    AppLogger.log("[N1] cleared notification debug state")
+                    AppLogger.log("[N1] cleared notification cooldown timestamps")
+                    AppLogger.log("[N1] cleared favorites-monitor suppression timestamp")
+
+                    NotificationCenter.default.post(name: .ycNotificationDebugStateCleared, object: nil)
+
+                    await notifications.clearAllSystemNotifications()
+                }
+            } label: {
+                HStack {
+                    Text("Full Reset Notifications")
                         .foregroundStyle(primaryText)
                     Spacer()
                 }

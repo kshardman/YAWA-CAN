@@ -219,6 +219,7 @@ final class FavoritesNotificationMonitor {
                 title: $0.title,
                 severity: $0.severity,
                 areaName: $0.areaName,
+                issuedAt: $0.issuedAt,
                 expiresAt: $0.expiresAt
             )
         }

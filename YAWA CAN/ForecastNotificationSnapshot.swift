@@ -10,6 +10,7 @@ struct ForecastAlertSummary: Codable, Equatable, Hashable {
     let title: String
     let severity: String
     let areaName: String
+    let issuedAt: Date?
     let expiresAt: Date?
 }
 

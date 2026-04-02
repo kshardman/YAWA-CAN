@@ -288,6 +288,12 @@ final class NotificationCoordinator: ObservableObject {
         center.removePendingNotificationRequests(withIdentifiers: ids)
     }
 
+    func clearAllSystemNotifications() async {
+        center.removeAllPendingNotificationRequests()
+        center.removeAllDeliveredNotifications()
+        AppLogger.log("[N1] cleared ALL system notifications (pending + delivered)")
+    }
+
     func openSystemSettings() {
         guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
         UIApplication.shared.open(url)

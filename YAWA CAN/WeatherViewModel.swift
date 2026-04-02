@@ -23,6 +23,19 @@ final class WeatherViewModel: ObservableObject {
     private var lastNotificationLatitude: Double?
     private var lastNotificationLongitude: Double?
     private var lastNotificationLocationName: String?
+    
+    private var pendingNotificationRouteLatitude: Double?
+    private var pendingNotificationRouteLongitude: Double?
+    private var pendingNotificationRouteLocationName: String?
+    func beginNotificationRoute(
+        latitude: Double,
+        longitude: Double,
+        locationName: String
+    ) {
+        pendingNotificationRouteLatitude = latitude
+        pendingNotificationRouteLongitude = longitude
+        pendingNotificationRouteLocationName = locationName
+    }
 
     deinit {
         currentTask?.cancel()
@@ -107,6 +120,16 @@ final class WeatherViewModel: ObservableObject {
         lastNotificationLatitude = latitude
         lastNotificationLongitude = longitude
         lastNotificationLocationName = resolvedName
+        if let pendingName = pendingNotificationRouteLocationName,
+           let pendingLatitude = pendingNotificationRouteLatitude,
+           let pendingLongitude = pendingNotificationRouteLongitude,
+           pendingName == resolvedName,
+           abs(pendingLatitude - latitude) < 0.0001,
+           abs(pendingLongitude - longitude) < 0.0001 {
+            pendingNotificationRouteLatitude = nil
+            pendingNotificationRouteLongitude = nil
+            pendingNotificationRouteLocationName = nil
+        }
         print("[N1] WeatherViewModel load succeeded for \(resolvedName)")
 
         guard let notificationSnapshot = makeNotificationSnapshot(
@@ -200,6 +223,22 @@ final class WeatherViewModel: ObservableObject {
             locationName == expectedLocationName
 
         guard sameLocation else {
+            let pendingRouteMatchesExpected = {
+                guard let pendingName = pendingNotificationRouteLocationName,
+                      let pendingLatitude = pendingNotificationRouteLatitude,
+                      let pendingLongitude = pendingNotificationRouteLongitude else {
+                    return false
+                }
+
+                return pendingName == expectedLocationName &&
+                    abs(pendingLatitude - expectedLatitude) < 0.0001 &&
+                    abs(pendingLongitude - expectedLongitude) < 0.0001
+            }()
+
+            if pendingRouteMatchesExpected {
+                return
+            }
+
             print("[N1] notification alert update ignored due to location mismatch expected=\(expectedLocationName) actual=\(locationName)")
             return
         }
@@ -216,6 +255,7 @@ final class WeatherViewModel: ObservableObject {
                 title: $0.title,
                 severity: $0.severity,
                 areaName: $0.areaName,
+                issuedAt: $0.issuedAt,
                 expiresAt: $0.expiresAt
             )
         }

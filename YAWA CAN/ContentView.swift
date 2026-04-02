@@ -360,6 +360,7 @@ struct ContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .ycNotificationDebugStateCleared)) { _ in
             clearNotificationRouteUIState()
+            clearFavoritesMonitorAutoRunThrottle()
         }
     }
 
@@ -1368,6 +1369,12 @@ struct ContentView: View {
             countryCode: inferredCountryCode(for: route.locationName)
         )
 
+        viewModel.beginNotificationRoute(
+            latitude: route.latitude,
+            longitude: route.longitude,
+            locationName: route.locationName
+        )
+
         pendingNotificationRoute = route
         selected = routedLocation
         displayedLocation = routedLocation
@@ -1834,9 +1841,13 @@ private struct AlertDetailSheet: View {
                             Text("Area: \(alert.areaName)")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                            
-                        }
 
+                            if let issuedAt = alert.issuedAt {
+                                Text("Issued: \(issuedAtAlertText(issuedAt))")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                         Spacer(minLength: 8)
 
                         Text(alert.severity)
@@ -1888,6 +1899,14 @@ private struct AlertDetailSheet: View {
             }
         }
         .fontDesign(.rounded)
+    }
+
+    private func issuedAtAlertText(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale.current
+        formatter.timeZone = .current
+        formatter.dateFormat = "MM/dd, h:mm a"
+        return formatter.string(from: date)
     }
 
     private var innerCard: some View {
@@ -2223,13 +2242,19 @@ private struct AllAlertsSheet: View {
                                         .font(.headline)
                                         .foregroundStyle(.primary)
                                         .lineLimit(1)
-                                    
+
                                     Text("Area: \(alert.areaName)")
                                         .font(.subheadline)
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)
                                         .truncationMode(.tail)
-                                    
+
+                                    if let issuedAt = alert.issuedAt {
+                                        Text("Issued: \(issuedAtListText(issuedAt))")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+
                                     Text(alert.expiresSoonText ?? alert.severity)
                                         .font(.caption)
                                         .foregroundStyle(alertSeverityColor(alert.severity))
@@ -2262,6 +2287,13 @@ private struct AllAlertsSheet: View {
         }
         .fontDesign(.rounded)
     }
+    private func issuedAtListText(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale.current
+        formatter.timeZone = .current
+        formatter.dateFormat = "MM/dd, h:mm a"
+        return formatter.string(from: date)
+    }
 }
 
 
@@ -2274,6 +2306,7 @@ struct WeatherAlert: Identifiable, Equatable {
     let severity: String
     let summary: String
     let areaName: String
+    let issuedAt: Date?
     let expiresAt: Date?
     
     var expiresSoonText: String? {
@@ -2365,6 +2398,7 @@ struct CanadaAlertService {
                     severity: prop.severity_en?.capitalized ?? "Moderate",
                     summary: prop.alert_text_en ?? "No details available",
                     areaName: prop.feature_name_en ?? "Affected area",
+                    issuedAt: prop.issuedAt,
                     expiresAt: prop.expiresAt
                 )
             }
@@ -3625,3 +3659,4 @@ private func comfortSummaryText(for current: CurrentConditions) -> String {
 #Preview {
     ContentView()
 }
+
