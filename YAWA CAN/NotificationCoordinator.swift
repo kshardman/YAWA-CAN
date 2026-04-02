@@ -52,6 +52,14 @@ final class NotificationResponseBridge: NSObject, UNUserNotificationCenterDelega
             NotificationCenter.default.post(name: .ycNotificationRouteReceived, object: route)
         }
     }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification
+    ) async -> UNNotificationPresentationOptions {
+        // Allow notifications to show even when app is foregrounded
+        return [.banner, .sound]
+    }
 }
 
 @MainActor
@@ -208,7 +216,7 @@ final class NotificationCoordinator: ObservableObject {
         ]
 
         #if DEBUG
-        let interval: TimeInterval = 15
+        let interval: TimeInterval = 45
         #else
         let interval = max(1, winner.fireDate.timeIntervalSinceNow)
         #endif
@@ -216,6 +224,8 @@ final class NotificationCoordinator: ObservableObject {
 
         let requestID = "yc.forecast.\(winner.id)"
         let request = UNNotificationRequest(identifier: requestID, content: content, trigger: trigger)
+
+        AppLogger.log("[N1] scheduling requestID=\(requestID) interval=\(interval) fireDate=\(winner.fireDate) location=\(winner.locationName) logPrefix=\(logPrefix)")
 
         do {
             try await center.add(request)
@@ -240,8 +250,14 @@ final class NotificationCoordinator: ObservableObject {
             formatter.timeZone = timeZone
             formatter.dateFormat = "yyyy-MM-dd"
             store.saveLastDeliveredDayString(formatter.string(from: Date()))
+
+            await MainActor.run {
+                let generator = UINotificationFeedbackGenerator()
+                generator.prepare()
+                generator.notificationOccurred(.success)
+            }
         } catch {
-            AppLogger.log("[N1] failed to schedule notification: \(error)")
+            AppLogger.log("[N1] failed to schedule requestID=\(requestID) error=\(error)")
         }
     }
 

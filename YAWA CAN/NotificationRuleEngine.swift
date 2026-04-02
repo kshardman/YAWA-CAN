@@ -176,8 +176,25 @@ enum NotificationRuleEngine {
         )
         let dateISO = dayISOFromAlertExpiry(alert.expiresAt, calendar: calendar, timeZone: timeZone)
 
+        let issuedKey: String = {
+            guard let issuedAt = alert.issuedAt else { return "noIssuedAt" }
+
+            let formatter = DateFormatter()
+            formatter.calendar = Calendar(identifier: .gregorian)
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.timeZone = timeZone
+            formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ssZZZZZ"
+            return formatter.string(from: issuedAt)
+        }()
+
+        let titleKey = alert.title
+            .lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: " ", with: "_")
+            .replacingOccurrences(of: "|", with: "-")
+
         let candidate = NotificationCandidate(
-            id: "notableForecast|\(locationKey(for: snapshot))|\(category.rawValue)|\(severity?.rawValue ?? "none")|\(dateISO ?? "undated")",
+            id: "notableForecast|\(locationKey(for: snapshot))|\(category.rawValue)|\(severity?.rawValue ?? "none")|\(issuedKey)|\(titleKey)",
             kind: .notableForecast,
             title: title,
             body: body,
@@ -193,6 +210,7 @@ enum NotificationRuleEngine {
         )
         print("[N1] notableForecast candidate built id=\(candidate.id) title=\(candidate.title)")
         print("[N1] notableForecast normalizedTitle=\(normalizedTitle) sourceHeadline=\(alert.title)")
+        print("[N1] notableForecast issuedAt=\(alert.issuedAt?.description ?? "nil") id=\(candidate.id)")
         return candidate
     }
 

@@ -284,9 +284,15 @@ struct ContentView: View {
             applyPendingNotificationRouteIfPossible(snapshot: newSnapshot)
         }
         .onChange(of: scenePhase) { _, newPhase in
-            guard newPhase == .active else { return }
-            Task { @MainActor in
-                await refreshOnForegroundIfNeeded()
+            if newPhase == .active {
+                AppLogger.log("[N1] YC foregrounded at \(Date())")
+                Task { @MainActor in
+                    await refreshOnForegroundIfNeeded()
+                }
+            } else if newPhase == .inactive {
+                AppLogger.log("[N1] YC inactive at \(Date())")
+            } else if newPhase == .background {
+                AppLogger.log("[N1] YC backgrounded at \(Date())")
             }
         }
         .sheet(item: $selectedDaySelection) { selection in
