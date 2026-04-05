@@ -79,18 +79,19 @@ enum NotificationRuleEngine {
         }
 
         let title: String
+        let body: String
         if isSnowLike(point: firstIncoming.point) {
             title = "Snow starting soon"
+            body = "Snow is likely in \(snapshot.locationName) within the next 2 hours."
         } else {
             title = "Rain starting soon"
+            body = "Rain is likely in \(snapshot.locationName) within the next 2 hours."
         }
-
-        let body = "\(title.replacingOccurrences(of: " starting soon", with: "")) is likely in \(snapshot.locationName) within the next 2 hours."
 
         let candidate = NotificationCandidate(
             id: "precipSoon|\(locationKey(for: snapshot))|\(firstIncoming.point.timeISO)",
             kind: .precipSoon,
-            title: "\(title) — \(snapshot.locationName)",
+            title: title,
             body: body,
             fireDate: now.addingTimeInterval(60),
             relevanceScore: 100,
@@ -133,12 +134,25 @@ enum NotificationRuleEngine {
 
         let fireDate = fireDateForWindTomorrow(now: now, calendar: calendar)
 
+        let title: String
+        let body: String
+        if gust >= 70 {
+            title = "Very windy tomorrow"
+            body = "Strong gusts are expected tomorrow in \(snapshot.locationName)."
+        } else if gust >= 55 {
+            title = "Windy conditions tomorrow"
+            body = "Windy conditions are expected tomorrow in \(snapshot.locationName)."
+        } else {
+            title = "Breezy conditions tomorrow"
+            body = "Breezy conditions are expected tomorrow in \(snapshot.locationName)."
+        }
+
         return NotificationCandidate(
             id: "windyTomorrow|\(locationKey(for: snapshot))|\(tomorrowPoint.dateISO)",
             kind: .windyTomorrow,
-            title: "Windy tomorrow",
-            body: "Gusty conditions are expected tomorrow in \(snapshot.locationName).",
-            fireDate: Date().addingTimeInterval(10),
+            title: title,
+            body: body,
+            fireDate: fireDate,
             relevanceScore: 80,
             locationName: snapshot.locationName,
             locationLatitude: snapshot.locationLatitude,
