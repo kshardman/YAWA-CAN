@@ -914,7 +914,14 @@ struct ContentView: View {
                         Spacer(minLength: 8)
                         
                         // High/Low
-                        Text("H \(tempDisplay(day.highC))  L \(tempDisplay(day.lowC))")
+                        HStack(spacing: 2) {
+                            Text(tempDisplay(day.highC))
+                            Text("·")
+                                .foregroundStyle(Color.primary.opacity(0.65))
+                            Text(tempDisplay(day.lowC))
+                                .foregroundStyle(.secondary)
+                        }
+                        .monospacedDigit()
                             .font(.subheadline.weight(.semibold))
                             .monospacedDigit()
                             .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
