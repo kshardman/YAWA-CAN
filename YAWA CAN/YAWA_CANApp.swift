@@ -8,6 +8,7 @@
 import SwiftUI
 import SwiftData
 import UserNotifications
+import UIKit
 #if canImport(WidgetKit)
 import WidgetKit
 #endif
@@ -51,6 +52,9 @@ enum YCWidgetShared {
 
 @main
 struct YAWA_CANApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @Environment(\.scenePhase) private var scenePhase
+
     init() {
         UNUserNotificationCenter.current().delegate = NotificationResponseBridge.shared
     }
@@ -85,5 +89,10 @@ struct YAWA_CANApp: App {
                 .preferredColorScheme(preferredColorScheme)
         }
         .modelContainer(sharedModelContainer)
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .background {
+                appDelegate.scheduleAppRefreshNow()
+            }
+        }
     }
 }

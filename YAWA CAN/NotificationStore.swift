@@ -1,83 +1,195 @@
-//
-//  NotificationStore.swift
-//  YAWA CAN
-//
-//  Created by Keith Sharman on 3/26/26.
-//
 import Foundation
+import Combine
 
-final class NotificationStore {
+@MainActor
+final class NotificationStore: ObservableObject {
+    static let shared = NotificationStore()
+
     private let defaults: UserDefaults
-    private let encoder = JSONEncoder()
-    private let decoder = JSONDecoder()
 
-    private enum Keys {
-        static let preferences = "yc.notifications.preferences"
-        static let deliveredIDs = "yc.notifications.deliveredIDs"
-        static let lastDeliveredDayString = "yc.notifications.lastDeliveredDayString"
-        static let snapshot = "yc.notifications.snapshot"
-    }
+    private let preferencesKey = "YCNotificationPreferences"
+    private let snapshotsByTargetKeyKey = "YCNotificationSnapshotsByTargetKey"
+    private let deliveredIDsByTargetKeyKey = "YCNotificationDeliveredIDsByTargetKey"
+    private let lastDeliveredDayByTargetKeyKey = "YCNotificationLastDeliveredDayByTargetKey"
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
     }
 
+    // MARK: - Preferences (global)
+
     func loadPreferences() -> NotificationPreferences {
-        guard
-            let data = defaults.data(forKey: Keys.preferences),
-            let prefs = try? decoder.decode(NotificationPreferences.self, from: data)
-        else {
-            return .default
+        guard let data = defaults.data(forKey: preferencesKey) else {
+            return NotificationPreferences.default
         }
-        return prefs
-    }
 
-    func savePreferences(_ prefs: NotificationPreferences) {
-        guard let data = try? encoder.encode(prefs) else { return }
-        defaults.set(data, forKey: Keys.preferences)
-    }
-
-    func loadDeliveredIDs() -> Set<String> {
-        let values = defaults.stringArray(forKey: Keys.deliveredIDs) ?? []
-        return Set(values)
-    }
-
-    func saveDeliveredIDs(_ ids: Set<String>) {
-        defaults.set(Array(ids).sorted(), forKey: Keys.deliveredIDs)
-    }
-
-    func loadLastDeliveredDayString() -> String? {
-        defaults.string(forKey: Keys.lastDeliveredDayString)
-    }
-
-    func saveLastDeliveredDayString(_ value: String?) {
-        defaults.set(value, forKey: Keys.lastDeliveredDayString)
-    }
-
-    func loadSnapshot() -> ForecastNotificationSnapshot? {
-        guard
-            let data = defaults.data(forKey: Keys.snapshot),
-            let snapshot = try? decoder.decode(ForecastNotificationSnapshot.self, from: data)
-        else {
-            return nil
+        do {
+            return try JSONDecoder().decode(NotificationPreferences.self, from: data)
+        } catch {
+            AppLogger.log("[N1] failed decoding notification preferences error=\(error)")
+            return NotificationPreferences.default
         }
-        return snapshot
     }
 
-    func saveSnapshot(_ snapshot: ForecastNotificationSnapshot) {
-        guard let data = try? encoder.encode(snapshot) else { return }
-        defaults.set(data, forKey: Keys.snapshot)
+    func savePreferences(_ preferences: NotificationPreferences) {
+        do {
+            let data = try JSONEncoder().encode(preferences)
+            defaults.set(data, forKey: preferencesKey)
+        } catch {
+            AppLogger.log("[N1] failed encoding notification preferences error=\(error)")
+        }
     }
 
-    func clearAllNotificationState() {
-        defaults.removeObject(forKey: Keys.deliveredIDs)
-        defaults.removeObject(forKey: Keys.lastDeliveredDayString)
-        defaults.removeObject(forKey: Keys.snapshot)
+    // MARK: - Snapshot (per targetKey)
+
+    func loadSnapshot(for targetKey: String) -> ForecastNotificationSnapshot? {
+        let all = loadSnapshotsDictionary()
+        return all[targetKey]
     }
 
-    func fullResetForTesting() {
-        defaults.removeObject(forKey: Keys.deliveredIDs)
-        defaults.removeObject(forKey: Keys.lastDeliveredDayString)
-        defaults.removeObject(forKey: Keys.snapshot)
+    func saveSnapshot(_ snapshot: ForecastNotificationSnapshot, for targetKey: String) {
+        var all = loadSnapshotsDictionary()
+        all[targetKey] = snapshot
+        saveSnapshotsDictionary(all)
+        AppLogger.log("[N1] notification snapshot saved targetKey=\(targetKey)")
+    }
+
+    func removeSnapshot(for targetKey: String) {
+        var all = loadSnapshotsDictionary()
+        all.removeValue(forKey: targetKey)
+        saveSnapshotsDictionary(all)
+        AppLogger.log("[N1] notification snapshot removed targetKey=\(targetKey)")
+    }
+
+    // MARK: - Delivered IDs (per targetKey)
+
+    func deliveredIDs(for targetKey: String) -> Set<String> {
+        let all = loadDeliveredIDsDictionary()
+        return Set(all[targetKey] ?? [])
+    }
+
+    func hasDelivered(id: String, for targetKey: String) -> Bool {
+        deliveredIDs(for: targetKey).contains(id)
+    }
+
+    func markDelivered(id: String, for targetKey: String) {
+        var all = loadDeliveredIDsDictionary()
+        var ids = Set(all[targetKey] ?? [])
+        ids.insert(id)
+        all[targetKey] = Array(ids).sorted()
+        saveDeliveredIDsDictionary(all)
+        AppLogger.log("[N1] notification delivered id=\(id) targetKey=\(targetKey)")
+    }
+
+    func clearDeliveredIDs(for targetKey: String) {
+        var all = loadDeliveredIDsDictionary()
+        all.removeValue(forKey: targetKey)
+        saveDeliveredIDsDictionary(all)
+        AppLogger.log("[N1] cleared delivered IDs targetKey=\(targetKey)")
+    }
+
+    // MARK: - Last delivered day (per targetKey)
+
+    func lastDeliveredDay(for targetKey: String) -> String? {
+        let all = loadLastDeliveredDayDictionary()
+        return all[targetKey]
+    }
+
+    func setLastDeliveredDay(_ day: String?, for targetKey: String) {
+        var all = loadLastDeliveredDayDictionary()
+        all[targetKey] = day
+        saveLastDeliveredDayDictionary(all)
+        AppLogger.log("[N1] set last delivered day targetKey=\(targetKey) day=\(day ?? "nil")")
+    }
+
+    func clearLastDeliveredDay(for targetKey: String) {
+        var all = loadLastDeliveredDayDictionary()
+        all.removeValue(forKey: targetKey)
+        saveLastDeliveredDayDictionary(all)
+        AppLogger.log("[N1] cleared last delivered day targetKey=\(targetKey)")
+    }
+
+    // MARK: - Cleanup
+
+    func clearState(for targetKey: String) {
+        removeSnapshot(for: targetKey)
+        clearDeliveredIDs(for: targetKey)
+        clearLastDeliveredDay(for: targetKey)
+        AppLogger.log("[N1] cleared notification state targetKey=\(targetKey)")
+    }
+
+    func clearAllState() {
+        defaults.removeObject(forKey: snapshotsByTargetKeyKey)
+        defaults.removeObject(forKey: deliveredIDsByTargetKeyKey)
+        defaults.removeObject(forKey: lastDeliveredDayByTargetKeyKey)
+        AppLogger.log("[N1] cleared all notification state")
+    }
+
+    // MARK: - Private dictionary helpers
+
+    private func loadSnapshotsDictionary() -> [String: ForecastNotificationSnapshot] {
+        guard let data = defaults.data(forKey: snapshotsByTargetKeyKey) else {
+            return [:]
+        }
+
+        do {
+            return try JSONDecoder().decode([String: ForecastNotificationSnapshot].self, from: data)
+        } catch {
+            AppLogger.log("[N1] failed decoding snapshot dictionary error=\(error)")
+            return [:]
+        }
+    }
+
+    private func saveSnapshotsDictionary(_ value: [String: ForecastNotificationSnapshot]) {
+        do {
+            let data = try JSONEncoder().encode(value)
+            defaults.set(data, forKey: snapshotsByTargetKeyKey)
+        } catch {
+            AppLogger.log("[N1] failed encoding snapshot dictionary error=\(error)")
+        }
+    }
+
+    private func loadDeliveredIDsDictionary() -> [String: [String]] {
+        guard let data = defaults.data(forKey: deliveredIDsByTargetKeyKey) else {
+            return [:]
+        }
+
+        do {
+            return try JSONDecoder().decode([String: [String]].self, from: data)
+        } catch {
+            AppLogger.log("[N1] failed decoding delivered IDs dictionary error=\(error)")
+            return [:]
+        }
+    }
+
+    private func saveDeliveredIDsDictionary(_ value: [String: [String]]) {
+        do {
+            let data = try JSONEncoder().encode(value)
+            defaults.set(data, forKey: deliveredIDsByTargetKeyKey)
+        } catch {
+            AppLogger.log("[N1] failed encoding delivered IDs dictionary error=\(error)")
+        }
+    }
+
+    private func loadLastDeliveredDayDictionary() -> [String: String] {
+        guard let data = defaults.data(forKey: lastDeliveredDayByTargetKeyKey) else {
+            return [:]
+        }
+
+        do {
+            return try JSONDecoder().decode([String: String].self, from: data)
+        } catch {
+            AppLogger.log("[N1] failed decoding last delivered day dictionary error=\(error)")
+            return [:]
+        }
+    }
+
+    private func saveLastDeliveredDayDictionary(_ value: [String: String]) {
+        do {
+            let data = try JSONEncoder().encode(value)
+            defaults.set(data, forKey: lastDeliveredDayByTargetKeyKey)
+        } catch {
+            AppLogger.log("[N1] failed encoding last delivered day dictionary error=\(error)")
+        }
     }
 }

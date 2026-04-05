@@ -246,7 +246,7 @@ private extension SettingsView {
             Button {
                 lightHaptic()
                 let store = NotificationStore()
-                store.clearAllNotificationState()
+                store.clearAllState()
                 let defaults = UserDefaults.standard
                 for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("yc.notifications.lastScheduledAt.") {
                     defaults.removeObject(forKey: key)
@@ -269,7 +269,10 @@ private extension SettingsView {
                 lightHaptic()
                 Task {
                     let store = NotificationStore()
-                    store.fullResetForTesting()
+                    store.clearAllState()
+                    var prefs = store.loadPreferences()
+                    prefs.forecastAlertsEnabled = true
+                    store.savePreferences(prefs)
 
                     let defaults = UserDefaults.standard
                     for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("yc.notifications.lastScheduledAt.") {

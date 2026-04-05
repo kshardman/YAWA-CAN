@@ -41,6 +41,14 @@ final class WeatherViewModel: ObservableObject {
         currentTask?.cancel()
     }
 
+    private func notificationTargetKey(
+        locationName: String,
+        latitude: Double,
+        longitude: Double
+    ) -> String {
+        "\(locationName)|\(latitude)|\(longitude)"
+    }
+
     func load(
         latitude: Double,
         longitude: Double,
@@ -142,9 +150,15 @@ final class WeatherViewModel: ObservableObject {
             return
         }
 
-        notificationStore.saveSnapshot(notificationSnapshot)
-        print("[N1] notification snapshot saved for \(notificationSnapshot.locationName)")
-        print("[N1] notification reevaluate deferred until alert summary is attached for \(notificationSnapshot.locationName)")
+        let targetKey = notificationTargetKey(
+            locationName: resolvedName,
+            latitude: latitude,
+            longitude: longitude
+        )
+
+        notificationStore.saveSnapshot(notificationSnapshot, for: targetKey)
+        print("[N1] notification snapshot saved for \(notificationSnapshot.locationName) targetKey=\(targetKey)")
+        print("[N1] notification reevaluate deferred until alert summary is attached for targetKey=\(targetKey)")
     }
 
     private func makeNotificationSnapshot(
@@ -271,13 +285,19 @@ final class WeatherViewModel: ObservableObject {
             daily: notificationSnapshot.daily
         )
 
-        notificationStore.saveSnapshot(updatedSnapshot)
-        print("[N1] notification snapshot alert-updated for \(updatedSnapshot.locationName) alert=\(alertSummary?.title ?? "none")")
+        let targetKey = notificationTargetKey(
+            locationName: updatedSnapshot.locationName,
+            latitude: updatedSnapshot.locationLatitude,
+            longitude: updatedSnapshot.locationLongitude
+        )
+
+        notificationStore.saveSnapshot(updatedSnapshot, for: targetKey)
+        print("[N1] notification snapshot alert-updated for \(updatedSnapshot.locationName) targetKey=\(targetKey) alert=\(alertSummary?.title ?? "none")")
 
         Task {
             await notificationCoordinator.reevaluateAndScheduleIfNeeded(
                 snapshot: updatedSnapshot,
-                selectedLocationKey: updatedSnapshot.locationName
+                selectedLocationKey: targetKey
             )
         }
     }

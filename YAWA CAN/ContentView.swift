@@ -1520,17 +1520,30 @@ struct ContentView: View {
         AppLogger.log("[N1] auto favorites monitor starting on foreground")
 
         Task {
-            let monitoredFavorites = locationStore.favorites.map {
-                MonitoredFavoriteLocation(
-                    displayName: $0.displayName,
-                    latitude: $0.latitude,
-                    longitude: $0.longitude,
-                    countryCode: effectiveCountryCode(for: $0)
-                )
+            let monitoredKeys = Set(UserDefaults.standard.stringArray(forKey: "YCBackgroundMonitoredFavorites") ?? [])
+            let monitoredFavorites = locationStore.favorites
+                .filter {
+                    monitoredKeys.contains("\($0.displayName)|\($0.latitude)|\($0.longitude)")
+                }
+                .prefix(5)
+                .map {
+                    MonitoredFavoriteLocation(
+                        displayName: $0.displayName,
+                        latitude: $0.latitude,
+                        longitude: $0.longitude,
+                        countryCode: effectiveCountryCode(for: $0)
+                    )
+                }
+            guard !monitoredFavorites.isEmpty else {
+                AppLogger.log("[N1] auto favorites monitor skipped: no bell-selected favorites")
+                return
             }
             await favoritesNotificationMonitor.evaluateFavorites(monitoredFavorites)
         }
     }
+// MARK: - Location Picker View
+
+// (existing code above)
 
     @MainActor
     private func clearFavoritesMonitorAutoRunThrottle() {
@@ -2847,31 +2860,7 @@ private struct LocationPickerView: View {
                     }
                 }
 
-                Section("Favorites") {
-                    let favoritesSorted = store.favorites.sorted { a, b in
-                        a.displayName.localizedCaseInsensitiveCompare(b.displayName) == .orderedAscending
-                    }
-
-                    ForEach(favoritesSorted) { loc in
-                        Button {
-                            store.setSelected(loc)
-                            onSelect(loc)
-                            dismiss()
-                        } label: {
-                            HStack {
-                                Text(displayNameForList(loc))
-                                    .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.96) : Color.black.opacity(0.92))
-                                Spacer()
-                                if store.selected == loc {
-                                    Image(systemName: "checkmark")
-                                        .font(.subheadline.weight(.semibold))
-                                        .foregroundStyle(.tint)
-                                }
-                            }
-                        }
-                    }
-                    .onDelete(perform: store.removeFavorites)
-                }
+                favoritesSection
             }
             .navigationTitle("Locations")
             .navigationBarTitleDisplayMode(.inline)
@@ -2937,6 +2926,45 @@ private struct LocationPickerView: View {
         }
     }
     
+    @ViewBuilder
+    private func favoriteRow(for loc: SavedLocation) -> some View {
+        HStack(spacing: 12) {
+            Button {
+                store.setSelected(loc)
+                onSelect(loc)
+                dismiss()
+            } label: {
+                HStack {
+                    Text(displayNameForList(loc))
+                        .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.96) : Color.black.opacity(0.92))
+                    Spacer()
+                    if store.selected == loc {
+                        Image(systemName: "checkmark")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(.tint)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                toggleBackgroundMonitoredFavorite(loc)
+            } label: {
+                Image(systemName: isBackgroundMonitoredFavorite(loc) ? "bell.fill" : "bell")
+                    .foregroundStyle(isBackgroundMonitoredFavorite(loc) ? Color.accentColor : Color.secondary)
+                    .frame(width: 28, height: 28)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(
+                isBackgroundMonitoredFavorite(loc)
+                ? "Remove background notification favorite"
+                : "Add background notification favorite"
+            )
+        }
+    }
+
+    
     private func displayNameForList(_ loc: SavedLocation) -> String {
         // Mexico → "City, Mexico"
         if loc.countryCode == "MX" {
@@ -2950,6 +2978,64 @@ private struct LocationPickerView: View {
 
         // US / Canada → keep full "City, State/Province"
         return loc.displayName
+    }
+
+    private func backgroundMonitoredFavoriteKey(_ favorite: SavedLocation) -> String {
+        "\(favorite.displayName)|\(favorite.latitude)|\(favorite.longitude)"
+    }
+
+    private func isBackgroundMonitoredFavorite(_ favorite: SavedLocation) -> Bool {
+        let keys = UserDefaults.standard.stringArray(forKey: "YCBackgroundMonitoredFavorites") ?? []
+        return keys.contains(backgroundMonitoredFavoriteKey(favorite))
+    }
+
+    private func toggleBackgroundMonitoredFavorite(_ favorite: SavedLocation) {
+        let defaults = UserDefaults.standard
+        var keys = defaults.stringArray(forKey: "YCBackgroundMonitoredFavorites") ?? []
+        let key = backgroundMonitoredFavoriteKey(favorite)
+
+        if let index = keys.firstIndex(of: key) {
+            keys.remove(at: index)
+            defaults.set(keys, forKey: "YCBackgroundMonitoredFavorites")
+            return
+        }
+
+        guard keys.count < 5 else { return }
+        keys.append(key)
+        defaults.set(keys, forKey: "YCBackgroundMonitoredFavorites")
+    }
+
+    private func removeFavorites(at offsets: IndexSet) {
+        let favoritesSorted = store.favorites.sorted { a, b in
+            a.displayName.localizedCaseInsensitiveCompare(b.displayName) == .orderedAscending
+        }
+
+        let favoritesToRemove = offsets.compactMap { index in
+            favoritesSorted.indices.contains(index) ? favoritesSorted[index] : nil
+        }
+
+        store.removeFavorites(at: offsets)
+
+        guard !favoritesToRemove.isEmpty else { return }
+
+        let defaults = UserDefaults.standard
+        var keys = defaults.stringArray(forKey: "YCBackgroundMonitoredFavorites") ?? []
+        let removeKeys = Set(favoritesToRemove.map(backgroundMonitoredFavoriteKey))
+        keys.removeAll { removeKeys.contains($0) }
+        defaults.set(keys, forKey: "YCBackgroundMonitoredFavorites")
+    }
+    
+    private var favoritesSection: some View {
+        Section("Favorites") {
+            let favoritesSorted = store.favorites.sorted { a, b in
+                a.displayName.localizedCaseInsensitiveCompare(b.displayName) == .orderedAscending
+            }
+
+            ForEach(favoritesSorted) { loc in
+                favoriteRow(for: loc)
+            }
+            .onDelete(perform: removeFavorites)
+        }
     }
 }
 
@@ -3665,4 +3751,6 @@ private func comfortSummaryText(for current: CurrentConditions) -> String {
 #Preview {
     ContentView()
 }
+
+
 

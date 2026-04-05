@@ -57,8 +57,8 @@ final class NotificationResponseBridge: NSObject, UNUserNotificationCenterDelega
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
-        // Allow notifications to show even when app is foregrounded
-        return [.banner, .sound]
+        // Suppress foreground presentation for now, but keep delegate routing enabled.
+        return []
     }
 }
 
@@ -68,10 +68,12 @@ final class NotificationCoordinator: ObservableObject {
     private let favoritesMonitorSuppressionInterval: TimeInterval = 2 * 60
     private let lastScheduledAtKeyPrefix = "yc.notifications.lastScheduledAt."
     private let lastFavoritesMonitorScheduleAtKey = "yc.notifications.lastFavoritesMonitorScheduleAt"
-    private func lastScheduledAtKey(for locationName: String) -> String {
-        let sanitized = locationName
+    private func lastScheduledAtKey(for targetKey: String) -> String {
+        let sanitized = targetKey
             .lowercased()
             .replacingOccurrences(of: " ", with: "_")
+            .replacingOccurrences(of: "|", with: "_")
+            .replacingOccurrences(of: ":", with: "_")
         return lastScheduledAtKeyPrefix + sanitized
     }
 
@@ -123,7 +125,7 @@ final class NotificationCoordinator: ObservableObject {
         selectedLocationKey: String
     ) async {
         let prefs = store.loadPreferences()
-        print("[N1] reevaluate start enabled=\(prefs.forecastAlertsEnabled) location=\(selectedLocationKey)")
+        print("[N1] reevaluate start enabled=\(prefs.forecastAlertsEnabled) targetKey=\(selectedLocationKey)")
         guard prefs.forecastAlertsEnabled else { return }
 
         await refreshAuthorizationStatus()
@@ -168,21 +170,28 @@ final class NotificationCoordinator: ObservableObject {
         }
         print("[N1] winner id=\(winner.id) fireDate=\(winner.fireDate)")
 
-        await scheduleCandidateIfNeeded(winner, calendar: calendar, timeZone: timeZone, logPrefix: "reevaluate")
+        await scheduleCandidateIfNeeded(
+            winner,
+            targetKey: selectedLocationKey,
+            calendar: calendar,
+            timeZone: timeZone,
+            logPrefix: "reevaluate"
+        )
     }
 
     func scheduleCandidateIfNeeded(
         _ winner: NotificationCandidate,
+        targetKey: String,
         calendar: Calendar,
         timeZone: TimeZone,
         logPrefix: String = "monitor"
     ) async {
-        let alreadyDelivered = store.loadDeliveredIDs()
+        let alreadyDelivered = store.deliveredIDs(for: targetKey)
         guard !alreadyDelivered.contains(winner.id) else {
             AppLogger.log("[N1] \(logPrefix) aborted: winner already scheduled/notified id=\(winner.id)")
             return
         }
-        let cooldownKey = lastScheduledAtKey(for: winner.locationName)
+        let cooldownKey = lastScheduledAtKey(for: targetKey)
 
         if logPrefix != "favorites-monitor",
            let lastFavoritesMonitorScheduleAt = UserDefaults.standard.object(forKey: lastFavoritesMonitorScheduleAtKey) as? Date {
@@ -225,11 +234,11 @@ final class NotificationCoordinator: ObservableObject {
         let requestID = "yc.forecast.\(winner.id)"
         let request = UNNotificationRequest(identifier: requestID, content: content, trigger: trigger)
 
-        AppLogger.log("[N1] scheduling requestID=\(requestID) interval=\(interval) fireDate=\(winner.fireDate) location=\(winner.locationName) logPrefix=\(logPrefix)")
+        AppLogger.log("[N1] scheduling requestID=\(requestID) interval=\(interval) fireDate=\(winner.fireDate) location=\(winner.locationName) targetKey=\(targetKey) logPrefix=\(logPrefix)")
 
         do {
             try await center.add(request)
-            AppLogger.log("[N1] scheduled requestID=\(requestID) interval=\(interval)")
+            AppLogger.log("[N1] scheduled requestID=\(requestID) interval=\(interval) targetKey=\(targetKey)")
             AppLogger.log("[N1] notification content title=\(content.title) body=\(content.body)")
 
             let appState = await MainActor.run { UIApplication.shared.applicationState }
@@ -237,9 +246,7 @@ final class NotificationCoordinator: ObservableObject {
                 AppLogger.log("[N1] note: YC is active, so the notification banner may not appear while the app is open")
             }
 
-            var delivered = alreadyDelivered
-            delivered.insert(winner.id)
-            store.saveDeliveredIDs(delivered)
+            store.markDelivered(id: winner.id, for: targetKey)
             UserDefaults.standard.set(Date(), forKey: cooldownKey)
             if logPrefix == "favorites-monitor" {
                 UserDefaults.standard.set(Date(), forKey: lastFavoritesMonitorScheduleAtKey)
@@ -249,7 +256,7 @@ final class NotificationCoordinator: ObservableObject {
             formatter.calendar = calendar
             formatter.timeZone = timeZone
             formatter.dateFormat = "yyyy-MM-dd"
-            store.saveLastDeliveredDayString(formatter.string(from: Date()))
+            store.setLastDeliveredDay(formatter.string(from: Date()), for: targetKey)
 
             await MainActor.run {
                 let generator = UINotificationFeedbackGenerator()

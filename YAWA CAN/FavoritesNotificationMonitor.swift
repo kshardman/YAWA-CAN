@@ -32,6 +32,10 @@ final class FavoritesNotificationMonitor {
     private let alertService = CanadaAlertService()
     private let coordinator = NotificationCoordinator()
 
+    private func notificationTargetKey(for location: MonitoredFavoriteLocation) -> String {
+        "\(location.displayName)|\(location.latitude)|\(location.longitude)"
+    }
+
     func evaluateFavorites(_ favorites: [MonitoredFavoriteLocation]) async {
         let monitoredFavorites = favorites
         guard !monitoredFavorites.isEmpty else {
@@ -200,8 +204,10 @@ final class FavoritesNotificationMonitor {
         for winningEntry in sortedWinners {
             let winner = winningEntry.candidate
             AppLogger.log("[N1] favorites monitor scheduled winner id=\(winner.id)")
+            let targetKey = notificationTargetKey(for: monitoredFavorites[winningEntry.favoriteOrder])
             await coordinator.scheduleCandidateIfNeeded(
                 winner,
+                targetKey: targetKey,
                 calendar: localCalendar,
                 timeZone: localTimeZone,
                 logPrefix: "favorites-monitor"
