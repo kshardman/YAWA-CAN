@@ -16,7 +16,6 @@ final class WeatherViewModel: ObservableObject {
     @Published var errorMessage: String?
 
     private let notificationStore = NotificationStore()
-    private let notificationCoordinator = NotificationCoordinator()
 
     private var currentTask: Task<Void, Never>?
     private var loadGeneration: Int = 0
@@ -158,7 +157,7 @@ final class WeatherViewModel: ObservableObject {
 
         notificationStore.saveSnapshot(notificationSnapshot, for: targetKey)
         print("[N1] notification snapshot saved for \(notificationSnapshot.locationName) targetKey=\(targetKey)")
-        print("[N1] notification reevaluate deferred until alert summary is attached for targetKey=\(targetKey)")
+        print("[N1] foreground notification scheduling disabled; BG task owns notification evaluation")
     }
 
     private func makeNotificationSnapshot(
@@ -293,13 +292,7 @@ final class WeatherViewModel: ObservableObject {
 
         notificationStore.saveSnapshot(updatedSnapshot, for: targetKey)
         print("[N1] notification snapshot alert-updated for \(updatedSnapshot.locationName) targetKey=\(targetKey) alert=\(alertSummary?.title ?? "none")")
-
-        Task {
-            await notificationCoordinator.reevaluateAndScheduleIfNeeded(
-                snapshot: updatedSnapshot,
-                selectedLocationKey: targetKey
-            )
-        }
+        print("[N1] foreground notification scheduling skipped after alert update; BG task owns notification evaluation")
     }
 
 }
