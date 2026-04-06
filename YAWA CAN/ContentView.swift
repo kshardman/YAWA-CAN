@@ -914,10 +914,10 @@ struct ContentView: View {
                         Spacer(minLength: 8)
                         
                         // High/Low
-                        HStack(spacing: 2) {
+                        HStack(spacing: 3) {
                             Text(tempDisplay(day.highC))
-                            Text("·")
-                                .foregroundStyle(Color.primary.opacity(0.65))
+                            Text("/")
+                                .foregroundStyle(.secondary)
                             Text(tempDisplay(day.lowC))
                                 .foregroundStyle(.secondary)
                         }
