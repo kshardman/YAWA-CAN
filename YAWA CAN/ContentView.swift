@@ -1652,7 +1652,7 @@ private struct HourlyTempChart: View {
         let totalMinutes = Int((fractionalHour * 60.0).rounded())
         let hour24 = max(0, min(23, totalMinutes / 60))
         let minute = max(0, min(59, totalMinutes % 60))
-        let suffix = hour24 < 12 ? "AM" : "PM"
+        let suffix = hour24 < 12 ? "am" : "pm"
         let hour12 = hour24 % 12 == 0 ? 12 : hour24 % 12
         return String(format: "%d:%02d %@", hour12, minute, suffix)
     }
@@ -1677,7 +1677,7 @@ private struct HourlyTempChart: View {
                         .annotation(position: .top, alignment: .center, spacing: 0) {
                             Text(shortNowLabel(for: currentHourIndex))
                                 .font(.caption2)
-                                .padding(.horizontal, 4)
+                                .padding(.horizontal, 8)
                                 .padding(.vertical, 2)
                                 .background(
                                     Capsule()
@@ -3361,9 +3361,9 @@ private struct DailyForecastDetailSheet: View {
                 .padding(.top, 10)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
                 .background(innerCard)
-                .padding(.horizontal, 20)
-                .padding(.top, 18)
-                .padding(.bottom, 12)
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
+                .padding(.bottom, 10)
             }
             .background(sheetBackground)
             .scrollIndicators(.never)
