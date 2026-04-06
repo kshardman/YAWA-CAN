@@ -2270,7 +2270,7 @@ private struct AllAlertsSheet: View {
     
     @State private var selectedAlertInSheet: WeatherAlert? = nil  // Temp state for detail sheet
     @Environment(\.dismiss) private var dismiss
-   
+    @Environment(\.colorScheme) private var colorScheme
     
     var body: some View {
         NavigationStack {
@@ -2325,7 +2325,24 @@ private struct AllAlertsSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.96) : Color.black.opacity(0.82))
+                            .frame(width: 34, height: 34)
+                            .background(
+                                Circle()
+                                    .fill(
+                                        colorScheme == .dark
+                                        ? Color.white.opacity(0.08)
+                                        : Color.black.opacity(0.05)
+                                    )
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Dismiss alerts")
                 }
             }
             .sheet(item: $selectedAlertInSheet) { alert in
@@ -3885,6 +3902,3 @@ private func comfortSummaryText(for current: CurrentConditions) -> String {
 #Preview {
     ContentView()
 }
-
-
-
