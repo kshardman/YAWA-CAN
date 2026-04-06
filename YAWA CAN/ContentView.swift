@@ -1926,7 +1926,24 @@ private struct AlertDetailSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.96) : Color.black.opacity(0.82))
+                            .frame(width: 34, height: 34)
+                            .background(
+                                Circle()
+                                    .fill(
+                                        colorScheme == .dark
+                                        ? Color.white.opacity(0.08)
+                                        : Color.black.opacity(0.05)
+                                    )
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Dismiss alert")
                 }
             }
         }
