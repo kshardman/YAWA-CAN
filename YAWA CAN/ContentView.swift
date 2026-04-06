@@ -1821,6 +1821,12 @@ private struct HourlyTempChart: View {
             }
             .frame(height: 48)
             .offset(y: -2)
+
+            Text("Time")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.top, 6)
         }
         .animation(.easeInOut(duration: 0.25), value: temps)
         .animation(.easeInOut(duration: 0.25), value: precipChancePercent)
