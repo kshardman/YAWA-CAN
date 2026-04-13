@@ -172,14 +172,6 @@ struct ContentView: View {
         YAWATheme.background(for: colorScheme)
     }
 
-//    private var cardBackground: Color {
-//        YAWATheme.cardBackground(for: colorScheme)
-//    }
-
-//    private var cardStroke: Color {
-//        YAWATheme.cardStroke(for: colorScheme)
-//    }
-
     var body: some View {
         NavigationStack {
             ZStack(alignment: .top) {
@@ -3073,7 +3065,7 @@ private struct LocationPickerView: View {
     }
     
     private var favoritesSection: some View {
-        Section("Favorites") {
+        Section {
             let favoritesSorted = store.favorites.sorted { a, b in
                 a.displayName.localizedCaseInsensitiveCompare(b.displayName) == .orderedAscending
             }
@@ -3082,6 +3074,15 @@ private struct LocationPickerView: View {
                 favoriteRow(for: loc)
             }
             .onDelete(perform: removeFavorites)
+        } header: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Favorites")
+                Text("Tap the bell to monitor up to 3 favorites for background alerts.")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.74) : Color.black.opacity(0.58))
+                    .textCase(nil)
+            }
+            .padding(.bottom, 4)
         }
     }
 }
