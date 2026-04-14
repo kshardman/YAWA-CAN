@@ -948,6 +948,10 @@ struct ContentView: View {
         let raw = day.conditionText.trimmingCharacters(in: .whitespacesAndNewlines)
         let lower = raw.lowercased()
 
+        // Correct rain → snow/frozen when the daily high is at or below 0°C.
+        let corrected = temperatureCorrectedConditionText(raw, highC: day.highC)
+        if corrected != raw { return corrected }
+
         if lower.contains("rain") || lower.contains("drizzle") || lower.contains("snow") ||
             lower.contains("shower") || lower.contains("thunder") || lower.contains("fog") ||
             lower.contains("ice") || lower.contains("sleet") || lower.contains("mix") {
@@ -3183,6 +3187,41 @@ private enum LocationSearch {
     }
 }
 
+/// Remaps rain-family condition text to snow/frozen equivalents when the daily high is ≤ 0°C.
+/// Used by both ContentView forecast rows and DailyForecastDetailSheet.
+private func temperatureCorrectedConditionText(_ raw: String, highC: Double) -> String {
+    let lower = raw.lowercased()
+
+    // "Freezing rain/drizzle" is already meteorologically correct — leave it alone.
+    guard !lower.contains("freezing") else { return raw }
+
+    // Only correct when the high doesn't reach 0°C — rain is physically implausible.
+    guard highC <= 0 else { return raw }
+
+    // Exact WMO description matches first — these are Title Cased from Open-Meteo
+    if lower == "light drizzle"   { return "Light freezing drizzle" }
+    if lower == "drizzle"         { return "Freezing drizzle" }
+    if lower == "heavy drizzle"   { return "Freezing drizzle" }
+    if lower == "light rain"      { return "Light snow" }
+    if lower == "rain"            { return "Snow" }
+    if lower == "heavy rain"      { return "Heavy snow" }
+    if lower == "light showers"   { return "Light snow showers" }
+    if lower == "showers"         { return "Snow showers" }
+    if lower == "heavy showers"   { return "Heavy snow showers" }
+
+    // Fallback for custom/generated strings (e.g. "rain likely", "rain possible")
+    if lower.contains("rain shower") {
+        let result = raw.replacingOccurrences(of: "rain shower", with: "snow shower", options: [.caseInsensitive])
+        return result.prefix(1).uppercased() + result.dropFirst()
+    }
+    if lower.contains("rain") {
+        let result = raw.replacingOccurrences(of: "rain", with: "snow", options: [.caseInsensitive])
+        return result.prefix(1).uppercased() + result.dropFirst()
+    }
+
+    return raw
+}
+
 private struct DailyForecastDetailSheet: View {
     let days: [DailyForecastDay]
     let hourlyTempsC: [Double]
@@ -3241,7 +3280,7 @@ private struct DailyForecastDetailSheet: View {
                         VStack(alignment: .leading, spacing: 1) {
                             Text(longDay(day.date))
                                 .font(.headline.weight(.semibold))
-                            Text(day.conditionText)
+                            Text(temperatureCorrectedConditionText(day.conditionText, highC: day.highC))
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
@@ -3289,9 +3328,25 @@ private struct DailyForecastDetailSheet: View {
                         if shouldShowWindRow {
                             HStack(alignment: .top, spacing: 16) {
                                 VStack(alignment: .leading, spacing: 3) {
-                                    Text("Wind")
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
+                                    HStack(spacing: 6) {
+                                        Text("Wind")
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+
+                                        if isWindyFlagVisible {
+                                            Text("Windy")
+                                                .font(.caption2.weight(.semibold))
+                                                .foregroundStyle(windyFlagColor)
+                                                .padding(.horizontal, 6)
+                                                .padding(.vertical, 2)
+                                                .background(
+                                                    Capsule()
+                                                        .fill(windyFlagColor.opacity(colorScheme == .dark ? 0.16 : 0.10))
+                                                )
+                                                .fixedSize()
+                                        }
+                                    }
+
                                     Text(windPrimaryText)
                                         .font(.title3.weight(.medium))
                                         .foregroundStyle(.primary)
@@ -3312,20 +3367,6 @@ private struct DailyForecastDetailSheet: View {
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.top, 1)
-
-                                if isWindyFlagVisible {
-                                    Text("Windy")
-                                        .font(.caption2.weight(.semibold))
-                                        .foregroundStyle(windyFlagColor)
-                                        .padding(.horizontal, 8)
-                                        .padding(.vertical, 3)
-                                        .background(
-                                            Capsule()
-                                                .fill(windyFlagColor.opacity(colorScheme == .dark ? 0.16 : 0.10))
-                                        )
-                                        .fixedSize()
-                                        .padding(.top, 18)
-                                }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                         }
@@ -3452,10 +3493,11 @@ private struct DailyForecastDetailSheet: View {
 
     private var windPrimaryText: String {
         let speed = windSpeedValueText ?? "—"
+        let unit = usesUSUnits ? " mph" : " km/h"
         if let direction = windDirectionText {
-            return "\(direction) \(speed)"
+            return "\(direction) \(speed)\(unit)"
         }
-        return speed
+        return "\(speed)\(unit)"
     }
 
 
@@ -3549,49 +3591,63 @@ private struct DailyForecastDetailSheet: View {
     }
 
     private var forecastSummary: String {
-        let condition = normalizedConditionText(day.conditionText)
+        let correctedText = temperatureCorrectedConditionText(day.conditionText, highC: day.highC)
+        let isFreezing = day.highC <= 0
 
-        let rawLower = day.conditionText.lowercased()
-        let isSimplePrecip = ["rain", "snow", "showers", "drizzle", "thunderstorms"].contains(rawLower)
+        // Strip qualifier words that refineDailySky may have appended (e.g. "Snow possible",
+        // "Rain likely") so phrase builders don't produce "Snow possible expected."
+        let strippedText = correctedText
+            .replacingOccurrences(of: " likely", with: "", options: .caseInsensitive)
+            .replacingOccurrences(of: " possible", with: "", options: .caseInsensitive)
+            .trimmingCharacters(in: .whitespaces)
 
-        // Base headline (handle simple precip edge case)
+        let condition = normalizedConditionText(strippedText)
+        let rawLower = strippedText.lowercased()
+
+        // Determine if the condition already carries a precip word
+        let hasPrecipWord = rawLower.contains("rain") || rawLower.contains("snow") ||
+            rawLower.contains("storm") || rawLower.contains("shower") ||
+            rawLower.contains("drizzle") || rawLower.contains("hail") ||
+            rawLower.contains("freezing") || rawLower.contains("grains")
+
+        // Classify precip-bearing conditions by contains rather than exact match,
+        // so granular descriptions like "Light snow" and "Heavy showers" are caught.
+        let isSimplePrecip = hasPrecipWord
+
         var summary: String
 
         if isSimplePrecip {
             if roundedPrecipChance <= 30 {
-                summary = simplePrecipPossiblePhrase(condition: condition)
+                summary = simplePrecipPossiblePhrase(condition: condition, rawLower: rawLower)
             } else if roundedPrecipChance <= 60 {
-                summary = simplePrecipChancePhrase(rawLower: rawLower)
+                summary = simplePrecipChancePhrase(condition: condition, rawLower: rawLower)
             } else {
-                summary = simplePrecipLikelyPhrase(rawLower: rawLower)
+                summary = simplePrecipLikelyPhrase(condition: condition, rawLower: rawLower)
             }
         } else {
             summary = conditionBasePhrase(condition)
         }
 
+        // Append a precip tail only when the condition doesn't already carry precip language
         if roundedPrecipChance > 0 && !isSimplePrecip {
-            let lower = day.conditionText.lowercased()
-
-            let hasPrecipWord = lower.contains("rain") || lower.contains("snow") || lower.contains("storm") || lower.contains("shower") || lower.contains("drizzle")
-
-            if !hasPrecipWord {
-                if roundedPrecipChance <= 20 {
-                    summary += slightPrecipTailPhrase()
-                } else if roundedPrecipChance <= 50 {
-                    summary += chancePrecipTailPhrase()
-                } else {
-                    summary += likelyPrecipTailPhrase()
-                }
+            if roundedPrecipChance <= 20 {
+                summary += slightPrecipTailPhrase(isFreezing: isFreezing)
+            } else if roundedPrecipChance <= 50 {
+                summary += chancePrecipTailPhrase(isFreezing: isFreezing)
+            } else {
+                summary += likelyPrecipTailPhrase(isFreezing: isFreezing)
             }
         } else if roundedPrecipChance == 0 {
-            let lower = day.conditionText.lowercased()
-            let impliesDry = lower.contains("clear") || lower.contains("sun")
-            if !impliesDry {
+            // Suppress dry tail when wind will provide a more meaningful secondary note
+            let windIsNotable = windSummarySentence != nil
+            let impliesDry = rawLower.contains("clear") || rawLower.contains("sun") ||
+                rawLower.contains("mainly") || rawLower.contains("mostly clear")
+            if !impliesDry && !windIsNotable {
                 summary += dryTailPhrase()
             }
         }
 
-        // Wind tail (most important secondary condition)
+        // Wind tail
         let hasWithClause = summary.contains(", with ")
         if let windSentence = windSummarySentence {
             if windSentence.contains("Very windy") {
@@ -3619,102 +3675,117 @@ private struct DailyForecastDetailSheet: View {
         return options[index]
     }
 
+    // MARK: - Base phrase builders
+
     private func conditionBasePhrase(_ condition: String) -> String {
         variant([
             condition,
-            "\(condition) overall"
+            "Expect a \(condition.lowercased()) day",
+            "\(condition) throughout the day"
         ])
     }
 
-    private func simplePrecipPossiblePhrase(condition: String) -> String {
+    // MARK: - Precip phrase builders
+
+    private func simplePrecipPossiblePhrase(condition: String, rawLower: String) -> String {
         variant([
-            "\(condition) is possible",
+            "\(condition) possible",
             "\(condition) may develop",
-            "A little \(condition.lowercased()) is possible"
+            "A chance of \(rawLower)"
         ])
     }
 
-    private func simplePrecipChancePhrase(rawLower: String) -> String {
+    private func simplePrecipChancePhrase(condition: String, rawLower: String) -> String {
         variant([
             "A chance of \(rawLower)",
-            "\(normalizedConditionText(rawLower)) is possible",
-            "\(normalizedConditionText(rawLower)) possible"
+            "\(condition) at times",
+            "\(condition) possible"
         ])
     }
 
-    private func simplePrecipLikelyPhrase(rawLower: String) -> String {
+    private func simplePrecipLikelyPhrase(condition: String, rawLower: String) -> String {
         variant([
+            "\(condition) expected",
             "Periods of \(rawLower)",
-            "\(normalizedConditionText(rawLower)) at times",
-            "\(normalizedConditionText(rawLower)) likely at times"
+            "\(condition) likely"
         ])
     }
 
-    private func slightPrecipTailPhrase() -> String {
-        variant([
-            ", with a slight chance of precipitation",
-            ", with just a slight chance of precipitation",
-            ", with a low chance of precipitation"
+    // MARK: - Precip tail phrases (appended to non-precip base)
+
+    private func slightPrecipTailPhrase(isFreezing: Bool) -> String {
+        let precip = isFreezing ? "snow" : "rain"
+        return variant([
+            ", with a slight chance of \(precip)",
+            ", with a low chance of \(precip)"
         ])
     }
 
-    private func chancePrecipTailPhrase() -> String {
-        variant([
-            ", with a chance of precipitation",
-            ", with some precipitation possible",
-            ", with a chance for precipitation"
+    private func chancePrecipTailPhrase(isFreezing: Bool) -> String {
+        let precip = isFreezing ? "snow" : "rain"
+        return variant([
+            ", with a chance of \(precip)",
+            ", with some \(precip) possible"
         ])
     }
 
-    private func likelyPrecipTailPhrase() -> String {
-        variant([
-            ", with periods of precipitation",
-            ", with precipitation at times",
-            ", with unsettled conditions at times"
+    private func likelyPrecipTailPhrase(isFreezing: Bool) -> String {
+        let precip = isFreezing ? "snow" : "rain"
+        return variant([
+            ", with periods of \(precip)",
+            ", with \(precip) at times"
         ])
     }
 
     private func dryTailPhrase() -> String {
         variant([
             ", dry",
-            ", with dry conditions",
-            ", staying dry"
+            ", staying dry",
+            ", with no precipitation expected"
         ])
     }
 
+    // MARK: - Wind tail phrases
+
     private func strongWindTailPhrase() -> String {
         variant([
-            ", with strong winds at times"
+            ", with strong winds at times",
+            ", with gusty winds at times"
         ])
     }
 
     private func strongWindTailPhraseAfterWith() -> String {
         variant([
-            ", and strong winds at times"
+            ", and strong winds at times",
+            ", and gusty winds at times"
         ])
     }
 
     private func windyTailPhrase() -> String {
         variant([
-            ", with windy conditions"
+            ", and windy at times",
+            ", with periods of wind"
         ])
     }
 
     private func windyTailPhraseAfterWith() -> String {
         variant([
-            ", and windy conditions"
+            ", and windy at times",
+            ", and periods of wind"
         ])
     }
 
     private func breezyTailPhrase() -> String {
         variant([
-            ", breezy at times"
+            ", breezy at times",
+            ", with a breeze at times"
         ])
     }
 
     private func breezyTailPhraseAfterWith() -> String {
         variant([
-            ", and breezy at times"
+            ", and breezy at times",
+            ", and a breeze at times"
         ])
     }
 

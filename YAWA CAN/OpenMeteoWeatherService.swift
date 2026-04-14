@@ -8,6 +8,24 @@
 import Foundation
 import CoreLocation
 
+// MARK: - Shared URLSession with tighter timeouts
+
+private let openMeteoSession: URLSession = {
+    let config = URLSessionConfiguration.default
+    config.timeoutIntervalForRequest  = 15
+    config.timeoutIntervalForResource = 30
+    return URLSession(configuration: config)
+}()
+
+// MARK: - Static date formatters (DateFormatter is expensive to init)
+
+private let openMeteoDateTimeFormatter: DateFormatter = {
+    let f = DateFormatter()
+    f.locale = Locale(identifier: "en_US_POSIX")
+    f.dateFormat = "yyyy-MM-dd'T'HH:mm"
+    return f
+}()
+
 struct OpenMeteoWeatherService: WeatherServiceProtocol {
 
     func fetchWeather(
@@ -16,34 +34,31 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
         forecastDays: Int = 7
     ) async throws -> WeatherSnapshot {
 
-        // Open-Meteo forecast endpoint (free)
-        // Units: °C, km/h, precipitation mm (default), pressure comes back as hPa -> convert to kPa
         let days = (forecastDays >= 10) ? 10 : 7
         var comps = URLComponents(string: "https://api.open-meteo.com/v1/forecast")!
         comps.queryItems = [
-            .init(name: "latitude", value: String(coordinate.latitude)),
+            .init(name: "latitude",  value: String(coordinate.latitude)),
             .init(name: "longitude", value: String(coordinate.longitude)),
-
-            // current conditions
-            .init(name: "current", value: "temperature_2m,apparent_temperature,dew_point_2m,relative_humidity_2m,pressure_msl,wind_speed_10m,wind_direction_10m,weather_code,cloud_cover"),
-
-            // hourly temps for chart
-            .init(name: "hourly", value: "temperature_2m,precipitation_probability,weather_code,cloud_cover"),
-
-            // daily forecast
-            .init(name: "daily", value: "sunrise,sunset,temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code,cloud_cover_mean,wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant"),
-
-            .init(name: "forecast_days", value: String(days)),
-            .init(name: "timezone", value: "auto"),
-
-            // enforce units
-            .init(name: "temperature_unit", value: "celsius"),
-            .init(name: "wind_speed_unit", value: "kmh"),
-            .init(name: "precipitation_unit", value: "mm")
+            .init(name: "current",   value: "temperature_2m,apparent_temperature,dew_point_2m,relative_humidity_2m,pressure_msl,wind_speed_10m,wind_direction_10m,weather_code,cloud_cover"),
+            .init(name: "hourly",    value: "temperature_2m,precipitation_probability,weather_code,cloud_cover"),
+            .init(name: "daily",     value: "sunrise,sunset,temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code,cloud_cover_mean,wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant"),
+            .init(name: "forecast_days",       value: String(days)),
+            .init(name: "timezone",            value: "auto"),
+            .init(name: "temperature_unit",    value: "celsius"),
+            .init(name: "wind_speed_unit",     value: "kmh"),
+            .init(name: "precipitation_unit",  value: "mm")
         ]
 
-        let url = comps.url!
-        let (data, _) = try await URLSession.shared.data(from: url)
+        guard let url = comps.url else {
+            throw URLError(.badURL)
+        }
+
+        let (data, response) = try await openMeteoSession.data(from: url)
+
+        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+            throw URLError(.badServerResponse)
+        }
+
         let decoded = try JSONDecoder().decode(OpenMeteoResponse.self, from: data)
 
         let name = locationName ?? "Unknown"
@@ -54,10 +69,11 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
         let refinedCurrent = refineCurrentSky(
             mapped: mapped,
             weatherCode: code,
-            cloudCoverPercent: decoded.current.cloud_cover
+            cloudCoverPercent: decoded.current.cloud_cover,
+            temperatureC: decoded.current.temperature_2m
         )
 
-        let pressureKPa = decoded.current.pressure_msl / 10.0 // hPa -> kPa
+        let pressureKPa = decoded.current.pressure_msl / 10.0
 
         let current = CurrentConditions(
             temperatureC: decoded.current.temperature_2m,
@@ -71,13 +87,11 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
             symbolName: refinedCurrent.symbol
         )
 
-        // Daily (7/10)
         let daily = makeDaily(decoded, maxDays: days)
 
-        // Hourly data: keep the full hourly forecast range so the UI can slice by day.
-        let hourlyTimes = decoded.hourly.time
-        let hourlyTemps = decoded.hourly.temperature_2m
-        let hourlyCodes = decoded.hourly.weather_code
+        let hourlyTimes  = decoded.hourly.time
+        let hourlyTemps  = decoded.hourly.temperature_2m
+        let hourlyCodes  = decoded.hourly.weather_code
         let hourlyPrecip = decoded.hourly.precipitation_probability
 
         let sun: SunTimes? = {
@@ -89,7 +103,7 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
             else { return nil }
             return SunTimes(sunrise: sunrise, sunset: sunset)
         }()
-        
+
         return WeatherSnapshot(
             locationName: name,
             timeZoneID: decoded.timezone,
@@ -104,11 +118,8 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
     }
 
     private func parseOpenMeteoDateTime(_ s: String, timeZoneID: String) -> Date? {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "yyyy-MM-dd'T'HH:mm"
-        f.timeZone = TimeZone(identifier: timeZoneID) ?? .current
-        return f.date(from: s)
+        openMeteoDateTimeFormatter.timeZone = TimeZone(identifier: timeZoneID) ?? .current
+        return openMeteoDateTimeFormatter.date(from: s)
     }
     
     // MARK: - Mapping + builders
@@ -121,25 +132,31 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
     }
 
     private func makeDaily(_ decoded: OpenMeteoResponse, maxDays: Int) -> [DailyForecastDay] {
-        let times = decoded.daily.time
-        let highs = decoded.daily.temperature_2m_max
-        let lows  = decoded.daily.temperature_2m_min
-        let pops  = decoded.daily.precipitation_probability_max
-        let codes = decoded.daily.weather_code
-        let clouds = decoded.daily.cloud_cover_mean
-        let windSpeeds = decoded.daily.wind_speed_10m_max
-        let gusts = decoded.daily.wind_gusts_10m_max
+        let times          = decoded.daily.time
+        let highs          = decoded.daily.temperature_2m_max
+        let lows           = decoded.daily.temperature_2m_min
+        let pops           = decoded.daily.precipitation_probability_max
+        let codes          = decoded.daily.weather_code
+        let clouds         = decoded.daily.cloud_cover_mean
+        let windSpeeds     = decoded.daily.wind_speed_10m_max
+        let gusts          = decoded.daily.wind_gusts_10m_max
         let windDirections = decoded.daily.wind_direction_10m_dominant
-        let sunrises = decoded.daily.sunrise
-        let sunsets = decoded.daily.sunset
+        let sunrises       = decoded.daily.sunrise
+        let sunsets        = decoded.daily.sunset
 
-        let available = min(times.count, highs.count, lows.count, pops.count, codes.count, clouds.count, windSpeeds.count, gusts.count, windDirections.count, sunrises.count, sunsets.count)
+        let available = min(times.count, highs.count, lows.count, pops.count, codes.count,
+                            clouds.count, windSpeeds.count, gusts.count, windDirections.count,
+                            sunrises.count, sunsets.count)
         let count = min(available, max(1, maxDays))
 
         let tz = TimeZone(identifier: decoded.timezone) ?? .current
-
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = tz
+
+        // Parse all hourly dates once — avoids re-parsing 168 strings per day (O(n²) → O(n)).
+        let hourlyDates: [Date] = decoded.hourly.time.compactMap {
+            parseOpenMeteoDateTime($0, timeZoneID: decoded.timezone)
+        }
 
         return (0..<count).compactMap { i in
             let parts = times[i].split(separator: "-").compactMap { Int($0) }
@@ -148,27 +165,23 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
             var comps = DateComponents()
             comps.calendar = cal
             comps.timeZone = tz
-            comps.year = parts[0]
+            comps.year  = parts[0]
             comps.month = parts[1]
-            comps.day = parts[2]
-            comps.hour = 12
-            comps.minute = 0
-            comps.second = 0
+            comps.day   = parts[2]
+            comps.hour = 12; comps.minute = 0; comps.second = 0
 
             guard let date = cal.date(from: comps) else { return nil }
 
             let precipChance = roundPrecipToNearest10(pops[i])
 
+            // Find the hourly entry closest to noon for this day.
             let noonCodeAndCloud: (code: Int, cloud: Int?) = {
-                let noon = date
-                let hourlyDates = decoded.hourly.time.compactMap { parseOpenMeteoDateTime($0, timeZoneID: decoded.timezone) }
-
                 var bestIndex: Int?
                 var bestDistance: TimeInterval = .greatestFiniteMagnitude
 
                 for (idx, hourlyDate) in hourlyDates.enumerated() {
-                    if !cal.isDate(hourlyDate, inSameDayAs: date) { continue }
-                    let distance = abs(hourlyDate.timeIntervalSince(noon))
+                    guard cal.isDate(hourlyDate, inSameDayAs: date) else { continue }
+                    let distance = abs(hourlyDate.timeIntervalSince(date))
                     if distance < bestDistance {
                         bestDistance = distance
                         bestIndex = idx
@@ -179,9 +192,8 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
                    idx < decoded.hourly.weather_code.count,
                    idx < decoded.hourly.cloud_cover.count {
                     return (decoded.hourly.weather_code[idx], decoded.hourly.cloud_cover[idx])
-                } else {
-                    return (codes[i], Int(clouds[i].rounded()))
                 }
+                return (codes[i], Int(clouds[i].rounded()))
             }()
 
             let mapped = mapWeather(code: noonCodeAndCloud.code)
@@ -189,7 +201,8 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
                 mapped: mapped,
                 weatherCode: noonCodeAndCloud.code,
                 precipChancePercent: precipChance,
-                cloudCoverPercent: noonCodeAndCloud.cloud ?? Int(clouds[i].rounded())
+                cloudCoverPercent: noonCodeAndCloud.cloud ?? Int(clouds[i].rounded()),
+                highC: highs[i]
             )
 
             return DailyForecastDay(
@@ -201,8 +214,8 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
                 windGustKPH: gusts[i],
                 windDirectionDegrees: windDirections[i],
                 sunrise: parseOpenMeteoDateTime(sunrises[i], timeZoneID: decoded.timezone),
-                sunset: parseOpenMeteoDateTime(sunsets[i], timeZoneID: decoded.timezone),
-                symbolName: refinedDaily.symbol,
+                sunset:  parseOpenMeteoDateTime(sunsets[i],  timeZoneID: decoded.timezone),
+                symbolName:    refinedDaily.symbol,
                 conditionText: refinedDaily.text
             )
         }
@@ -211,12 +224,14 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
     private func refineCurrentSky(
         mapped: (symbol: String, text: String),
         weatherCode: Int,
-        cloudCoverPercent: Int?
+        cloudCoverPercent: Int?,
+        temperatureC: Double
     ) -> (symbol: String, text: String) {
-        // Only refine basic sky states. If precip/fog/thunder is active,
-        // keep the weather-code wording.
+        let isFreezing = temperatureC <= 0
+
         switch weatherCode {
         case 0, 1, 2, 3:
+            // Basic sky — refine by cloud cover, no precip correction needed.
             guard let cloud = cloudCoverPercent else { return mapped }
 
             if cloud <= 15 {
@@ -229,6 +244,29 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
                 return ("cloud.fill", "Mostly cloudy")
             }
 
+        case 51, 53, 55:
+            // Drizzle — remap to freezing drizzle when at or below 0°C.
+            guard isFreezing else { return mapped }
+            return (mapped.symbol, weatherCode == 51 ? "Light freezing drizzle" : "Freezing drizzle")
+
+        case 61, 63, 65:
+            // Rain — remap to snow when at or below 0°C.
+            guard isFreezing else { return mapped }
+            switch weatherCode {
+            case 61: return ("cloud.snow.fill", "Light snow")
+            case 65: return ("cloud.snow.fill", "Heavy snow")
+            default: return ("cloud.snow.fill", "Snow")
+            }
+
+        case 80, 81, 82:
+            // Rain showers — remap to snow showers when at or below 0°C.
+            guard isFreezing else { return mapped }
+            switch weatherCode {
+            case 80: return ("cloud.snow.fill", "Light snow showers")
+            case 82: return ("cloud.snow.fill", "Heavy snow showers")
+            default: return ("cloud.snow.fill", "Snow showers")
+            }
+
         default:
             return mapped
         }
@@ -238,11 +276,18 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
         mapped: (symbol: String, text: String),
         weatherCode: Int,
         precipChancePercent: Int,
-        cloudCoverPercent: Int?
+        cloudCoverPercent: Int?,
+        highC: Double
     ) -> (symbol: String, text: String) {
+        // Choose the right precip type based on temperature.
+        let isFreezing = highC <= 0
+        let likelySymbol = isFreezing ? "cloud.snow.fill"      : "cloud.rain.fill"
+        let likelyText   = isFreezing ? "Snow likely"          : "Rain likely"
+        let possibleText = isFreezing ? "Snow possible"        : "Rain possible"
+
         // High daily precip chance should override misleading sun/clear presentation.
         if precipChancePercent >= 80 {
-            return ("cloud.rain.fill", "Rain likely")
+            return (likelySymbol, likelyText)
         }
 
         // Keep active precip/fog/thunder wording when conditions are meaningful.
@@ -266,7 +311,7 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
 
         case 0, 1, 2, 3:
             if precipChancePercent >= 60 {
-                return ("cloud.rain.fill", "Rain possible")
+                return (likelySymbol, possibleText)
             }
 
             guard let cloud = cloudCoverPercent else { return mapped }
@@ -294,22 +339,35 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
         case 2: return ("cloud.sun.fill", "Partly cloudy")
         case 3: return ("cloud.fill", "Mostly cloudy")
 
-        case 45, 48: return ("cloud.fog.fill", "Fog")
+        case 45: return ("cloud.fog.fill", "Foggy")
+        case 48: return ("cloud.fog.fill", "Rime fog")
 
-        case 51, 53, 55: return ("cloud.drizzle.fill", "Drizzle")
-        case 56, 57: return ("cloud.drizzle.fill", "Freezing drizzle")
+        case 51: return ("cloud.drizzle.fill", "Light drizzle")
+        case 53: return ("cloud.drizzle.fill", "Drizzle")
+        case 55: return ("cloud.drizzle.fill", "Heavy drizzle")
+        case 56: return ("cloud.drizzle.fill", "Light freezing drizzle")
+        case 57: return ("cloud.drizzle.fill", "Freezing drizzle")
 
-        case 61, 63, 65: return ("cloud.rain.fill", "Rain")
-        case 66, 67: return ("cloud.rain.fill", "Freezing rain")
+        case 61: return ("cloud.rain.fill", "Light rain")
+        case 63: return ("cloud.rain.fill", "Rain")
+        case 65: return ("cloud.rain.fill", "Heavy rain")
+        case 66: return ("cloud.rain.fill", "Light freezing rain")
+        case 67: return ("cloud.rain.fill", "Freezing rain")
 
-        case 71, 73, 75: return ("cloud.snow.fill", "Snow")
+        case 71: return ("cloud.snow.fill", "Light snow")
+        case 73: return ("cloud.snow.fill", "Snow")
+        case 75: return ("cloud.snow.fill", "Heavy snow")
         case 77: return ("cloud.snow.fill", "Snow grains")
 
-        case 80, 81, 82: return ("cloud.heavyrain.fill", "Rain showers")
-        case 85, 86: return ("cloud.snow.fill", "Snow showers")
+        case 80: return ("cloud.heavyrain.fill", "Light showers")
+        case 81: return ("cloud.heavyrain.fill", "Showers")
+        case 82: return ("cloud.heavyrain.fill", "Heavy showers")
+        case 85: return ("cloud.snow.fill", "Light snow showers")
+        case 86: return ("cloud.snow.fill", "Snow showers")
 
         case 95: return ("cloud.bolt.rain.fill", "Thunderstorm")
-        case 96, 99: return ("cloud.bolt.rain.fill", "Thunderstorm w/ hail")
+        case 96: return ("cloud.bolt.rain.fill", "Thunderstorm with hail")
+        case 99: return ("cloud.bolt.rain.fill", "Thunderstorm with hail")
 
         default: return ("cloud.fill", "Weather")
         }
@@ -358,3 +416,4 @@ private struct OpenMeteoResponse: Decodable {
         let wind_direction_10m_dominant: [Double]
     }
 }
+

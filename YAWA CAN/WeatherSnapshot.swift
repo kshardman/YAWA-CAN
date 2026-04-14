@@ -9,7 +9,7 @@ import Foundation
 
 struct WeatherSnapshot: Codable, Equatable {
     let timeZoneID: String
-    let locationName: String?
+    let locationName: String
     let current: CurrentConditions
     let daily: [DailyForecastDay]
     let hourlyTempsC: [Double]
@@ -19,7 +19,7 @@ struct WeatherSnapshot: Codable, Equatable {
     let sun: SunTimes?
 
     init(
-        locationName: String? = nil,
+        locationName: String,
         timeZoneID: String,
         current: CurrentConditions,
         daily: [DailyForecastDay],
@@ -40,3 +40,4 @@ struct WeatherSnapshot: Codable, Equatable {
         self.sun = sun
     }
 }
+
