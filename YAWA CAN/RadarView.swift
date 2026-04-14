@@ -396,11 +396,12 @@ struct RadarView: View {
             if Task.isCancelled { return }
 
             let loc = CLLocation(latitude: center.latitude, longitude: center.longitude)
-            let geocoder = CLGeocoder()
 
             do {
-                let placemarks = try await geocoder.reverseGeocodeLocation(loc)
-                guard let pm = placemarks.first else { return }
+                guard let request = MKReverseGeocodingRequest(location: loc) else { return }
+                let mapItems = try await request.mapItems
+                // TODO: MKMapItem.placemark deprecated in iOS 26 — migrate when MKAddress exposes structured fields.
+                guard let pm = mapItems.first?.placemark else { return }
 
                 // Prefer locality (city). Fallback to subAdministrativeArea (county-ish) then administrativeArea.
                 let city = pm.locality
@@ -414,7 +415,7 @@ struct RadarView: View {
                 } else if let city {
                     mapTitle = city
                 } else {
-                    // If we can’t resolve, keep whatever title we already have.
+                    // If we can't resolve, keep whatever title we already have.
                 }
             } catch {
                 // Ignore geocode failures (offline, rate limit, etc.)
@@ -2221,4 +2222,5 @@ final class RadarTileLayerView: UIView {
         return looksSolid
     }
 }
+
 

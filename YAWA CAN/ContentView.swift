@@ -2735,28 +2735,35 @@ private final class LocationResolver: NSObject, ObservableObject, CLLocationMana
         let continuation = pendingLocation
         pendingLocation = nil
 
-        CLGeocoder().reverseGeocodeLocation(loc) { placemarks, error in
+        Task { @MainActor in
             guard let cont = continuation else { return }
+            do {
+                guard let request = MKReverseGeocodingRequest(location: loc) else {
+                    cont.resume(throwing: LocationError.reverseGeocodeFailed)
+                    return
+                }
+                let mapItems = try await request.mapItems
+                let mapItem = mapItems.first
 
-            if error != nil {
+                // TODO: MKMapItem.placemark is deprecated in iOS 26. Migrate to mapItem.address
+                // once Apple exposes structured fields (locality, administrativeArea, isoCountryCode).
+                let pm = mapItem?.placemark
+                let country = pm?.isoCountryCode ?? ""
+                let city = pm?.locality ?? pm?.subAdministrativeArea ?? "Unknown"
+                let prov = Self.normalizedAdministrativeArea(pm?.administrativeArea ?? "", countryCode: country)
+                let name = prov.isEmpty ? city : "\(city), \(prov)"
+
+                let out = SavedLocation(
+                    id: UUID(),
+                    displayName: name,
+                    latitude: loc.coordinate.latitude,
+                    longitude: loc.coordinate.longitude,
+                    countryCode: country
+                )
+                cont.resume(returning: out)
+            } catch {
                 cont.resume(throwing: LocationError.reverseGeocodeFailed)
-                return
             }
-
-            let pm = placemarks?.first
-            let country = pm?.isoCountryCode ?? ""
-            let city = pm?.locality ?? pm?.subAdministrativeArea ?? "Unknown"
-            let prov = Self.normalizedAdministrativeArea(pm?.administrativeArea ?? "", countryCode: country)
-            let name = prov.isEmpty ? city : "\(city), \(prov)"
-
-            let out = SavedLocation(
-                id: UUID(),
-                displayName: name,
-                latitude: loc.coordinate.latitude,
-                longitude: loc.coordinate.longitude,
-                countryCode: country
-            )
-            cont.resume(returning: out)
         }
     }
     
@@ -3974,3 +3981,4 @@ private func comfortSummaryText(for current: CurrentConditions) -> String {
 #Preview {
     ContentView()
 }
+
