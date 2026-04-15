@@ -1245,15 +1245,16 @@ struct ContentView: View {
     private func windValueText(for current: CurrentConditions) -> String {
         let direction = windDirectionPrefix(from: current.windDisplay)
         let speedValue = usesUSUnits ? current.windSpeedKph * 0.621371 : current.windSpeedKph
-        return "\(direction) \(Int(round(speedValue)))"
+        let unit = usesUSUnits ? "mph" : "km/h"
+        return "\(direction) \(Int(round(speedValue))) \(unit)"
     }
 
     private func pressureValueText(for pressureKPa: Double) -> String {
         if usesUSUnits {
             let inHg = pressureKPa * 0.2953
-            return String(format: "%.2f", inHg)
+            return String(format: "%.2f inHg", inHg)
         } else {
-            return String(format: "%.1f", pressureKPa)
+            return String(format: "%.1f KPa", pressureKPa)
         }
     }
 
