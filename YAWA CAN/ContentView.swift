@@ -67,7 +67,6 @@ struct ContentView: View {
     
     @State private var showingAllAlerts = false
     
-    @State private var usedWideDelta = false
     @State private var pendingNotificationRoute: NotificationRoute? = nil
     
     @AppStorage("yawa.can.isCurrentLocationSelected") private var isCurrentLocationSelected: Bool = false
@@ -633,21 +632,10 @@ struct ContentView: View {
     @MainActor
     private func loadAlertsForSelectedLocation() async {
         let requestedLocation = selectedLocationForAlerts
-        let requestedLatitude = requestedLocation.latitude
-        let requestedLongitude = requestedLocation.longitude
-        let requestedName = requestedLocation.displayName
         let requestedCountryCode = effectiveCountryCode(for: requestedLocation)
 
-        guard requestedCountryCode == "CA" else {
-            activeAlerts = []
-            viewModel.updateNotificationSnapshotForecastAlert(
-                nil,
-                expectedLocationName: requestedName,
-                expectedLatitude: requestedLatitude,
-                expectedLongitude: requestedLongitude
-            )
-            isLoadingAlerts = false
-            print("=== Skipping alert fetch for non-CA location: \(requestedName) countryCode=\(requestedCountryCode) ===")
+        guard shouldFetchAlerts(for: requestedLocation, countryCode: requestedCountryCode) else {
+            clearAlertsForNonCanadianLocation(requestedLocation, countryCode: requestedCountryCode)
             return
         }
 
@@ -655,76 +643,96 @@ struct ContentView: View {
         defer { isLoadingAlerts = false }
 
         do {
-            print("=== Starting alert fetch for: \(requestedName) ===")
-            print("Coordinates: \(requestedLatitude), \(requestedLongitude)")
-
-            // Tight city delta first
-            let tightDelta = 0.20
-            let wideDelta = 0.75   // regional fallback
-
-            print("Trying tight city delta \(tightDelta)...")
-
-            var alerts = try await CanadaAlertService().fetchAlerts(
-                withDelta: tightDelta,
-                for: CLLocationCoordinate2D(latitude: requestedLatitude, longitude: requestedLongitude),
-                countryCode: requestedCountryCode
-            )
-
-            // If nothing, widen
-            if alerts.isEmpty {
-                usedWideDelta = true
-                print("No alerts → widening to delta \(wideDelta)...")
-                alerts = try await CanadaAlertService().fetchAlerts(
-                    withDelta: wideDelta,
-                    for: CLLocationCoordinate2D(latitude: requestedLatitude, longitude: requestedLongitude),
-                    countryCode: requestedCountryCode
-                )
-            } else {
-                print("Found \(alerts.count) alerts in tight range")
-            }
-
-            let currentLocation = selectedLocationForAlerts
-            let currentCountryCode = effectiveCountryCode(for: currentLocation)
-            let isStillSameLocation = abs(currentLocation.latitude - requestedLatitude) < 0.0001 &&
-                abs(currentLocation.longitude - requestedLongitude) < 0.0001 &&
-                currentCountryCode == requestedCountryCode
-
-            guard isStillSameLocation else {
-                print("Alert fetch result ignored because location changed from \(requestedName) to \(currentLocation.displayName)")
-                return
-            }
-
-            activeAlerts = alerts.sorted { ($0.expiresAt ?? .distantFuture) < ($1.expiresAt ?? .distantFuture) }
-            viewModel.updateNotificationSnapshotForecastAlert(
-                activeAlerts.first,
-                expectedLocationName: requestedName,
-                expectedLatitude: requestedLatitude,
-                expectedLongitude: requestedLongitude
-            )
-
-            print("Final active alerts count: \(activeAlerts.count)")
-
+            let alerts = try await fetchAlertsForLocation(requestedLocation, countryCode: requestedCountryCode)
+            await applyAlertsIfStillCurrent(alerts, requestedLocation: requestedLocation, countryCode: requestedCountryCode)
         } catch {
-            let currentLocation = selectedLocationForAlerts
-            let currentCountryCode = effectiveCountryCode(for: currentLocation)
-            let isStillSameLocation = abs(currentLocation.latitude - requestedLatitude) < 0.0001 &&
-                abs(currentLocation.longitude - requestedLongitude) < 0.0001 &&
-                currentCountryCode == requestedCountryCode
-
-            guard isStillSameLocation else {
-                print("Alert fetch failure ignored because location changed from \(requestedName) to \(currentLocation.displayName)")
-                return
-            }
-
-            print("Alert fetch FAILED: \(error.localizedDescription)")
-            activeAlerts = []
-            viewModel.updateNotificationSnapshotForecastAlert(
-                nil,
-                expectedLocationName: requestedName,
-                expectedLatitude: requestedLatitude,
-                expectedLongitude: requestedLongitude
-            )
+            await handleAlertFetchError(error, requestedLocation: requestedLocation, countryCode: requestedCountryCode)
         }
+    }
+
+    private func shouldFetchAlerts(for location: SavedLocation, countryCode: String) -> Bool {
+        countryCode == "CA"
+    }
+
+    private func clearAlertsForNonCanadianLocation(_ location: SavedLocation, countryCode: String) {
+        activeAlerts = []
+        isLoadingAlerts = false
+        viewModel.updateNotificationSnapshotForecastAlert(
+            nil,
+            expectedLocationName: location.displayName,
+            expectedLatitude: location.latitude,
+            expectedLongitude: location.longitude
+        )
+        AppLogger.log("[Alerts] skipping fetch for non-CA location: \(location.displayName) countryCode=\(countryCode)")
+    }
+
+    private func fetchAlertsForLocation(_ location: SavedLocation, countryCode: String) async throws -> [WeatherAlert] {
+        let coordinate = CLLocationCoordinate2D(latitude: location.latitude, longitude: location.longitude)
+        let service = CanadaAlertService()
+        let tightDelta = 0.15
+        let wideDelta  = 0.75
+
+        AppLogger.log("[Alerts] starting fetch for: \(location.displayName) (\(location.latitude), \(location.longitude))")
+
+        let tightAlerts = try await service.fetchAlerts(withDelta: tightDelta, for: coordinate, countryCode: countryCode)
+
+        if !tightAlerts.isEmpty {
+            AppLogger.log("[Alerts] found \(tightAlerts.count) alerts in tight range (Δ\(tightDelta))")
+            return tightAlerts
+        }
+
+        AppLogger.log("[Alerts] no alerts in tight range (Δ\(tightDelta)) — widening to Δ\(wideDelta)")
+        return try await service.fetchAlerts(withDelta: wideDelta, for: coordinate, countryCode: countryCode)
+    }
+
+    @MainActor
+    private func applyAlertsIfStillCurrent(
+        _ alerts: [WeatherAlert],
+        requestedLocation: SavedLocation,
+        countryCode: String
+    ) async {
+        guard isStillCurrentLocation(requestedLocation, countryCode: countryCode) else {
+            AppLogger.log("[Alerts] result discarded — location changed from \(requestedLocation.displayName)")
+            return
+        }
+
+        // Sort descending by expiry so the longest-running (most significant) alert is first.
+        activeAlerts = alerts.sorted { ($0.expiresAt ?? .distantFuture) > ($1.expiresAt ?? .distantFuture) }
+        viewModel.updateNotificationSnapshotForecastAlert(
+            activeAlerts.first,
+            expectedLocationName: requestedLocation.displayName,
+            expectedLatitude: requestedLocation.latitude,
+            expectedLongitude: requestedLocation.longitude
+        )
+        AppLogger.log("[Alerts] final active alerts count: \(activeAlerts.count)")
+    }
+
+    @MainActor
+    private func handleAlertFetchError(
+        _ error: Error,
+        requestedLocation: SavedLocation,
+        countryCode: String
+    ) async {
+        guard isStillCurrentLocation(requestedLocation, countryCode: countryCode) else {
+            AppLogger.log("[Alerts] fetch failure discarded — location changed from \(requestedLocation.displayName)")
+            return
+        }
+
+        AppLogger.log("[Alerts] fetch failed for \(requestedLocation.displayName): \(error.localizedDescription)")
+        activeAlerts = []
+        viewModel.updateNotificationSnapshotForecastAlert(
+            nil,
+            expectedLocationName: requestedLocation.displayName,
+            expectedLatitude: requestedLocation.latitude,
+            expectedLongitude: requestedLocation.longitude
+        )
+    }
+
+    private func isStillCurrentLocation(_ location: SavedLocation, countryCode: String) -> Bool {
+        let current = selectedLocationForAlerts
+        return abs(current.latitude  - location.latitude)  < 0.0001 &&
+               abs(current.longitude - location.longitude) < 0.0001 &&
+               effectiveCountryCode(for: current) == countryCode
     }
 
     private func dailyTile(_ snap: WeatherSnapshot) -> some View {
@@ -3984,4 +3992,3 @@ private func comfortSummaryText(for current: CurrentConditions) -> String {
 #Preview {
     ContentView()
 }
-
