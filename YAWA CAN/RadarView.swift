@@ -78,13 +78,13 @@ struct RadarView: View {
     // MARK: - Smooth-playback tuning
 
     /// Display time for a frame whose timestamp gap equals the 10-min median.
-    private let baseFrameDwell:  TimeInterval = 0.30
+    private let baseFrameDwell:  TimeInterval = 0.35
     private let minFrameDwell:   TimeInterval = 0.18
     private let maxFrameDwell:   TimeInterval = 0.55
     /// Pause at the end of the loop before rewinding.
     private let loopPauseDwell:  TimeInterval = 1.40
     /// How long we'll wait for tiles before advancing anyway (avoids stalling).
-    private let maxTileWaitSecs: TimeInterval = 0.40
+    private let maxTileWaitSecs: TimeInterval = 0.65
 
     // MARK: - Timeline progress bar
 
@@ -451,6 +451,17 @@ struct RadarView: View {
                                 stopPlayback()
                             }
                         },
+                        onPinchBegan: {
+                            DispatchQueue.main.async {
+                                stopPlayback()
+                            }
+                        },
+                        onZoomStepChange: { newStep in
+                            DispatchQueue.main.async {
+                                zoomStep = newStep
+                            }
+                        },
+                        currentZoomStep: zoomStep,
                         prewarmToken: prewarmToken,
                         prewarmFramePaths: (loadState == .preparing) ? startupPrewarmPaths : [],
                         onPrewarmFinished: { token in
@@ -578,61 +589,33 @@ struct RadarView: View {
                     }
 
 
-                    // Zoom controls (Stage 1B) + Recenter (Stage 1C)
+                    // Recenter + Play/Pause controls
                     VStack {
                         Spacer()
                         HStack {
                             Spacer()
 
                             VStack(spacing: 10) {
-                                VStack(spacing: 10) {
+                                ZStack {
                                     Button {
-                                        // Closer (smaller span)
-                                        zoomStep = max(zoomStep - 1, -6)
-                                    } label: {
-                                        Image(systemName: "plus")
-                                            .font(.subheadline.weight(.semibold))
-                                    }
-                                    .modifier(GlassCircleButtonModifier(size: 38))
-                                    .opacity(zoomStep <= -6 ? 0.42 : 1)
-                                    .disabled(zoomStep <= -6)
-                                    .accessibilityLabel("Zoom in")
-
-                                    Button {
-                                        // Farther (larger span)
-                                        zoomStep = min(zoomStep + 1, 6)
-                                    } label: {
-                                        Image(systemName: "minus")
-                                            .font(.subheadline.weight(.semibold))
-                                    }
-                                    .modifier(GlassCircleButtonModifier(size: 38))
-                                    .opacity(zoomStep >= 6 ? 0.42 : 1)
-                                    .disabled(zoomStep >= 6)
-                                    .accessibilityLabel("Zoom out")
-
-                                    ZStack {
-                                        Button {
-                                            // Recenter / reset to the default framing, and jump back
-                                            // to the newest frame so the result feels deterministic.
-                                            stopPlayback()
-                                            zoomStep = -3
-                                            mapCenter = target.coordinate
-                                            if !frames.isEmpty {
-                                                frameIndex = max(0, frames.count - 1)
-                                                framePath = frames[frameIndex].path
-                                            }
-                                            recenterToken = UUID()
-                                        } label: {
-                                            Image(systemName: "location.fill")
-                                                .font(.subheadline.weight(.semibold))
+                                        stopPlayback()
+                                        zoomStep = -3
+                                        mapCenter = target.coordinate
+                                        if !frames.isEmpty {
+                                            frameIndex = max(0, frames.count - 1)
+                                            framePath = frames[frameIndex].path
                                         }
-                                        .modifier(GlassCircleButtonModifier(size: 38))
-                                        .accessibilityLabel("Recenter")
-                                        .opacity(shouldShowRecenterButton ? 1 : 0)
-                                        .allowsHitTesting(shouldShowRecenterButton)
+                                        recenterToken = UUID()
+                                    } label: {
+                                        Image(systemName: "location.fill")
+                                            .font(.subheadline.weight(.semibold))
                                     }
-                                    .frame(width: 38, height: 38)
+                                    .modifier(GlassCircleButtonModifier(size: 38))
+                                    .accessibilityLabel("Recenter")
+                                    .opacity(shouldShowRecenterButton ? 1 : 0)
+                                    .allowsHitTesting(shouldShowRecenterButton)
                                 }
+                                .frame(width: 38, height: 38)
 
                                 Spacer()
                                     .frame(height: 6)
@@ -791,6 +774,9 @@ private struct RadarMapViewStage0: UIViewRepresentable {
     let showCrosshair: Bool
     let isActive: Bool
     let onUserPan: () -> Void
+    let onPinchBegan: () -> Void
+    let onZoomStepChange: (Int) -> Void
+    let currentZoomStep: Int
     
     let prewarmToken: UUID
     let prewarmFramePaths: [String]
@@ -857,6 +843,19 @@ private struct RadarMapViewStage0: UIViewRepresentable {
         }
 
         context.coordinator.setCurrentCenterBinding($currentCenter)
+        context.coordinator.setOnUserPanHandler(onUserPan)
+        context.coordinator.setOnZoomStepChangeHandler(onZoomStepChange)
+        context.coordinator.setOnPinchBeganHandler(onPinchBegan)
+
+        // Pinch-to-zoom: drives zoomStep via callback, keeps isZoomEnabled = false
+        // so MapKit's own zoom never fires and zoomStep remains the sole source of truth.
+        let pinch = UIPinchGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handlePinch(_:))
+        )
+        pinch.delegate = context.coordinator
+        map.addGestureRecognizer(pinch)
+
         if showCrosshair {
             context.coordinator.ensureCrosshair(on: map)
         }
@@ -866,6 +865,9 @@ private struct RadarMapViewStage0: UIViewRepresentable {
     func updateUIView(_ map: MKMapView, context: Context) {
         context.coordinator.setCurrentCenterBinding($currentCenter)
         context.coordinator.setOnUserPanHandler(onUserPan)
+        context.coordinator.setOnZoomStepChangeHandler(onZoomStepChange)
+        context.coordinator.setOnPinchBeganHandler(onPinchBegan)
+        context.coordinator.currentPinchZoomStep = currentZoomStep
         context.coordinator.attachMapView(map)
         context.coordinator.setFeedStale(isFeedStale)
         context.coordinator.setActive(isActive)
@@ -899,10 +901,87 @@ private struct RadarMapViewStage0: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
-    final class Coordinator: NSObject, MKMapViewDelegate {
+    final class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
         private var isActive: Bool = true
         private var onUserPanHandler: (() -> Void)?
+        private var onZoomStepChangeHandler: ((Int) -> Void)?
+        private var onPinchBeganHandler: (() -> Void)?
         func setOnUserPanHandler(_ handler: @escaping () -> Void) { self.onUserPanHandler = handler }
+        func setOnZoomStepChangeHandler(_ handler: @escaping (Int) -> Void) { self.onZoomStepChangeHandler = handler }
+        func setOnPinchBeganHandler(_ handler: @escaping () -> Void) { self.onPinchBeganHandler = handler }
+
+        // MARK: - Pinch-to-zoom
+
+        private var pinchStartZoomStep: Int = 0
+        private var pinchStartRegion: MKCoordinateRegion? = nil
+        var isPinching: Bool = false
+        private let scalePerStep: Double = 1.18
+        private let zoomStepMin: Int = -6
+        private let zoomStepMax: Int = 6
+
+        @objc func handlePinch(_ gr: UIPinchGestureRecognizer) {
+            guard let map = mapViewRef else { return }
+
+            switch gr.state {
+            case .began:
+                isPinching = true
+                pinchStartZoomStep = currentPinchZoomStep
+                pinchStartRegion = map.region
+                onPinchBeganHandler?()
+
+            case .changed:
+                guard gr.scale > 0, let startRegion = pinchStartRegion else { return }
+                // Scale the span directly — no SwiftUI involvement, pure UIKit at 60fps.
+                // Pinch in (scale > 1) = smaller span = zoom in.
+                let newLatDelta = max(0.02, min(180.0, startRegion.span.latitudeDelta / Double(gr.scale)))
+                let newLonDelta = max(0.02, min(360.0, startRegion.span.longitudeDelta / Double(gr.scale)))
+                let newRegion = MKCoordinateRegion(
+                    center: startRegion.center,
+                    span: MKCoordinateSpan(latitudeDelta: newLatDelta, longitudeDelta: newLonDelta)
+                )
+                isProgrammaticRegionChange = true
+                lastProgrammaticRegionChangeAt = CACurrentMediaTime()
+                map.setRegion(newRegion, animated: false)
+
+            case .ended, .cancelled, .failed:
+                pinchStartRegion = nil
+
+                // Reverse-compute the nearest zoomStep from the final span.
+                let baseLatDelta = 3.0
+                let finalLatDelta = map.region.span.latitudeDelta
+                let rawStep = -log(finalLatDelta / baseLatDelta) / log(scalePerStep)
+                let snappedStep = max(zoomStepMin, min(zoomStepMax, Int(rawStep.rounded())))
+
+                // Pre-seed lastRegionSignature with what fixedRegion will compute for this
+                // snappedStep. This makes applyRegionIfNeeded think it already applied the
+                // target region, so it skips the setRegion call and the map stays exactly
+                // where the pinch left it instead of jumping to the snapped span.
+                let snappedLatDelta = baseLatDelta * pow(scalePerStep, Double(snappedStep))
+                lastRegionSignature = "latSpan=\(String(format: "%.6f", snappedLatDelta))"
+
+                // Now safe to release — applyRegionIfNeeded will see a matching signature.
+                isPinching = false
+                isProgrammaticRegionChange = false
+
+                // Report the new step to SwiftUI so zoomStep stays in sync.
+                onZoomStepChangeHandler?(snappedStep)
+
+                updateCrosshairPosition(on: map)
+                updateRadarAfterLayout()
+
+            default:
+                break
+            }
+        }
+
+        // Tracks the most recently reported zoomStep so handlePinch can read it on .began.
+        var currentPinchZoomStep: Int = 0
+
+        // Allow pinch and pan to recognize simultaneously.
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool { true }
 
         func setActive(_ active: Bool) {
             guard isActive != active else { return }
@@ -918,22 +997,22 @@ private struct RadarMapViewStage0: UIViewRepresentable {
             // Only act when the token changes.
             guard lastRecenterToken != token else { return }
             lastRecenterToken = token
-            
+
             // Don't fight during live gestures.
             if userIsInteracting { return }
-            
+            if isPinching { return }
+
             // Mark programmatic so regionDidChange doesn't look like a user pan.
             isProgrammaticRegionChange = true
             lastProgrammaticRegionChangeAt = CACurrentMediaTime()
             map.setRegion(region, animated: false)
-            
+
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
                 self?.isProgrammaticRegionChange = false
             }
-            
+
             updateCrosshairPosition(on: map)
             updateRadarAfterLayout()
-            
         }
 
         private var tileHealthHandler: ((RadarTileLayerView.TileHealth) -> Void)?
@@ -1156,6 +1235,9 @@ private struct RadarMapViewStage0: UIViewRepresentable {
         func applyRegionIfNeeded(_ map: MKMapView, region: MKCoordinateRegion) {
             // Don't fight live user gestures; let the map move freely.
             if userIsInteracting { return }
+
+            // Don't fight an active pinch — the gesture drives the region directly.
+            if isPinching { return }
             
             // Don’t attempt “zoom enforcement” until we’ve successfully applied the initial region.
             // Otherwise we can fight MapKit’s initial world-region and cause redundant setRegion calls.
