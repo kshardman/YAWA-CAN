@@ -212,7 +212,9 @@ struct ContentView: View {
 
                             Spacer(minLength: 8)
                         }
-                        .padding(16)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 16)
+                        .padding(.top, 6)
                     }
                     .scrollIndicators(.hidden)
                     .refreshable {
@@ -305,7 +307,7 @@ struct ContentView: View {
         }
         .sheet(item: $selectedAlert) { alert in
             AlertDetailSheet(alert: alert)
-                .presentationDetents([.medium, .large])
+                .presentationDetents([.fraction(0.90), .large])
                 .presentationDragIndicator(.visible)
         }
         .task(id: "\(selectedLocationForAlerts.latitude),\(selectedLocationForAlerts.longitude)") {
@@ -937,7 +939,7 @@ struct ContentView: View {
         .tileStyle()
         .sheet(isPresented: $showingAllAlerts) {
             AllAlertsSheet(alerts: activeAlertsForSelectedLocation)
-                .presentationDetents([.medium, .large])
+                .presentationDetents([.fraction(0.9), .large])
                 .presentationDragIndicator(.visible)
         }
     }
@@ -1254,7 +1256,7 @@ struct ContentView: View {
             let inHg = pressureKPa * 0.2953
             return String(format: "%.2f inHg", inHg)
         } else {
-            return String(format: "%.1f KPa", pressureKPa)
+            return String(format: "%.1f kPa", pressureKPa)
         }
     }
 
@@ -2344,7 +2346,7 @@ private struct AllAlertsSheet: View {
             }
             .sheet(item: $selectedAlertInSheet) { alert in
                 AlertDetailSheet(alert: alert)
-                    .presentationDetents([.medium, .large])
+                    .presentationDetents([.fraction(0.90), .large])
                     .presentationDragIndicator(.visible)
             }
         }
