@@ -8,6 +8,8 @@ enum NotificationRuleEngine {
         timeZone: TimeZone,
         preferences: NotificationPreferences
     ) -> [NotificationCandidate] {
+        guard preferences.forecastAlertsEnabled else { return [] }
+
         var candidates: [NotificationCandidate] = []
 
         if let notable = makeNotableForecastCandidate(
@@ -39,7 +41,6 @@ enum NotificationRuleEngine {
             return nil
         }
 
-        let normalizedTitle = normalizedNotableForecastTitle(category: category, severity: severity, fallback: alert.title)
         let title = sentenceCaseAlertTitle(alert.title)
         let body = notableForecastBody(
             locationName: snapshot.locationName,
@@ -81,42 +82,9 @@ enum NotificationRuleEngine {
             sourceHeadline: alert.title
         )
         print("[N1] notableForecast candidate built id=\(candidate.id) title=\(candidate.title)")
-        print("[N1] notableForecast normalizedTitle=\(normalizedTitle) sourceHeadline=\(alert.title)")
         print("[N1] notableForecast issuedAt=\(alert.issuedAt?.description ?? "nil") id=\(candidate.id)")
         return candidate
     }
-
-    private static func normalizedNotableForecastTitle(
-        category: NotableForecastCategory,
-        severity: AlertSeverityClass?,
-        fallback: String
-    ) -> String {
-        switch (category, severity) {
-        case (.flooding, .warning):
-            return "Flood warning"
-        case (.flooding, .watch):
-            return "Flood watch"
-        case (.winterWeather, .warning):
-            return "Winter weather warning"
-        case (.winterWeather, .watch):
-            return "Winter weather watch"
-        case (.winterWeather, .advisory):
-            return "Winter weather advisory"
-        case (.thunder, .warning):
-            return "Thunderstorm warning"
-        case (.thunder, .watch):
-            return "Thunderstorm watch"
-        case (.specialStatement, .statement):
-            return "Special weather statement"
-        case (.wind, .warning):
-            return "Wind warning"
-        case (.wind, .watch):
-            return "Wind watch"
-        default:
-            return fallback
-        }
-    }
-
 
     private static func sentenceCaseAlertTitle(_ title: String) -> String {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -130,37 +98,6 @@ enum NotificationRuleEngine {
                 return String(first).uppercased() + lower.dropFirst()
             }
             .joined(separator: " ")
-    }
-
-    private static func normalizedNotableForecastBody(
-        category: NotableForecastCategory,
-        severity: AlertSeverityClass?,
-        locationName: String
-    ) -> String {
-        switch (category, severity) {
-        case (.flooding, .warning):
-            return "Tap to view the flood alert in YC."
-        case (.flooding, .watch):
-            return "Tap to view the flood watch in YC."
-        case (.winterWeather, .warning):
-            return "Tap to view the winter weather warning in YC."
-        case (.winterWeather, .watch):
-            return "Tap to view the winter weather watch in YC."
-        case (.winterWeather, .advisory):
-            return "Tap to view the winter weather advisory in YC."
-        case (.thunder, .warning):
-            return "Tap to view the thunderstorm warning in YC."
-        case (.thunder, .watch):
-            return "Tap to view the thunderstorm watch in YC."
-        case (.specialStatement, .statement):
-            return "Tap to view the alert in YC."
-        case (.wind, .warning):
-            return "Tap to view the wind warning in YC."
-        case (.wind, .watch):
-            return "Tap to view the wind watch in YC."
-        default:
-            return "Tap to view the alert in YC."
-        }
     }
 
     private static func notableForecastBody(
@@ -197,9 +134,11 @@ enum NotificationRuleEngine {
     private static func parseSeverityClass(from text: String) -> AlertSeverityClass? {
         let lower = text.lowercased()
 
-        if lower.contains("warning") { return .warning }
-        if lower.contains("watch") { return .watch }
-        if lower.contains("advisory") { return .advisory }
+        // Order matters: check "warning" before "watch" — both are distinct substrings
+        // so there's no containment overlap, but explicit ordering documents intent.
+        if lower.contains("warning")   { return .warning }
+        if lower.contains("watch")     { return .watch }
+        if lower.contains("advisory")  { return .advisory }
         if lower.contains("statement") { return .statement }
 
         return nil
@@ -208,10 +147,13 @@ enum NotificationRuleEngine {
     private static func parseNotableCategory(from text: String) -> NotableForecastCategory {
         let lower = text.lowercased()
 
+        // IMPORTANT: order is significant — more specific patterns must precede broader ones.
+        // e.g. "fog advisory" before "fog", "special weather statement" before "flood".
+        // Do not reorder without checking for substring containment conflicts.
+
         if lower.contains("fog advisory") {
             return .specialStatement
         }
-
         if lower.contains("special weather statement") {
             return .specialStatement
         }
@@ -248,6 +190,14 @@ enum NotificationRuleEngine {
         category: NotableForecastCategory,
         severity: AlertSeverityClass?
     ) -> Bool {
+        // Unknown category means the alert text didn't match any recognised pattern —
+        // don't fire a notification for something we can't classify meaningfully.
+        guard category != .unknown else { return false }
+
+        // Require at least a recognised severity class.
+        // Alerts with no parseable severity are likely malformed or informational only.
+        guard severity != nil else { return false }
+
         return true
     }
 

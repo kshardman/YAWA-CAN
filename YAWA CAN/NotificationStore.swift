@@ -68,17 +68,20 @@ final class NotificationStore: ObservableObject {
         return Set(all[targetKey] ?? [])
     }
 
-    func hasDelivered(id: String, for targetKey: String) -> Bool {
-        deliveredIDs(for: targetKey).contains(id)
-    }
-
     func markDelivered(id: String, for targetKey: String) {
         var all = loadDeliveredIDsDictionary()
         var ids = Set(all[targetKey] ?? [])
         ids.insert(id)
-        all[targetKey] = Array(ids).sorted()
+
+        // Cap at 50 entries per location — IDs are keyed by alert title + issued timestamp
+        // so they accumulate over time. Sorted order ensures we drop the oldest (lexically
+        // earliest) entries first, which works because the issuedAt timestamp is embedded
+        // in the ID string in ISO format.
+        let sorted = Array(ids).sorted()
+        all[targetKey] = sorted.count > 50 ? Array(sorted.suffix(50)) : sorted
+
         saveDeliveredIDsDictionary(all)
-        AppLogger.log("[N1] notification delivered id=\(id) targetKey=\(targetKey)")
+        AppLogger.log("[N1] notification delivered id=\(id) targetKey=\(targetKey) totalIDs=\(all[targetKey]?.count ?? 0)")
     }
 
     func clearDeliveredIDs(for targetKey: String) {
