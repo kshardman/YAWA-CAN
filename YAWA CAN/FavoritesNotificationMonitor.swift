@@ -36,6 +36,69 @@ final class FavoritesNotificationMonitor {
         "\(location.displayName)|\(location.latitude)|\(location.longitude)"
     }
 
+    private func bestAlertForNotification(from alerts: [WeatherAlert]) -> WeatherAlert? {
+        alerts.sorted { lhs, rhs in
+            let lhsSeverity = severityRank(for: lhs)
+            let rhsSeverity = severityRank(for: rhs)
+            if lhsSeverity != rhsSeverity { return lhsSeverity > rhsSeverity }
+
+            let lhsCategory = categoryRank(for: lhs)
+            let rhsCategory = categoryRank(for: rhs)
+            if lhsCategory != rhsCategory { return lhsCategory > rhsCategory }
+
+            switch (lhs.expiresAt, rhs.expiresAt) {
+            case let (l?, r?) where l != r:
+                return l < r
+            case (_?, nil):
+                return true
+            case (nil, _?):
+                return false
+            default:
+                break
+            }
+
+            switch (lhs.issuedAt, rhs.issuedAt) {
+            case let (l?, r?) where l != r:
+                return l > r
+            case (_?, nil):
+                return true
+            case (nil, _?):
+                return false
+            default:
+                return lhs.title < rhs.title
+            }
+        }.first
+    }
+
+    private func severityRank(for alert: WeatherAlert) -> Int {
+        switch alert.severity.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) {
+        case "warning":
+            return 4
+        case "watch":
+            return 3
+        case "advisory":
+            return 2
+        case "statement":
+            return 1
+        default:
+            return 0
+        }
+    }
+
+    private func categoryRank(for alert: WeatherAlert) -> Int {
+        let text = "\(alert.title) \(alert.severity)".lowercased()
+
+        if text.contains("flood") { return 8 }
+        if text.contains("freezing rain") || text.contains("ice") || text.contains("icy") || text.contains("winter") || text.contains("snow") || text.contains("blizzard") { return 7 }
+        if text.contains("thunder") || text.contains("storm") { return 6 }
+        if text.contains("wind") { return 5 }
+        if text.contains("heat") { return 4 }
+        if text.contains("cold") || text.contains("freeze") || text.contains("frost") { return 3 }
+        if text.contains("air quality") || text.contains("smoke") { return 2 }
+        if text.contains("fog") { return 1 }
+        return 0
+    }
+
     func evaluateFavorites(_ favorites: [MonitoredFavoriteLocation]) async {
         let monitoredFavorites = favorites
         guard !monitoredFavorites.isEmpty else {
@@ -58,17 +121,41 @@ final class FavoritesNotificationMonitor {
 
                 let topAlert: WeatherAlert?
                 if favorite.countryCode == "CA" {
-                    let alerts = try await alertService.fetchAlerts(
-                        withDelta: 0.20,
-                        for: CLLocationCoordinate2D(
-                            latitude: favorite.latitude,
-                            longitude: favorite.longitude
-                        ),
+                    let coordinate = CLLocationCoordinate2D(
+                        latitude: favorite.latitude,
+                        longitude: favorite.longitude
+                    )
+
+                    let tightAlerts = try await alertService.fetchAlerts(
+                        withDelta: 0.15,
+                        for: coordinate,
                         countryCode: favorite.countryCode
                     )
-                    topAlert = alerts
-                        .sorted { ($0.expiresAt ?? .distantFuture) < ($1.expiresAt ?? .distantFuture) }
-                        .first
+
+                    let candidateAlerts: [WeatherAlert]
+                    if tightAlerts.isEmpty {
+                        AppLogger.log("[N1] favorites monitor no alerts in tight range for \(favorite.displayName) (Δ0.15) — widening to Δ0.75")
+                        candidateAlerts = try await alertService.fetchAlerts(
+                            withDelta: 0.75,
+                            for: coordinate,
+                            countryCode: favorite.countryCode
+                        )
+                    } else {
+                        candidateAlerts = tightAlerts
+                    }
+
+                    if candidateAlerts.isEmpty {
+                        AppLogger.log("[N1] favorites monitor no Canada alerts found for \(favorite.displayName)")
+                    }
+
+                    topAlert = bestAlertForNotification(from: candidateAlerts)
+
+                    if let topAlert {
+                        let expiresText = topAlert.expiresAt?.description ?? "nil"
+                        AppLogger.log("[N1] favorites monitor selected top alert for \(favorite.displayName): title=\(topAlert.title) severity=\(topAlert.severity) expiresAt=\(expiresText)")
+                    } else {
+                        AppLogger.log("[N1] favorites monitor top alert unavailable for \(favorite.displayName)")
+                    }
                 } else {
                     topAlert = nil
                 }
@@ -83,6 +170,7 @@ final class FavoritesNotificationMonitor {
                 }
 
                 let prefs = NotificationStore().loadPreferences()
+                AppLogger.log("[N1] favorites monitor prefs for \(favorite.displayName): forecastAlertsEnabled=\(prefs.forecastAlertsEnabled)")
                 let timeZone = TimeZone(identifier: snapshot.timezoneIdentifier) ?? .current
                 var calendar = Calendar.current
                 calendar.timeZone = timeZone
@@ -97,6 +185,16 @@ final class FavoritesNotificationMonitor {
 
                 if !candidates.isEmpty {
                     AppLogger.log("[N1] favorites monitor candidates for \(favorite.displayName): \(candidates.map { $0.id })")
+                }
+
+                if candidates.isEmpty {
+                    if !prefs.forecastAlertsEnabled {
+                        AppLogger.log("[N1] favorites monitor no candidates for \(favorite.displayName): forecastAlertsEnabled=false")
+                    } else if topAlert == nil {
+                        AppLogger.log("[N1] favorites monitor no candidates for \(favorite.displayName): no qualifying alert summary attached")
+                    } else {
+                        AppLogger.log("[N1] favorites monitor no candidates for \(favorite.displayName): selected alert did not qualify for notableForecast")
+                    }
                 }
 
                 let evaluatedCandidates = candidates.map {

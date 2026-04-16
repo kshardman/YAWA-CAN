@@ -208,6 +208,14 @@ private extension SettingsView {
                 Task {
                     let granted = await notifications.requestAuthorizationIfNeeded()
                     print("[N1] granted=\(granted)")
+
+                    if granted {
+                        let store = NotificationStore()
+                        var prefs = store.loadPreferences()
+                        prefs.forecastAlertsEnabled = true
+                        store.savePreferences(prefs)
+                        AppLogger.log("[N1] normal notification-permission flow saved forecastAlertsEnabled=true")
+                    }
                 }
             } label: {
                 HStack {

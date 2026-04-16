@@ -13,7 +13,7 @@ struct NotificationPreferences: Codable, Equatable {
     var hasSeenEducation: Bool
 
     static let `default` = NotificationPreferences(
-        forecastAlertsEnabled: false,
+        forecastAlertsEnabled: true,
         hasSeenEducation: false
     )
 }
