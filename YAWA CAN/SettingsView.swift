@@ -197,7 +197,7 @@ private extension SettingsView {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(primaryText)
 
-                Text("Forecast alerts are still in development. This temporary section is only for testing notification permission and delivery.")
+                Text("Enable notifications to receive important alert updates for monitored favorites.")
                     .font(.caption)
                     .foregroundStyle(secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
@@ -226,6 +226,7 @@ private extension SettingsView {
                 .contentShape(Rectangle())
             }
 
+#if DEBUG
             Button {
                 Task {
                     let granted = await notifications.requestAuthorizationIfNeeded()
@@ -249,7 +250,6 @@ private extension SettingsView {
                 }
                 .contentShape(Rectangle())
             }
-
 
             Button {
                 lightHaptic()
@@ -416,6 +416,7 @@ let interval = max(1, candidate.fireDate.timeIntervalSinceNow)
                 }
                 .contentShape(Rectangle())
             }
+#endif
 
             Button {
                 lightHaptic()

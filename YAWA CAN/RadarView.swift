@@ -627,7 +627,7 @@ struct RadarView: View {
                                         .font(.headline.weight(.semibold))
                                 }
                                 .disabled(frames.isEmpty)
-                                .modifier(GlassCircleButtonModifier(size: 44))
+                                .modifier(GlassCircleButtonModifier(size: 54))
                                 .accessibilityLabel(isPlaying ? "Pause" : "Play")
                             }
                             .padding(.trailing, 14)
