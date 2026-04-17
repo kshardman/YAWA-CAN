@@ -624,7 +624,7 @@ struct RadarView: View {
                                     togglePlayback()
                                 } label: {
                                     Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                                        .font(.headline.weight(.semibold))
+                                        .font(.title2.weight(.semibold))
                                 }
                                 .disabled(frames.isEmpty)
                                 .modifier(GlassCircleButtonModifier(size: 54))
