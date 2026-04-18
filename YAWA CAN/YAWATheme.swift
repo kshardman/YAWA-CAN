@@ -2,7 +2,7 @@
 //  YAWATheme.swift
 //  YAWA
 //
-//  Created by xcode and chatgpt on 1/10/26.
+//  Created by xcode on 1/10/26.
 //
 
 
@@ -26,8 +26,26 @@ enum YAWATheme {
 
     // MARK: - Semantic (adaptive) — mirrors YAWA-PWS
 
-    static func background(for scheme: ColorScheme) -> Color {
-        scheme == .dark ? sky : Color(.systemBackground)
+    static func background(for scheme: ColorScheme) -> LinearGradient {
+        if scheme == .dark {
+            return LinearGradient(
+                colors: [
+                    sky,
+                    Color(red: 0.02, green: 0.08, blue: 0.20)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        } else {
+            return LinearGradient(
+                colors: [
+                    Color(red: 0.72, green: 0.87, blue: 0.97),  // pale sky blue
+                    Color(red: 0.91, green: 0.95, blue: 0.99)   // near-white blue-white
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
     }
 
     /// Alias used by some views (e.g. NOAA/CAN ContentView) — matches `cardFill`.
@@ -38,7 +56,7 @@ enum YAWATheme {
     static func cardFill(for scheme: ColorScheme) -> Color {
         scheme == .dark
         ? Color(red: 0.02, green: 0.06, blue: 0.13).opacity(0.88)
-        : Color.black.opacity(0.035)   // 👈 Apple Weather-ish
+        : Color.white.opacity(0.75)   // frosted glass against the blue sky gradient
     }
 
     static func cardStroke(for scheme: ColorScheme) -> Color {

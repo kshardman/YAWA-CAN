@@ -167,7 +167,7 @@ struct ContentView: View {
     @State private var pendingRefresh = false
     @State private var pendingRefreshShowsLoading = false
 
-    private var appBackground: Color {
+    private var appBackground: LinearGradient {
         YAWATheme.background(for: colorScheme)
     }
 
@@ -410,6 +410,13 @@ struct ContentView: View {
                     Text(locationUnitsSubtitle)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+
+                    if let lastUpdatedAt {
+                        Text("Updated \(lastUpdatedText(lastUpdatedAt))")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 }
                 Spacer()
             }
@@ -460,13 +467,6 @@ struct ContentView: View {
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-
-                    if let lastUpdatedAt {
-                        Text("Updated \(lastUpdatedText(lastUpdatedAt))")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
                 }
                 Spacer()
                 let nowSymbol = nowSymbolName(for: snap)
