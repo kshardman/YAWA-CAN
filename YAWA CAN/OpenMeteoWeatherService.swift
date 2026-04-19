@@ -53,7 +53,10 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
             throw URLError(.badURL)
         }
 
-        let (data, response) = try await openMeteoSession.data(from: url)
+        async let weatherFetch = openMeteoSession.data(from: url)
+        async let airQualityFetch = fetchAirQuality(coordinate: coordinate)
+
+        let (data, response) = try await weatherFetch
 
         if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
             throw URLError(.badServerResponse)
@@ -104,6 +107,8 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
             return SunTimes(sunrise: sunrise, sunset: sunset)
         }()
 
+        let airQuality = await airQualityFetch
+
         return WeatherSnapshot(
             locationName: name,
             timeZoneID: decoded.timezone,
@@ -113,7 +118,8 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
             hourlyTimeISO: hourlyTimes,
             hourlyWeatherCodes: hourlyCodes,
             hourlyPrecipChancePercent: hourlyPrecip,
-            sun: sun
+            sun: sun,
+            airQuality: airQuality
         )
     }
 
@@ -331,6 +337,30 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
         }
     }
 
+    private func fetchAirQuality(coordinate: CLLocationCoordinate2D) async -> AirQualityData? {
+        var comps = URLComponents(string: "https://air-quality-api.open-meteo.com/v1/air-quality")!
+        comps.queryItems = [
+            .init(name: "latitude",  value: String(coordinate.latitude)),
+            .init(name: "longitude", value: String(coordinate.longitude)),
+            .init(name: "current",   value: "us_aqi,pm2_5"),
+            .init(name: "timezone",  value: "auto")
+        ]
+
+        guard let url = comps.url else { return nil }
+
+        do {
+            let (data, response) = try await openMeteoSession.data(from: url)
+            guard let http = response as? HTTPURLResponse,
+                  (200...299).contains(http.statusCode) else { return nil }
+
+            let decoded = try JSONDecoder().decode(OpenMeteoAirQualityResponse.self, from: data)
+            guard let aqi = decoded.current.us_aqi else { return nil }
+            return AirQualityData.from(usAQI: aqi, pm25: decoded.current.pm2_5)
+        } catch {
+            return nil
+        }
+    }
+
     private func mapWeather(code: Int) -> (symbol: String, text: String) {
         // WMO weather codes (Open-Meteo uses these)
         switch code {
@@ -374,7 +404,16 @@ struct OpenMeteoWeatherService: WeatherServiceProtocol {
     }
 }
 
-// MARK: - Open-Meteo response types
+// MARK: - Air Quality response types
+
+private struct OpenMeteoAirQualityResponse: Decodable {
+    let current: AirQualityCurrent
+
+    struct AirQualityCurrent: Decodable {
+        let us_aqi: Int?
+        let pm2_5: Double?
+    }
+}
 
 private struct OpenMeteoResponse: Decodable {
     let timezone: String
@@ -416,4 +455,3 @@ private struct OpenMeteoResponse: Decodable {
         let wind_direction_10m_dominant: [Double]
     }
 }
-

@@ -202,6 +202,7 @@ struct ContentView: View {
                                 dailyTile(snap)
                                 radarCard()
                                 comfortTile(snap)
+                                airQualityTile(snap)
                                 sunTile(snap)
                             } else if !viewModel.isLoading && viewModel.errorMessage == nil {
                                 Text("No weather loaded yet.")
@@ -556,6 +557,103 @@ struct ContentView: View {
             .padding(.top, 2)
         }
         .tileStyle()
+    }
+
+    private func airQualityTile(_ snap: WeatherSnapshot) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+
+            // Header
+            HStack(spacing: 6) {
+                Image(systemName: "aqi.medium")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(YAWATheme.symbolColor("aqi.medium", scheme: colorScheme))
+                Text("Air Quality")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+            }
+
+            if let aq = snap.airQuality {
+                HStack(alignment: .center, spacing: 14) {
+
+                    // AQI number + category
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text("\(aq.usAQI)")
+                                .font(.system(size: 48, weight: .bold, design: .rounded))
+                                .foregroundStyle(aqiColor(aq.categoryColor, scheme: colorScheme))
+                            Text("AQI")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+                                .padding(.bottom, 8)
+                        }
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(aqiColor(aq.categoryColor, scheme: colorScheme))
+                                .frame(width: 8, height: 8)
+                            Text(aq.category)
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(aqiColor(aq.categoryColor, scheme: colorScheme))
+                        }
+                    }
+
+                    Spacer()
+
+                    // PM2.5 secondary stat
+                    if let pm25 = aq.pm25 {
+                        VStack(alignment: .trailing, spacing: 3) {
+                            Text(String(format: "%.1f", pm25))
+                                .font(.title2.weight(.semibold))
+                                .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
+                            Text(pm25Label(for: aq.categoryColor))
+                                .font(.caption)
+                                .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+                        }
+                    }
+                }
+
+                // AQI scale bar
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Color.secondary.opacity(0.15))
+                            .frame(height: 6)
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(aqiColor(aq.categoryColor, scheme: colorScheme))
+                            .frame(width: geo.size.width * min(1.0, Double(aq.usAQI) / 300.0), height: 6)
+                    }
+                }
+                .frame(height: 6)
+
+            } else {
+                Text("Air quality data unavailable.")
+                    .font(.subheadline)
+                    .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+                    .padding(.vertical, 6)
+            }
+        }
+        .tileStyle()
+    }
+
+    private func pm25Label(for category: AirQualityData.AQIColor) -> String {
+        switch category {
+        case .green:  return "Fine particles"
+        case .yellow: return "Some fine particles"
+        case .orange: return "Elevated fine particles"
+        case .red:    return "High fine particles"
+        case .purple: return "Very high fine particles"
+        case .maroon: return "Hazardous particles"
+        }
+    }
+
+    private func aqiColor(_ category: AirQualityData.AQIColor, scheme: ColorScheme) -> Color {
+        switch category {
+        case .green:  return Color(red: 0.18, green: 0.72, blue: 0.38)
+        case .yellow: return Color(red: 0.85, green: 0.70, blue: 0.10)
+        case .orange: return Color(red: 0.95, green: 0.50, blue: 0.10)
+        case .red:    return Color(red: 0.85, green: 0.18, blue: 0.18)
+        case .purple: return Color(red: 0.55, green: 0.18, blue: 0.72)
+        case .maroon: return Color(red: 0.50, green: 0.05, blue: 0.10)
+        }
     }
 
     private func nowSymbolName(for snap: WeatherSnapshot) -> String {
