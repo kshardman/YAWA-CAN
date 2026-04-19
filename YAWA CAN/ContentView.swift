@@ -446,22 +446,17 @@ struct ContentView: View {
                         Image(systemName: "clock")
                             .font(.subheadline.weight(.semibold))
                             .symbolRenderingMode(.hierarchical)
-                            .foregroundStyle(
-                                viewModel.isLoading
-                                ? Color.cyan.opacity(colorScheme == .dark ? 0.92 : 0.78)
-                                : YAWATheme.symbolColor("clock", scheme: colorScheme)
-                            )
+                            .foregroundStyle(YAWATheme.symbolColor("clock", scheme: colorScheme))
                             .opacity(0.9)
-                            .rotationEffect(.degrees(viewModel.isLoading ? 360 : 0))
-                            .animation(
-                                viewModel.isLoading
-                                ? .linear(duration: 0.9).repeatForever(autoreverses: false)
-                                : .easeOut(duration: 0.18),
-                                value: viewModel.isLoading
-                            )
 
                         Text("Now")
                             .font(.headline)
+
+                        if viewModel.isLoading {
+                            ProgressView()
+                                .scaleEffect(0.7)
+                                .tint(.secondary)
+                        }
                     }
                     Text(snap.current.conditionText)
                         .font(.callout)
@@ -846,6 +841,12 @@ struct ContentView: View {
                 let iconW: CGFloat = 36
                 
                 let sym = day.symbolName
+                let isTonight: Bool = {
+                    guard let sunset = snap.sun?.sunset else { return false }
+                    var cal = Calendar(identifier: .gregorian)
+                    cal.timeZone = TimeZone(identifier: snap.timeZoneID) ?? .current
+                    return cal.isDateInToday(day.date) && Date() > sunset
+                }()
                 Button {
                     selectedDaySelection = ForecastDetailSelection(
                         days: days,
@@ -860,7 +861,7 @@ struct ContentView: View {
                         // Left block: weekday/date/icon/PoP (modified)
                         HStack(spacing: 4) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(weekdayLabel(day.date, timeZoneID: snap.timeZoneID))
+                                Text(weekdayLabel(day.date, timeZoneID: snap.timeZoneID, sunset: snap.sun?.sunset))
                                     .font(.subheadline.weight(.semibold))
                                     .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
                                     .lineLimit(1)
@@ -917,7 +918,7 @@ struct ContentView: View {
                         
                         // High/Low
                         HStack(spacing: 3) {
-                            Text(tempDisplay(day.highC))
+                            Text(isTonight ? "—" : tempDisplay(day.highC))
                             Text("/")
                                 .foregroundStyle(.secondary)
                             Text(tempDisplay(day.lowC))
@@ -1278,12 +1279,16 @@ struct ContentView: View {
         (celsius * 9.0 / 5.0) + 32.0
     }
     
-    private func weekdayLabel(_ date: Date, timeZoneID: String) -> String {
+    private func weekdayLabel(_ date: Date, timeZoneID: String, sunset: Date? = nil) -> String {
         let tz = TimeZone(identifier: timeZoneID) ?? .current
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = tz
 
         if cal.isDateInToday(date) {
+            // Show "Tonight" if we're past sunset
+            if let sunset, Date() > sunset {
+                return "Tonight"
+            }
             return "Today"
         }
         if cal.isDateInTomorrow(date) {
@@ -1326,7 +1331,7 @@ struct ContentView: View {
     private func lastUpdatedText(_ date: Date) -> String {
         let f = DateFormatter()
         f.locale = .current
-        f.dateFormat = "h:mm:ss a"
+        f.dateFormat = "h:mm a"
         return f.string(from: date)
     }
 
