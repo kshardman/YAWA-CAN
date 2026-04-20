@@ -1152,9 +1152,9 @@ struct ContentView: View {
                         .opacity(0.9)
                 }
 
-                Text("Tap to view interactive radar")
-                    .font(.callout)
-                    .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+                Text("View live radar")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
 
                 Text("Source: rainviewer.com")
                     .font(.caption)
