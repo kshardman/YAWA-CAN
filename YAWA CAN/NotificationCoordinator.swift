@@ -103,16 +103,22 @@ final class NotificationCoordinator: ObservableObject {
         case .authorized, .provisional, .ephemeral:
             return true
         case .denied:
+            #if DEBUG
             print("[N1] notification authorization denied")
+            #endif
             return false
         case .notDetermined:
             do {
                 let granted = try await center.requestAuthorization(options: [.alert, .sound, .badge])
+                #if DEBUG
                 print("[N1] requestAuthorization result=\(granted)")
+                #endif
                 await refreshAuthorizationStatus()
                 return granted
             } catch {
+                #if DEBUG
                 print("[N1] requestAuthorization failed: \(error)")
+                #endif
                 return false
             }
         @unknown default:
@@ -125,15 +131,21 @@ final class NotificationCoordinator: ObservableObject {
         selectedLocationKey: String
     ) async {
         let prefs = store.loadPreferences()
+        #if DEBUG
         print("[N1] reevaluate start enabled=\(prefs.forecastAlertsEnabled) targetKey=\(selectedLocationKey)")
+        #endif
         guard prefs.forecastAlertsEnabled else { return }
 
         await refreshAuthorizationStatus()
+        #if DEBUG
         print("[N1] authorization status=\(authorizationStatus.rawValue)")
+        #endif
         guard authorizationStatus == .authorized ||
               authorizationStatus == .provisional ||
               authorizationStatus == .ephemeral else {
+            #if DEBUG
             print("[N1] reevaluate aborted: notifications not authorized")
+            #endif
             return
         }
 
@@ -148,7 +160,9 @@ final class NotificationCoordinator: ObservableObject {
             timeZone: timeZone,
             preferences: prefs
         )
+        #if DEBUG
         print("[N1] candidates count=\(candidates.count)")
+        #endif
 
         guard let winner = candidates.sorted(by: { lhs, rhs in
             if lhs.kind == .notableForecast && rhs.kind != .notableForecast {
@@ -165,10 +179,14 @@ final class NotificationCoordinator: ObservableObject {
             }
             return lhs.id < rhs.id
         }).first else {
+            #if DEBUG
             print("[N1] reevaluate complete: no winning candidate")
+            #endif
             return
         }
+        #if DEBUG
         print("[N1] winner id=\(winner.id) fireDate=\(winner.fireDate)")
+        #endif
 
         await scheduleCandidateIfNeeded(
             winner,
@@ -188,7 +206,9 @@ final class NotificationCoordinator: ObservableObject {
     ) async {
         let alreadyDelivered = store.deliveredIDs(for: targetKey)
         guard !alreadyDelivered.contains(winner.id) else {
+            #if DEBUG
             AppLogger.log("[N1] \(logPrefix) aborted: winner already scheduled/notified id=\(winner.id)")
+            #endif
             return
         }
         let cooldownKey = lastScheduledAtKey(for: targetKey)
@@ -198,7 +218,9 @@ final class NotificationCoordinator: ObservableObject {
             let elapsedSinceFavoritesMonitor = Date().timeIntervalSince(lastFavoritesMonitorScheduleAt)
             if elapsedSinceFavoritesMonitor < favoritesMonitorSuppressionInterval {
                 let remaining = favoritesMonitorSuppressionInterval - elapsedSinceFavoritesMonitor
+                #if DEBUG
                 AppLogger.log("[N1] \(logPrefix) aborted: favorites-monitor suppression active location=\(winner.locationName) remaining=\(remaining)")
+                #endif
                 return
             }
         }
@@ -207,7 +229,9 @@ final class NotificationCoordinator: ObservableObject {
             let elapsed = Date().timeIntervalSince(lastScheduledAt)
             guard elapsed >= schedulingCooldownInterval else {
                 let remaining = schedulingCooldownInterval - elapsed
+                #if DEBUG
                 AppLogger.log("[N1] \(logPrefix) aborted: cooldown active location=\(winner.locationName) remaining=\(remaining)")
+                #endif
                 return
             }
         }
@@ -234,16 +258,24 @@ final class NotificationCoordinator: ObservableObject {
         let requestID = "yc.forecast.\(winner.id)"
         let request = UNNotificationRequest(identifier: requestID, content: content, trigger: trigger)
 
+        #if DEBUG
         AppLogger.log("[N1] scheduling requestID=\(requestID) interval=\(interval) fireDate=\(winner.fireDate) location=\(winner.locationName) targetKey=\(targetKey) logPrefix=\(logPrefix)")
+        #endif
 
         do {
             try await center.add(request)
+            #if DEBUG
             AppLogger.log("[N1] scheduled requestID=\(requestID) interval=\(interval) targetKey=\(targetKey)")
+            #endif
+            #if DEBUG
             AppLogger.log("[N1] notification content title=\(content.title) body=\(content.body)")
+            #endif
 
             let appState = await MainActor.run { UIApplication.shared.applicationState }
             if appState == .active {
+                #if DEBUG
                 AppLogger.log("[N1] note: YC is active, so the notification banner may not appear while the app is open")
+                #endif
             }
 
             store.markDelivered(id: winner.id, for: targetKey)
@@ -264,7 +296,9 @@ final class NotificationCoordinator: ObservableObject {
                 generator.notificationOccurred(.success)
             }
         } catch {
+            #if DEBUG
             AppLogger.log("[N1] failed to schedule requestID=\(requestID) error=\(error)")
+            #endif
         }
     }
 
@@ -295,9 +329,13 @@ final class NotificationCoordinator: ObservableObject {
 
         do {
             try await center.add(request)
+            #if DEBUG
             print("[N1] test notification scheduled")
+            #endif
         } catch {
+            #if DEBUG
             print("[N1] test notification failed: \(error)")
+            #endif
         }
     }
 
@@ -307,14 +345,18 @@ final class NotificationCoordinator: ObservableObject {
             .map(\.identifier)
             .filter { $0.hasPrefix("yc.forecast.") }
 
+        #if DEBUG
         print("[N1] removing scheduled forecast alerts count=\(ids.count)")
+        #endif
         center.removePendingNotificationRequests(withIdentifiers: ids)
     }
 
     func clearAllSystemNotifications() async {
         center.removeAllPendingNotificationRequests()
         center.removeAllDeliveredNotifications()
+        #if DEBUG
         AppLogger.log("[N1] cleared ALL system notifications (pending + delivered)")
+        #endif
     }
 
     func openSystemSettings() {

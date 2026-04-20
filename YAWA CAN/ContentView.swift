@@ -280,14 +280,20 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
+                #if DEBUG
                 AppLogger.log("[N1] YC foregrounded at \(Date())")
+                #endif
                 Task { @MainActor in
                     await refreshOnForegroundIfNeeded()
                 }
             } else if newPhase == .inactive {
+                #if DEBUG
                 AppLogger.log("[N1] YC inactive at \(Date())")
+                #endif
             } else if newPhase == .background {
+                #if DEBUG
                 AppLogger.log("[N1] YC backgrounded at \(Date())")
+                #endif
             }
         }
         .sheet(item: $selectedDaySelection) { selection in
@@ -769,7 +775,9 @@ struct ContentView: View {
             expectedLatitude: location.latitude,
             expectedLongitude: location.longitude
         )
+        #if DEBUG
         AppLogger.log("[Alerts] skipping fetch for non-CA location: \(location.displayName) countryCode=\(countryCode)")
+        #endif
     }
 
     private func fetchAlertsForLocation(_ location: SavedLocation, countryCode: String) async throws -> [WeatherAlert] {
@@ -778,16 +786,22 @@ struct ContentView: View {
         let tightDelta = 0.15
         let wideDelta  = 0.75
 
+        #if DEBUG
         AppLogger.log("[Alerts] starting fetch for: \(location.displayName) (\(location.latitude), \(location.longitude))")
+        #endif
 
         let tightAlerts = try await service.fetchAlerts(withDelta: tightDelta, for: coordinate, countryCode: countryCode)
 
         if !tightAlerts.isEmpty {
+            #if DEBUG
             AppLogger.log("[Alerts] found \(tightAlerts.count) alerts in tight range (Δ\(tightDelta))")
+            #endif
             return tightAlerts
         }
 
+        #if DEBUG
         AppLogger.log("[Alerts] no alerts in tight range (Δ\(tightDelta)) — widening to Δ\(wideDelta)")
+        #endif
         return try await service.fetchAlerts(withDelta: wideDelta, for: coordinate, countryCode: countryCode)
     }
 
@@ -798,7 +812,9 @@ struct ContentView: View {
         countryCode: String
     ) async {
         guard isStillCurrentLocation(requestedLocation, countryCode: countryCode) else {
+            #if DEBUG
             AppLogger.log("[Alerts] result discarded — location changed from \(requestedLocation.displayName)")
+            #endif
             return
         }
 
@@ -810,7 +826,9 @@ struct ContentView: View {
             expectedLatitude: requestedLocation.latitude,
             expectedLongitude: requestedLocation.longitude
         )
+        #if DEBUG
         AppLogger.log("[Alerts] final active alerts count: \(activeAlerts.count)")
+        #endif
     }
 
     @MainActor
@@ -820,11 +838,15 @@ struct ContentView: View {
         countryCode: String
     ) async {
         guard isStillCurrentLocation(requestedLocation, countryCode: countryCode) else {
+            #if DEBUG
             AppLogger.log("[Alerts] fetch failure discarded — location changed from \(requestedLocation.displayName)")
+            #endif
             return
         }
 
+        #if DEBUG
         AppLogger.log("[Alerts] fetch failed for \(requestedLocation.displayName): \(error.localizedDescription)")
+        #endif
         activeAlerts = []
         viewModel.updateNotificationSnapshotForecastAlert(
             nil,
@@ -1493,7 +1515,9 @@ struct ContentView: View {
     private func clearNotificationRouteUIState() {
         pendingNotificationRoute = nil
         selectedDaySelection = nil
+        #if DEBUG
         AppLogger.log("[N1] cleared in-app notification route UI state")
+        #endif
     }
 
     private func handleNotificationRoute(_ route: NotificationRoute) {
@@ -1524,7 +1548,9 @@ struct ContentView: View {
             }
         }
 
+        #if DEBUG
         print("[N1] tapped notification kind=\(route.kind) location=\(route.locationName) targetDateISO=\(route.targetDateISO ?? "nil")")
+        #endif
     }
 
     private func applyPendingNotificationRouteIfPossible(snapshot: WeatherSnapshot) {
@@ -1544,13 +1570,17 @@ struct ContentView: View {
         let sameName = !selectedName.isEmpty && selectedName.caseInsensitiveCompare(routeName) == .orderedSame
 
         guard sameCoordinates || sameName else {
+            #if DEBUG
             AppLogger.log("[N1] pending route waiting for matching location kind=\(route.kind) route=\(route.locationName) selected=\(selectedName)")
+            #endif
             return
         }
 
         if route.kind == "notableForecast" {
             pendingNotificationRoute = nil
+            #if DEBUG
             AppLogger.log("[N1] notableForecast route applied to main screen only")
+            #endif
             return
         }
 
@@ -1583,13 +1613,17 @@ struct ContentView: View {
 
         guard let targetDate else {
             pendingNotificationRoute = nil
+            #if DEBUG
             AppLogger.log("[N1] route date parse failed kind=\(route.kind) targetDateISO=\(targetDateISO)")
+            #endif
             return
         }
 
         guard let matchIndex = days.firstIndex(where: { cal.isDate($0.date, inSameDayAs: targetDate) }) else {
             pendingNotificationRoute = nil
+            #if DEBUG
             AppLogger.log("[N1] no forecast day matched route kind=\(route.kind) targetDateISO=\(targetDateISO)")
+            #endif
             return
         }
 
@@ -1604,7 +1638,9 @@ struct ContentView: View {
         forecastDetailDetent = .fraction(0.70)
         pendingNotificationRoute = nil
 
+        #if DEBUG
         AppLogger.log("[N1] opened forecast detail from notification route kind=\(route.kind) index=\(matchIndex) dateISO=\(targetDateISO)")
+        #endif
     }
 
     private var snapshotLocationLatitude: Double {
@@ -1642,12 +1678,16 @@ struct ContentView: View {
         let elapsed = now - lastFavoritesMonitorAutoRunAt
 
         guard elapsed >= throttle else {
+            #if DEBUG
             AppLogger.log("[N1] auto favorites monitor skipped: throttle active remaining=\(throttle - elapsed)")
+            #endif
             return
         }
 
         lastFavoritesMonitorAutoRunAt = now
+        #if DEBUG
         AppLogger.log("[N1] auto favorites monitor starting on foreground")
+        #endif
 
         Task {
             let monitoredKeys = Set(UserDefaults.standard.stringArray(forKey: "YCBackgroundMonitoredFavorites") ?? [])
@@ -1665,7 +1705,9 @@ struct ContentView: View {
                     )
                 }
             guard !monitoredFavorites.isEmpty else {
+                #if DEBUG
                 AppLogger.log("[N1] auto favorites monitor skipped: no bell-selected favorites")
+                #endif
                 return
             }
             await favoritesNotificationMonitor.evaluateFavorites(monitoredFavorites)
@@ -1678,7 +1720,9 @@ struct ContentView: View {
     @MainActor
     private func clearFavoritesMonitorAutoRunThrottle() {
         lastFavoritesMonitorAutoRunAt = 0
+        #if DEBUG
         AppLogger.log("[N1] cleared favorites-monitor auto-run throttle")
+        #endif
     }
 
     private func openRadar() {

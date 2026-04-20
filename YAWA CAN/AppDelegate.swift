@@ -5,7 +5,6 @@
 //  Created by Keith Sharman on 4/4/26.
 //
 
-
 import UIKit
 import BackgroundTasks
 import Foundation
@@ -27,7 +26,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
-        let didRegister = BGTaskScheduler.shared.register(
+        BGTaskScheduler.shared.register(
             forTaskWithIdentifier: Self.appRefreshIdentifier,
             using: nil
         ) { task in
