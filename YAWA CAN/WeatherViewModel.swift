@@ -53,6 +53,7 @@ final class WeatherViewModel: ObservableObject {
         longitude: Double,
         locationName: String?,
         service: OpenMeteoWeatherService,
+        forecastDays: Int = 7,
         showLoading: Bool = true
     ) async {
         loadGeneration &+= 1
@@ -71,7 +72,8 @@ final class WeatherViewModel: ObservableObject {
             do {
                 let snapshot = try await service.fetchWeather(
                     coordinate: CLLocationCoordinate2D(latitude: latitude, longitude: longitude),
-                    locationName: locationName
+                    locationName: locationName,
+                    forecastDays: forecastDays
                 )
                 guard !Task.isCancelled else {
                     return

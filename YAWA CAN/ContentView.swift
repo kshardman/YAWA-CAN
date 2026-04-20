@@ -123,6 +123,7 @@ struct ContentView: View {
             longitude: loc.longitude,
             locationName: loc.displayName,
             service: weatherService,
+            forecastDays: forecastDaysToShow,
             showLoading: showLoading
         )
 
