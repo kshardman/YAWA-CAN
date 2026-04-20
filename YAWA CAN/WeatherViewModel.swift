@@ -137,7 +137,6 @@ final class WeatherViewModel: ObservableObject {
             pendingNotificationRouteLongitude = nil
             pendingNotificationRouteLocationName = nil
         }
-        print("[N1] WeatherViewModel load succeeded for \(resolvedName)")
 
         guard let notificationSnapshot = makeNotificationSnapshot(
             from: snapshot,
@@ -145,7 +144,6 @@ final class WeatherViewModel: ObservableObject {
             longitude: longitude,
             locationName: resolvedName
         ) else {
-            print("[N1] notification snapshot mapping unavailable")
             return
         }
 
@@ -156,8 +154,6 @@ final class WeatherViewModel: ObservableObject {
         )
 
         notificationStore.saveSnapshot(notificationSnapshot, for: targetKey)
-        print("[N1] notification snapshot saved for \(notificationSnapshot.locationName) targetKey=\(targetKey)")
-        print("[N1] foreground notification scheduling disabled; BG task owns notification evaluation")
     }
 
     private func makeNotificationSnapshot(
@@ -252,7 +248,6 @@ final class WeatherViewModel: ObservableObject {
                 return
             }
 
-            print("[N1] notification alert update ignored due to location mismatch expected=\(expectedLocationName) actual=\(locationName)")
             return
         }
 
@@ -291,8 +286,6 @@ final class WeatherViewModel: ObservableObject {
         )
 
         notificationStore.saveSnapshot(updatedSnapshot, for: targetKey)
-        print("[N1] notification snapshot alert-updated for \(updatedSnapshot.locationName) targetKey=\(targetKey) alert=\(alertSummary?.title ?? "none")")
-        print("[N1] foreground notification scheduling skipped after alert update; BG task owns notification evaluation")
     }
 
 }

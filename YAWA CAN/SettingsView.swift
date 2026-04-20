@@ -10,12 +10,6 @@ import UIKit
 import CoreLocation
 import UserNotifications
 
-
-
-
-
-
-
 struct SettingsView: View {
     @StateObject private var appearanceSettings = AppearanceSettings()
     @StateObject private var notifications = NotificationCoordinator()
@@ -207,14 +201,12 @@ private extension SettingsView {
             Button {
                 Task {
                     let granted = await notifications.requestAuthorizationIfNeeded()
-                    print("[N1] granted=\(granted)")
 
                     if granted {
                         let store = NotificationStore()
                         var prefs = store.loadPreferences()
                         prefs.forecastAlertsEnabled = true
                         store.savePreferences(prefs)
-                        AppLogger.log("[N1] normal notification-permission flow saved forecastAlertsEnabled=true")
                     }
                 }
             } label: {
@@ -230,14 +222,12 @@ private extension SettingsView {
             Button {
                 Task {
                     let granted = await notifications.requestAuthorizationIfNeeded()
-                    print("[N1] granted=\(granted)")
 
                     if granted {
                         let store = NotificationStore()
                         var prefs = store.loadPreferences()
                         prefs.forecastAlertsEnabled = true
                         store.savePreferences(prefs)
-                        print("[N1] forecastAlertsEnabled set to true")
 
                         await notifications.scheduleTestNotification()
                     }
@@ -260,9 +250,6 @@ private extension SettingsView {
                     defaults.removeObject(forKey: key)
                 }
                 defaults.removeObject(forKey: "yc.notifications.lastFavoritesMonitorScheduleAt")
-                AppLogger.log("[N1] cleared notification debug state")
-                AppLogger.log("[N1] cleared notification cooldown timestamps")
-                AppLogger.log("[N1] cleared favorites-monitor suppression timestamp")
                 NotificationCenter.default.post(name: .ycNotificationDebugStateCleared, object: nil)
             } label: {
                 HStack {
@@ -288,9 +275,6 @@ private extension SettingsView {
                     }
                     defaults.removeObject(forKey: "yc.notifications.lastFavoritesMonitorScheduleAt")
 
-                    AppLogger.log("[N1] cleared notification debug state")
-                    AppLogger.log("[N1] cleared notification cooldown timestamps")
-                    AppLogger.log("[N1] cleared favorites-monitor suppression timestamp")
 
                     NotificationCenter.default.post(name: .ycNotificationDebugStateCleared, object: nil)
 
@@ -343,9 +327,7 @@ let interval = max(1, candidate.fireDate.timeIntervalSinceNow)
 
                     do {
                         try await UNUserNotificationCenter.current().add(request)
-                        print("[N1] forced precipSoon debug notification scheduled")
                     } catch {
-                        print("[N1] forced precipSoon debug notification failed: \(error)")
                     }
                 }
             } label: {
@@ -361,12 +343,10 @@ let interval = max(1, candidate.fireDate.timeIntervalSinceNow)
                 lightHaptic()
 
                 guard !isPresentingShare else {
-                    AppLogger.log("[N1] share log tapped while share presentation already in progress")
                     return
                 }
 
                 guard let url = AppLogger.exportURL() else {
-                    AppLogger.log("[N1] share log tapped but no log file exists yet")
                     return
                 }
 

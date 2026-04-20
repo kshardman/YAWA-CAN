@@ -27,7 +27,6 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
-        AppLogger.log("[N1][BG] register setup id=\(Self.appRefreshIdentifier)")
         let didRegister = BGTaskScheduler.shared.register(
             forTaskWithIdentifier: Self.appRefreshIdentifier,
             using: nil
@@ -37,11 +36,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
                 return
             }
 
-            AppLogger.log("[N1][BG] launch received id=\(Self.appRefreshIdentifier)")
             self.handleAppRefresh(task: task)
         }
 
-        AppLogger.log("[N1][BG] register completed id=\(Self.appRefreshIdentifier) success=\(didRegister)")
         return true
     }
 
@@ -50,9 +47,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60)
         do {
             try BGTaskScheduler.shared.submit(request)
-            AppLogger.log("[N1][BG] submitted BGAppRefreshTaskRequest id=\(Self.appRefreshIdentifier) earliest=\(String(describing: request.earliestBeginDate))")
         } catch {
-            AppLogger.log("[N1][BG] failed to submit BGAppRefreshTaskRequest id=\(Self.appRefreshIdentifier) error=\(error)")
         }
     }
 
@@ -66,16 +61,13 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
 
     private func loadSavedFavorites() -> [BackgroundSavedFavorite] {
         guard let data = UserDefaults.standard.data(forKey: favoritesStorageKey) else {
-            AppLogger.log("[N1][BG] no saved favorites found")
             return []
         }
 
         do {
             let favorites = try JSONDecoder().decode([BackgroundSavedFavorite].self, from: data)
-            AppLogger.log("[N1][BG] loaded saved favorites count=\(favorites.count)")
             return favorites
         } catch {
-            AppLogger.log("[N1][BG] failed decoding saved favorites error=\(error)")
             return []
         }
     }
@@ -85,7 +77,6 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         let savedFavorites = loadSavedFavorites()
 
         if monitoredKeys.isEmpty {
-            AppLogger.log("[N1][BG] no monitored favorite keys found")
             return []
         }
 
@@ -106,39 +97,31 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
             }
         }
 
-        AppLogger.log("[N1][BG] resolved monitored favorites requested=\(min(monitoredKeys.count, maxBackgroundFavorites)) resolved=\(resolved.count)")
         return resolved
     }
 
     private func handleAppRefresh(task: BGAppRefreshTask) {
-        AppLogger.log("[N1][BG] app refresh started id=\(Self.appRefreshIdentifier)")
 
         scheduleAppRefreshNow()
 
         let work = Task(priority: .background) {
             defer {
                 task.setTaskCompleted(success: true)
-                AppLogger.log("[N1][BG] app refresh completed")
             }
 
             if Task.isCancelled {
-                AppLogger.log("[N1][BG] work arrived already cancelled")
                 return
             }
 
             let monitoredFavorites = loadBackgroundMonitoredFavorites()
             guard !monitoredFavorites.isEmpty else {
-                AppLogger.log("[N1][BG] no monitored favorites resolved; exiting cleanly")
                 return
             }
 
-            AppLogger.log("[N1][BG] running favorites monitor count=\(monitoredFavorites.count)")
             await FavoritesNotificationMonitor().evaluateFavorites(monitoredFavorites)
-            AppLogger.log("[N1][BG] favorites monitor finished count=\(monitoredFavorites.count)")
         }
 
         task.expirationHandler = {
-            AppLogger.log("[N1][BG] app refresh expired; cancelling work")
             work.cancel()
         }
     }

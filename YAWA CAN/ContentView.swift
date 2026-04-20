@@ -66,6 +66,7 @@ struct ContentView: View {
     @State private var selectedAlert: WeatherAlert? = nil
     
     @State private var showingAllAlerts = false
+    @State private var showingAQIInfo = false
     
     @State private var pendingNotificationRoute: NotificationRoute? = nil
     
@@ -236,7 +237,7 @@ struct ContentView: View {
                 }
             }
             .fontDesign(.rounded)
-            .navigationTitle(navigationTitleText)
+            .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
@@ -570,6 +571,18 @@ struct ContentView: View {
                 Text("Air Quality")
                     .font(.subheadline)
                     .fontWeight(.semibold)
+                Spacer()
+                Button {
+                    showingAQIInfo = true
+                } label: {
+                    Image(systemName: "info.circle")
+                        .font(.subheadline)
+                        .foregroundStyle(YAWATheme.textSecondary(for: colorScheme).opacity(0.6))
+                }
+                .accessibilityLabel("About Air Quality Index")
+            }
+            .sheet(isPresented: $showingAQIInfo) {
+                AQIInfoSheet()
             }
 
             if let aq = snap.airQuality {
@@ -2580,6 +2593,85 @@ struct CanadaAlertService {
             }
         
         return alerts
+    }
+}
+
+// MARK: - AQI Info Sheet
+
+private struct AQIInfoSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
+
+    private let bands: [(color: Color, range: String, label: String, description: String)] = [
+        (Color(red: 0.18, green: 0.72, blue: 0.38), "0–50",   "Good",                            "Air quality is satisfactory and poses little or no risk."),
+        (Color(red: 0.85, green: 0.70, blue: 0.10), "51–100", "Moderate",                        "Acceptable, but some pollutants may be a concern for a small number of sensitive people."),
+        (Color(red: 0.95, green: 0.50, blue: 0.10), "101–150","Unhealthy for Sensitive Groups",  "Members of sensitive groups may experience health effects. The general public is less likely to be affected."),
+        (Color(red: 0.85, green: 0.18, blue: 0.18), "151–200","Unhealthy",                       "Everyone may begin to experience health effects. Sensitive groups may experience more serious effects."),
+        (Color(red: 0.55, green: 0.18, blue: 0.72), "201–300","Very Unhealthy",                  "Health alert: everyone may experience more serious health effects."),
+        (Color(red: 0.50, green: 0.05, blue: 0.10), "301+",   "Hazardous",                       "Health warning of emergency conditions. The entire population is likely to be affected.")
+    ]
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+
+                    Text("The US Air Quality Index (AQI) is a scale from 0 to 500 that tells you how clean or polluted the air is, and what health effects may be a concern. The higher the AQI, the greater the level of air pollution and health concern.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("AQI Scale")
+                            .font(.headline)
+
+                        ForEach(bands, id: \.range) { band in
+                            HStack(alignment: .top, spacing: 12) {
+                                Circle()
+                                    .fill(band.color)
+                                    .frame(width: 10, height: 10)
+                                    .padding(.top, 3)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    HStack(spacing: 6) {
+                                        Text(band.range)
+                                            .font(.subheadline.weight(.semibold))
+                                            .foregroundStyle(band.color)
+                                        Text("·")
+                                            .foregroundStyle(.secondary)
+                                        Text(band.label)
+                                            .font(.subheadline.weight(.semibold))
+                                    }
+                                    Text(band.description)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+
+                    Divider()
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("About Fine Particles (PM2.5)")
+                            .font(.headline)
+                        Text("Fine particles are tiny airborne particles 2.5 micrometers or smaller — about 30 times smaller than a human hair. They come from vehicle exhaust, wildfire smoke, and industrial emissions. Because they're so small, they can penetrate deep into your lungs and affect your health. The PM2.5 value shown is measured in micrograms per cubic meter of air (μg/m³).")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Text("Source: US EPA AQI standard")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
+                }
+                .padding()
+            }
+            .navigationTitle("Air Quality Index")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
     }
 }
 
