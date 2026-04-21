@@ -28,14 +28,8 @@ struct SettingsView: View {
     }
 
     private var backgroundView: some View {
-        Group {
-            // In Light (or System style), match Favorites/Locations: flat system background.
-            if appearanceSettings.isSystemStyle || colorScheme == .light {
-                Color(.systemBackground)
-            } else {
-                YAWATheme.background(for: colorScheme)
-            }
-        }
+        YAWATheme.background(for: colorScheme)
+            .ignoresSafeArea()
     }
 
     private var rowBackgroundView: some View {
@@ -65,7 +59,7 @@ struct SettingsView: View {
         NavigationStack {
             ZStack {
                 // ✅ Full-screen theme background
-                backgroundView.ignoresSafeArea()
+                backgroundView
 
                 List {
                     appearanceSection
@@ -91,10 +85,7 @@ struct SettingsView: View {
             // Match Favorites/Locations sheet: consistent “glassy” nav bar
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
-            .toolbarColorScheme(
-                (appearanceSettings.isSystemStyle || colorScheme == .light) ? .light : .dark,
-                for: .navigationBar
-            )
+            .toolbarColorScheme(colorScheme == .dark ? .dark : .light, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") {
@@ -197,26 +188,6 @@ private extension SettingsView {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.vertical, 2)
-
-            Button {
-                Task {
-                    let granted = await notifications.requestAuthorizationIfNeeded()
-
-                    if granted {
-                        let store = NotificationStore()
-                        var prefs = store.loadPreferences()
-                        prefs.forecastAlertsEnabled = true
-                        store.savePreferences(prefs)
-                    }
-                }
-            } label: {
-                HStack {
-                    Text("Request Notification Access")
-                        .foregroundStyle(primaryText)
-                    Spacer()
-                }
-                .contentShape(Rectangle())
-            }
 
 #if DEBUG
             Button {

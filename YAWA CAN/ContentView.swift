@@ -3095,6 +3095,7 @@ private struct LocationPickerView: View {
                             .autocorrectionDisabled()
                             .onSubmit { Task { await runSearch(expectedQuery: query.trimmingCharacters(in: .whitespacesAndNewlines), generation: searchGeneration) } }
                     }
+                    .listRowBackground(YAWATheme.cardFill(for: colorScheme))
 
                     Button {
                         Task {
@@ -3118,6 +3119,7 @@ private struct LocationPickerView: View {
                             }
                         }
                     }
+                    .listRowBackground(YAWATheme.cardFill(for: colorScheme))
                 }
 
                 if let searchError {
@@ -3157,14 +3159,20 @@ private struct LocationPickerView: View {
                                     }
                                 }
                             }
+                            .listRowBackground(YAWATheme.cardFill(for: colorScheme))
                         }
                     }
                 }
 
                 favoritesSection
             }
+            .scrollContentBackground(.hidden)
+            .background(YAWATheme.background(for: colorScheme).ignoresSafeArea())
+            .listStyle(.insetGrouped)
             .navigationTitle("Locations")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
@@ -3334,6 +3342,7 @@ private struct LocationPickerView: View {
 
             ForEach(favoritesSorted) { loc in
                 favoriteRow(for: loc)
+                    .listRowBackground(YAWATheme.cardFill(for: colorScheme))
             }
             .onDelete(perform: removeFavorites)
         } header: {
