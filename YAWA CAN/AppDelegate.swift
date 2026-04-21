@@ -13,7 +13,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     static let appRefreshIdentifier = "com.widgetal.yawacan.apprefresh"
     private let favoritesStorageKey = "yawa.can.favorites"
     private let monitoredFavoritesKey = "YCBackgroundMonitoredFavorites"
-    private let maxBackgroundFavorites = 5
+    private let maxBackgroundFavorites = 3
 
     private struct BackgroundSavedFavorite: Decodable {
         let displayName: String
