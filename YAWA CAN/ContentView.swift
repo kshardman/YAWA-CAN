@@ -181,7 +181,7 @@ struct ContentView: View {
 
                 ScrollViewReader { proxy in
                     ScrollView {
-                        VStack(spacing: 12) {
+                        VStack(spacing: 14) {
                             Color.clear
                                 .frame(height: 0)
                                 .id("top")
