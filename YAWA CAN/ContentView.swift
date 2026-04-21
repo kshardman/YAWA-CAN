@@ -3348,7 +3348,7 @@ private struct LocationPickerView: View {
         } header: {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Favorites")
-                Text("Tap the bell to monitor up to 3 favorites for background alerts.")
+                Text("Tap the bell to monitor up to 3 favorites for background alerts from Environment Canada.  Canadian cities only.")
                     .font(.caption.weight(.medium))
                     .foregroundStyle(colorScheme == .dark ? Color.white.opacity(0.74) : Color.black.opacity(0.58))
                     .textCase(nil)
