@@ -3309,7 +3309,7 @@ private struct LocationPickerView: View {
             return
         }
 
-        guard keys.count < 5 else { return }
+        guard keys.count < 3 else { return }
         keys.append(key)
         defaults.set(keys, forKey: "YCBackgroundMonitoredFavorites")
     }
