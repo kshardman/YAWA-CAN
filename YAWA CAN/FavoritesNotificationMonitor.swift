@@ -103,7 +103,6 @@ final class FavoritesNotificationMonitor {
         let monitoredFavorites = favorites
         guard !monitoredFavorites.isEmpty else {
             #if DEBUG
-            AppLogger.log("[N1] favorites monitor: no favorites to evaluate")
             #endif
             return
         }
@@ -137,7 +136,6 @@ final class FavoritesNotificationMonitor {
                     let candidateAlerts: [WeatherAlert]
                     if tightAlerts.isEmpty {
                         #if DEBUG
-                        AppLogger.log("[N1] favorites monitor no alerts in tight range for \(favorite.displayName) (Δ0.15) — widening to Δ0.75")
                         #endif
                         candidateAlerts = try await alertService.fetchAlerts(
                             withDelta: 0.75,
@@ -150,7 +148,6 @@ final class FavoritesNotificationMonitor {
 
                     if candidateAlerts.isEmpty {
                         #if DEBUG
-                        AppLogger.log("[N1] favorites monitor no Canada alerts found for \(favorite.displayName)")
                         #endif
                     }
 
@@ -159,11 +156,9 @@ final class FavoritesNotificationMonitor {
                     if let topAlert {
                         let expiresText = topAlert.expiresAt?.description ?? "nil"
                         #if DEBUG
-                        AppLogger.log("[N1] favorites monitor selected top alert for \(favorite.displayName): title=\(topAlert.title) severity=\(topAlert.severity) expiresAt=\(expiresText)")
                         #endif
                     } else {
                         #if DEBUG
-                        AppLogger.log("[N1] favorites monitor top alert unavailable for \(favorite.displayName)")
                         #endif
                     }
                 } else {
@@ -176,14 +171,12 @@ final class FavoritesNotificationMonitor {
                     alert: topAlert
                 ) else {
                     #if DEBUG
-                    AppLogger.log("[N1] favorites monitor: snapshot unavailable for \(favorite.displayName)")
                     #endif
                     continue
                 }
 
                 let prefs = NotificationStore().loadPreferences()
                 #if DEBUG
-                AppLogger.log("[N1] favorites monitor prefs for \(favorite.displayName): forecastAlertsEnabled=\(prefs.forecastAlertsEnabled)")
                 #endif
                 let timeZone = TimeZone(identifier: snapshot.timezoneIdentifier) ?? .current
                 var calendar = Calendar.current
@@ -199,22 +192,18 @@ final class FavoritesNotificationMonitor {
 
                 if !candidates.isEmpty {
                     #if DEBUG
-                    AppLogger.log("[N1] favorites monitor candidates for \(favorite.displayName): \(candidates.map { $0.id })")
                     #endif
                 }
 
                 if candidates.isEmpty {
                     if !prefs.forecastAlertsEnabled {
                         #if DEBUG
-                        AppLogger.log("[N1] favorites monitor no candidates for \(favorite.displayName): forecastAlertsEnabled=false")
                         #endif
                     } else if topAlert == nil {
                         #if DEBUG
-                        AppLogger.log("[N1] favorites monitor no candidates for \(favorite.displayName): no qualifying alert summary attached")
                         #endif
                     } else {
                         #if DEBUG
-                        AppLogger.log("[N1] favorites monitor no candidates for \(favorite.displayName): selected alert did not qualify for notableForecast")
                         #endif
                     }
                 }
@@ -229,7 +218,6 @@ final class FavoritesNotificationMonitor {
 
                 for entry in evaluatedCandidates {
                     #if DEBUG
-                    AppLogger.log("[N1] favorites monitor candidate detail id=\(entry.candidate.id) score=\(entry.candidate.relevanceScore) fireDate=\(entry.candidate.fireDate) expiresAt=\(entry.alertExpiresAt?.description ?? "nil") favoriteOrder=\(entry.favoriteOrder)")
                     #endif
                 }
 
@@ -270,27 +258,22 @@ final class FavoritesNotificationMonitor {
                     let winner = winningEntry.candidate
 
                     #if DEBUG
-                    AppLogger.log("[N1] favorites monitor local winner id=\(winner.id)")
                     #endif
                     #if DEBUG
-                    AppLogger.log("[N1] favorites monitor local winner officialAlert=\(winningEntry.isOfficialAlert)")
                     #endif
                     #if DEBUG
-                    AppLogger.log("[N1] favorites monitor local winner location=\(winner.locationName) favoriteOrder=\(winningEntry.favoriteOrder) expiresAt=\(winningEntry.alertExpiresAt?.description ?? "nil")")
                     #endif
 
                     localWinners.append(winningEntry)
                 }
             } catch {
                 #if DEBUG
-                AppLogger.log("[N1] favorites monitor error for \(favorite.displayName): \(error.localizedDescription)")
                 #endif
             }
         }
 
         if !didFindAnyCandidates {
             #if DEBUG
-            AppLogger.log("[N1] favorites monitor: no candidates")
             #endif
         }
 
@@ -328,7 +311,6 @@ final class FavoritesNotificationMonitor {
         }
 
         #if DEBUG
-        AppLogger.log("[N1] favorites monitor scheduling allWinners=\(sortedWinners.count)")
         #endif
 
         let localTimeZone = TimeZone.current
@@ -338,7 +320,6 @@ final class FavoritesNotificationMonitor {
         for winningEntry in sortedWinners {
             let winner = winningEntry.candidate
             #if DEBUG
-            AppLogger.log("[N1] favorites monitor scheduled winner id=\(winner.id)")
             #endif
             let targetKey = notificationTargetKey(for: monitoredFavorites[winningEntry.favoriteOrder])
             await coordinator.scheduleCandidateIfNeeded(

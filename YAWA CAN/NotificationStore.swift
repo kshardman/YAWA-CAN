@@ -26,7 +26,6 @@ final class NotificationStore: ObservableObject {
         do {
             return try JSONDecoder().decode(NotificationPreferences.self, from: data)
         } catch {
-            AppLogger.log("[N1] failed decoding notification preferences error=\(error)")
             return NotificationPreferences.default
         }
     }
@@ -36,7 +35,6 @@ final class NotificationStore: ObservableObject {
             let data = try JSONEncoder().encode(preferences)
             defaults.set(data, forKey: preferencesKey)
         } catch {
-            AppLogger.log("[N1] failed encoding notification preferences error=\(error)")
         }
     }
 
@@ -51,14 +49,12 @@ final class NotificationStore: ObservableObject {
         var all = loadSnapshotsDictionary()
         all[targetKey] = snapshot
         saveSnapshotsDictionary(all)
-        AppLogger.log("[N1] notification snapshot saved targetKey=\(targetKey)")
     }
 
     func removeSnapshot(for targetKey: String) {
         var all = loadSnapshotsDictionary()
         all.removeValue(forKey: targetKey)
         saveSnapshotsDictionary(all)
-        AppLogger.log("[N1] notification snapshot removed targetKey=\(targetKey)")
     }
 
     // MARK: - Delivered IDs (per targetKey)
@@ -81,14 +77,12 @@ final class NotificationStore: ObservableObject {
         all[targetKey] = sorted.count > 50 ? Array(sorted.suffix(50)) : sorted
 
         saveDeliveredIDsDictionary(all)
-        AppLogger.log("[N1] notification delivered id=\(id) targetKey=\(targetKey) totalIDs=\(all[targetKey]?.count ?? 0)")
     }
 
     func clearDeliveredIDs(for targetKey: String) {
         var all = loadDeliveredIDsDictionary()
         all.removeValue(forKey: targetKey)
         saveDeliveredIDsDictionary(all)
-        AppLogger.log("[N1] cleared delivered IDs targetKey=\(targetKey)")
     }
 
     // MARK: - Last delivered day (per targetKey)
@@ -102,14 +96,12 @@ final class NotificationStore: ObservableObject {
         var all = loadLastDeliveredDayDictionary()
         all[targetKey] = day
         saveLastDeliveredDayDictionary(all)
-        AppLogger.log("[N1] set last delivered day targetKey=\(targetKey) day=\(day ?? "nil")")
     }
 
     func clearLastDeliveredDay(for targetKey: String) {
         var all = loadLastDeliveredDayDictionary()
         all.removeValue(forKey: targetKey)
         saveLastDeliveredDayDictionary(all)
-        AppLogger.log("[N1] cleared last delivered day targetKey=\(targetKey)")
     }
 
     // MARK: - Cleanup
@@ -118,14 +110,12 @@ final class NotificationStore: ObservableObject {
         removeSnapshot(for: targetKey)
         clearDeliveredIDs(for: targetKey)
         clearLastDeliveredDay(for: targetKey)
-        AppLogger.log("[N1] cleared notification state targetKey=\(targetKey)")
     }
 
     func clearAllState() {
         defaults.removeObject(forKey: snapshotsByTargetKeyKey)
         defaults.removeObject(forKey: deliveredIDsByTargetKeyKey)
         defaults.removeObject(forKey: lastDeliveredDayByTargetKeyKey)
-        AppLogger.log("[N1] cleared all notification state")
     }
 
     // MARK: - Private dictionary helpers
@@ -138,7 +128,6 @@ final class NotificationStore: ObservableObject {
         do {
             return try JSONDecoder().decode([String: ForecastNotificationSnapshot].self, from: data)
         } catch {
-            AppLogger.log("[N1] failed decoding snapshot dictionary error=\(error)")
             return [:]
         }
     }
@@ -148,7 +137,6 @@ final class NotificationStore: ObservableObject {
             let data = try JSONEncoder().encode(value)
             defaults.set(data, forKey: snapshotsByTargetKeyKey)
         } catch {
-            AppLogger.log("[N1] failed encoding snapshot dictionary error=\(error)")
         }
     }
 
@@ -160,7 +148,6 @@ final class NotificationStore: ObservableObject {
         do {
             return try JSONDecoder().decode([String: [String]].self, from: data)
         } catch {
-            AppLogger.log("[N1] failed decoding delivered IDs dictionary error=\(error)")
             return [:]
         }
     }
@@ -170,7 +157,6 @@ final class NotificationStore: ObservableObject {
             let data = try JSONEncoder().encode(value)
             defaults.set(data, forKey: deliveredIDsByTargetKeyKey)
         } catch {
-            AppLogger.log("[N1] failed encoding delivered IDs dictionary error=\(error)")
         }
     }
 
@@ -182,7 +168,6 @@ final class NotificationStore: ObservableObject {
         do {
             return try JSONDecoder().decode([String: String].self, from: data)
         } catch {
-            AppLogger.log("[N1] failed decoding last delivered day dictionary error=\(error)")
             return [:]
         }
     }
@@ -192,7 +177,6 @@ final class NotificationStore: ObservableObject {
             let data = try JSONEncoder().encode(value)
             defaults.set(data, forKey: lastDeliveredDayByTargetKeyKey)
         } catch {
-            AppLogger.log("[N1] failed encoding last delivered day dictionary error=\(error)")
         }
     }
 }

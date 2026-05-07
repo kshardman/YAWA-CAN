@@ -39,6 +39,43 @@ private func normalizedAlertTitle(_ title: String) -> String {
         .joined(separator: " ")
 }
 
+enum WeatherTab: String, CaseIterable {
+    case forecasts, radar, comfort, airQuality, sun, moon
+
+    var label: String {
+        switch self {
+        case .forecasts:  return "Forecasts"
+        case .radar:      return "Radar"
+        case .comfort:    return "Comfort"
+        case .airQuality: return "Air Quality"
+        case .sun:        return "Sun"
+        case .moon:       return "Moon"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .forecasts:  return "cloud.sun"
+        case .radar:      return "antenna.radiowaves.left.and.right"
+        case .comfort:    return "thermometer.medium"
+        case .airQuality: return "aqi.medium"
+        case .sun:        return "sun.horizon"
+        case .moon:       return "moon"
+        }
+    }
+
+    var selectedIcon: String {
+        switch self {
+        case .forecasts:  return "cloud.sun.fill"
+        case .radar:      return "antenna.radiowaves.left.and.right"
+        case .comfort:    return "thermometer.medium"
+        case .airQuality: return "aqi.medium"
+        case .sun:        return "sun.horizon.fill"
+        case .moon:       return "moon.fill"
+        }
+    }
+}
+
 enum RefreshLog {
     static let enabled = false
 
@@ -169,13 +206,16 @@ struct ContentView: View {
     @State private var pendingRefresh = false
     @State private var pendingRefreshShowsLoading = false
 
+    @State private var selectedTab: WeatherTab = .forecasts
+    @State private var cardOverlayDragOffset: CGFloat = .zero
+
     private var appBackground: LinearGradient {
         YAWATheme.background(for: colorScheme)
     }
 
     var body: some View {
         NavigationStack {
-            ZStack(alignment: .top) {
+            ZStack(alignment: .bottom) {
                 appBackground
                     .ignoresSafeArea()
 
@@ -202,10 +242,6 @@ struct ContentView: View {
                             if let snap = viewModel.snapshot {
                                 currentTile(snap)
                                 dailyTile(snap)
-                                radarCard()
-                                comfortTile(snap)
-                                airQualityTile(snap)
-                                sunTile(snap)
                             } else if !viewModel.isLoading && viewModel.errorMessage == nil {
                                 Text("No weather loaded yet.")
                                     .foregroundStyle(.secondary)
@@ -215,7 +251,7 @@ struct ContentView: View {
                             Spacer(minLength: 8)
                         }
                         .padding(.horizontal, 16)
-                        .padding(.bottom, 16)
+                        .padding(.bottom, 100)
                         .padding(.top, 6)
                     }
                     .scrollIndicators(.hidden)
@@ -235,7 +271,29 @@ struct ContentView: View {
                         .padding(.top, 6)
                         .zIndex(999)
                         .transition(.move(edge: .top).combined(with: .opacity))
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 }
+
+                if selectedTab != .forecasts {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                selectedTab = .forecasts
+                            }
+                        }
+                        .ignoresSafeArea()
+                }
+
+                if selectedTab != .forecasts {
+                    cardOverlay
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+
+                glassTabBar
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 8)
+                    .ignoresSafeArea(edges: .bottom)
             }
             .fontDesign(.rounded)
             .navigationTitle("")
@@ -281,20 +339,11 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
-                #if DEBUG
-                AppLogger.log("[N1] YC foregrounded at \(Date())")
-                #endif
                 Task { @MainActor in
                     await refreshOnForegroundIfNeeded()
                 }
             } else if newPhase == .inactive {
-                #if DEBUG
-                AppLogger.log("[N1] YC inactive at \(Date())")
-                #endif
             } else if newPhase == .background {
-                #if DEBUG
-                AppLogger.log("[N1] YC backgrounded at \(Date())")
-                #endif
             }
         }
         .sheet(item: $selectedDaySelection) { selection in
@@ -776,9 +825,6 @@ struct ContentView: View {
             expectedLatitude: location.latitude,
             expectedLongitude: location.longitude
         )
-        #if DEBUG
-        AppLogger.log("[Alerts] skipping fetch for non-CA location: \(location.displayName) countryCode=\(countryCode)")
-        #endif
     }
 
     private func fetchAlertsForLocation(_ location: SavedLocation, countryCode: String) async throws -> [WeatherAlert] {
@@ -787,22 +833,13 @@ struct ContentView: View {
         let tightDelta = 0.15
         let wideDelta  = 0.75
 
-        #if DEBUG
-        AppLogger.log("[Alerts] starting fetch for: \(location.displayName) (\(location.latitude), \(location.longitude))")
-        #endif
 
         let tightAlerts = try await service.fetchAlerts(withDelta: tightDelta, for: coordinate, countryCode: countryCode)
 
         if !tightAlerts.isEmpty {
-            #if DEBUG
-            AppLogger.log("[Alerts] found \(tightAlerts.count) alerts in tight range (Δ\(tightDelta))")
-            #endif
             return tightAlerts
         }
 
-        #if DEBUG
-        AppLogger.log("[Alerts] no alerts in tight range (Δ\(tightDelta)) — widening to Δ\(wideDelta)")
-        #endif
         return try await service.fetchAlerts(withDelta: wideDelta, for: coordinate, countryCode: countryCode)
     }
 
@@ -813,9 +850,6 @@ struct ContentView: View {
         countryCode: String
     ) async {
         guard isStillCurrentLocation(requestedLocation, countryCode: countryCode) else {
-            #if DEBUG
-            AppLogger.log("[Alerts] result discarded — location changed from \(requestedLocation.displayName)")
-            #endif
             return
         }
 
@@ -827,9 +861,6 @@ struct ContentView: View {
             expectedLatitude: requestedLocation.latitude,
             expectedLongitude: requestedLocation.longitude
         )
-        #if DEBUG
-        AppLogger.log("[Alerts] final active alerts count: \(activeAlerts.count)")
-        #endif
     }
 
     @MainActor
@@ -839,15 +870,9 @@ struct ContentView: View {
         countryCode: String
     ) async {
         guard isStillCurrentLocation(requestedLocation, countryCode: countryCode) else {
-            #if DEBUG
-            AppLogger.log("[Alerts] fetch failure discarded — location changed from \(requestedLocation.displayName)")
-            #endif
             return
         }
 
-        #if DEBUG
-        AppLogger.log("[Alerts] fetch failed for \(requestedLocation.displayName): \(error.localizedDescription)")
-        #endif
         activeAlerts = []
         viewModel.updateNotificationSnapshotForecastAlert(
             nil,
@@ -1516,9 +1541,6 @@ struct ContentView: View {
     private func clearNotificationRouteUIState() {
         pendingNotificationRoute = nil
         selectedDaySelection = nil
-        #if DEBUG
-        AppLogger.log("[N1] cleared in-app notification route UI state")
-        #endif
     }
 
     private func handleNotificationRoute(_ route: NotificationRoute) {
@@ -1549,9 +1571,6 @@ struct ContentView: View {
             }
         }
 
-        #if DEBUG
-        print("[N1] tapped notification kind=\(route.kind) location=\(route.locationName) targetDateISO=\(route.targetDateISO ?? "nil")")
-        #endif
     }
 
     private func applyPendingNotificationRouteIfPossible(snapshot: WeatherSnapshot) {
@@ -1571,17 +1590,11 @@ struct ContentView: View {
         let sameName = !selectedName.isEmpty && selectedName.caseInsensitiveCompare(routeName) == .orderedSame
 
         guard sameCoordinates || sameName else {
-            #if DEBUG
-            AppLogger.log("[N1] pending route waiting for matching location kind=\(route.kind) route=\(route.locationName) selected=\(selectedName)")
-            #endif
             return
         }
 
         if route.kind == "notableForecast" {
             pendingNotificationRoute = nil
-            #if DEBUG
-            AppLogger.log("[N1] notableForecast route applied to main screen only")
-            #endif
             return
         }
 
@@ -1614,17 +1627,11 @@ struct ContentView: View {
 
         guard let targetDate else {
             pendingNotificationRoute = nil
-            #if DEBUG
-            AppLogger.log("[N1] route date parse failed kind=\(route.kind) targetDateISO=\(targetDateISO)")
-            #endif
             return
         }
 
         guard let matchIndex = days.firstIndex(where: { cal.isDate($0.date, inSameDayAs: targetDate) }) else {
             pendingNotificationRoute = nil
-            #if DEBUG
-            AppLogger.log("[N1] no forecast day matched route kind=\(route.kind) targetDateISO=\(targetDateISO)")
-            #endif
             return
         }
 
@@ -1639,9 +1646,6 @@ struct ContentView: View {
         forecastDetailDetent = .fraction(0.70)
         pendingNotificationRoute = nil
 
-        #if DEBUG
-        AppLogger.log("[N1] opened forecast detail from notification route kind=\(route.kind) index=\(matchIndex) dateISO=\(targetDateISO)")
-        #endif
     }
 
     private var snapshotLocationLatitude: Double {
@@ -1679,16 +1683,10 @@ struct ContentView: View {
         let elapsed = now - lastFavoritesMonitorAutoRunAt
 
         guard elapsed >= throttle else {
-            #if DEBUG
-            AppLogger.log("[N1] auto favorites monitor skipped: throttle active remaining=\(throttle - elapsed)")
-            #endif
             return
         }
 
         lastFavoritesMonitorAutoRunAt = now
-        #if DEBUG
-        AppLogger.log("[N1] auto favorites monitor starting on foreground")
-        #endif
 
         Task {
             let monitoredKeys = Set(UserDefaults.standard.stringArray(forKey: "YCBackgroundMonitoredFavorites") ?? [])
@@ -1706,9 +1704,6 @@ struct ContentView: View {
                     )
                 }
             guard !monitoredFavorites.isEmpty else {
-                #if DEBUG
-                AppLogger.log("[N1] auto favorites monitor skipped: no bell-selected favorites")
-                #endif
                 return
             }
             await favoritesNotificationMonitor.evaluateFavorites(monitoredFavorites)
@@ -1721,12 +1716,327 @@ struct ContentView: View {
     @MainActor
     private func clearFavoritesMonitorAutoRunThrottle() {
         lastFavoritesMonitorAutoRunAt = 0
-        #if DEBUG
-        AppLogger.log("[N1] cleared favorites-monitor auto-run throttle")
-        #endif
+    }
+
+    // MARK: - Tab bar
+
+    private var glassTabBar: some View {
+        HStack(spacing: 0) {
+            ForEach(WeatherTab.allCases, id: \.self) { tab in
+                Button {
+                    if tab == .radar {
+                        openRadar()
+                    } else {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            selectedTab = (selectedTab == tab && tab != .forecasts) ? .forecasts : tab
+                            cardOverlayDragOffset = .zero
+                        }
+                    }
+                } label: {
+                    VStack(spacing: 4) {
+                        Image(systemName: selectedTab == tab ? tab.selectedIcon : tab.icon)
+                            .font(.system(size: 20))
+                            .symbolRenderingMode(.hierarchical)
+                        Text(tab.label)
+                            .font(.system(size: 10, weight: .medium))
+                    }
+                    .foregroundStyle(selectedTab == tab ? Color.primary : Color.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 24))
+        .shadow(color: .black.opacity(0.15), radius: 16, y: 6)
+    }
+
+    private var cardOverlay: some View {
+        VStack(spacing: 0) {
+            Capsule()
+                .fill(Color.secondary.opacity(0.35))
+                .frame(width: 36, height: 4)
+                .padding(.top, 10)
+                .padding(.bottom, 8)
+            ScrollView(.vertical, showsIndicators: false) {
+                Group {
+                    switch selectedTab {
+                    case .comfort:
+                        if let snap = viewModel.snapshot { comfortTile(snap) }
+                    case .airQuality:
+                        if let snap = viewModel.snapshot { airQualityTile(snap) }
+                    case .sun:
+                        sunCardSection
+                    case .moon:
+                        moonCardSection
+                    default:
+                        EmptyView()
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 90)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: UIScreen.main.bounds.height * 0.40)
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .shadow(color: .black.opacity(0.18), radius: 20, y: -6)
+        .offset(y: max(0, cardOverlayDragOffset))
+        .gesture(
+            DragGesture()
+                .onChanged { value in
+                    cardOverlayDragOffset = value.translation.height
+                }
+                .onEnded { value in
+                    let dismissed = value.translation.height > 80 || value.predictedEndTranslation.height > 200
+                    if dismissed {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            selectedTab = .forecasts
+                            cardOverlayDragOffset = .zero
+                        }
+                    } else {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                            cardOverlayDragOffset = .zero
+                        }
+                    }
+                }
+        )
+    }
+
+    // MARK: - Sun card (overlay)
+
+    private var sunCardSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "sun.max")
+                    .font(.subheadline)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(YAWATheme.symbolColor("sun.max", scheme: colorScheme))
+                    .opacity(0.9)
+                Text("Sun")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                Spacer()
+            }
+
+            if let snap = viewModel.snapshot, let sun = snap.sun {
+                let tz = TimeZone(identifier: snap.timeZoneID) ?? .current
+                let now = sunRefreshToken
+                let sunState: (sunrise: Date, sunset: Date, isNight: Bool, progressForArc: Double) = {
+                    let cal: Calendar = {
+                        var c = Calendar(identifier: .gregorian)
+                        c.timeZone = tz
+                        return c
+                    }()
+                    var sunrise = sun.sunrise
+                    var sunset  = sun.sunset
+                    let inWindow = now >= sunrise && now <= sunset
+                    if !inWindow, now < sunrise,
+                       let srPrev = cal.date(byAdding: .day, value: -1, to: sunrise),
+                       let ssPrev = cal.date(byAdding: .day, value: -1, to: sunset),
+                       now >= srPrev && now <= ssPrev {
+                        sunrise = srPrev; sunset = ssPrev
+                    }
+                    if !(now >= sunrise && now <= sunset), now > sunset,
+                       let srNext = cal.date(byAdding: .day, value: 1, to: sunrise),
+                       let ssNext = cal.date(byAdding: .day, value: 1, to: sunset),
+                       now >= srNext && now <= ssNext {
+                        sunrise = srNext; sunset = ssNext
+                    }
+                    let isNight = !(now >= sunrise && now <= sunset)
+                    let progressForArc: Double
+                    if isNight {
+                        let nightStart: Date
+                        let nightEnd: Date
+                        if now < sunrise {
+                            nightStart = cal.date(byAdding: .day, value: -1, to: sunset)
+                                ?? sunset.addingTimeInterval(-86400)
+                            nightEnd = sunrise
+                        } else {
+                            nightStart = sunset
+                            nightEnd = cal.date(byAdding: .day, value: 1, to: sunrise)
+                                ?? sunrise.addingTimeInterval(86400)
+                        }
+                        progressForArc = sunProgress(sunrise: nightStart, sunset: nightEnd, now: now)
+                    } else {
+                        progressForArc = sunProgress(sunrise: sunrise, sunset: sunset, now: now)
+                    }
+                    return (sunrise, sunset, isNight, progressForArc)
+                }()
+
+                SunArcGraphic(
+                    progress: sunState.progressForArc,
+                    isNight: sunState.isNight,
+                    sunriseLabel: timeString(sunState.sunrise, timeZoneID: snap.timeZoneID),
+                    sunsetLabel:  timeString(sunState.sunset,  timeZoneID: snap.timeZoneID)
+                )
+                .id(sunRefreshToken)
+                .onTapGesture { handleSunArcTap() }
+
+                Divider().opacity(0.3)
+
+                HStack(spacing: 6) {
+                    Image(systemName: sunState.isNight ? "moon.stars" : "sun.max")
+                        .font(.caption)
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+                    let nextEvent: Date = {
+                        if sunState.isNight {
+                            return sunState.sunrise.timeIntervalSinceNow > 60
+                                ? sunState.sunrise
+                                : sunState.sunrise.addingTimeInterval(86400)
+                        } else {
+                            return sunState.sunset
+                        }
+                    }()
+                    let secs = max(0, nextEvent.timeIntervalSinceNow)
+                    let h = Int(secs) / 3600
+                    let m = (Int(secs) % 3600) / 60
+                    let countdown = h > 0 ? "\(h)h \(m)m" : "\(m)m"
+                    Text(sunState.isNight ? "Sunrise in \(countdown)" : "Sunset in \(countdown)")
+                        .font(.subheadline)
+                        .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+                }
+
+                Text("Local time: \(localTimeText(timeZone: tz))")
+                    .font(.caption)
+                    .foregroundStyle(YAWATheme.textSecondary(for: colorScheme).opacity(
+                        colorScheme == .light ? 0.96 : 0.85
+                    ))
+            } else {
+                Text("Sunrise/Sunset unavailable")
+                    .font(.subheadline)
+                    .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+            }
+        }
+        .tileStyle()
+    }
+
+    // MARK: - Moon card
+
+    private var calculatedMoonData: MoonData? {
+        guard let snap = viewModel.snapshot,
+              let loc = selected else { return nil }
+        return MoonCalculator.moonData(
+            lat: loc.latitude,
+            lon: loc.longitude,
+            on: Date(),
+            timeZoneID: snap.timeZoneID
+        )
+    }
+
+    private var moonCardSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "moon.stars")
+                    .font(.subheadline)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(YAWATheme.symbolColor("moon.stars", scheme: colorScheme))
+                    .opacity(0.85)
+                Text("Moon")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                Spacer()
+            }
+
+            if let moon = calculatedMoonData {
+                HStack(spacing: 16) {
+                    MoonPhaseView(phase: moon.phase, size: 58)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(moon.phaseName)
+                            .font(.headline)
+                            .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
+                        Text("\(Int((moon.illumination * 100).rounded()))% illuminated")
+                            .font(.subheadline)
+                            .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+                    }
+                    Spacer()
+                }
+                .padding(.vertical, 4)
+
+                Divider().opacity(0.3)
+
+                HStack {
+                    moonEventColumn(label: "Moonrise", icon: "arrow.up",   time: moon.rise, tzID: moon.timeZoneID)
+                    Spacer()
+                    Divider().frame(height: 36).opacity(0.3)
+                    Spacer()
+                    moonEventColumn(label: "Moonset",  icon: "arrow.down", time: moon.set,  tzID: moon.timeZoneID)
+                }
+
+                Divider().opacity(0.3)
+
+                let daysToFull = max(0, Int(moon.nextFullMoon.timeIntervalSinceNow / 86400))
+                let daysToNew  = max(0, Int(moon.nextNewMoon.timeIntervalSinceNow / 86400))
+                let (milestoneLabel, milestoneDays, milestoneDate): (String, Int, Date) = {
+                    daysToFull <= daysToNew
+                        ? ("Full moon", daysToFull, moon.nextFullMoon)
+                        : ("New moon",  daysToNew,  moon.nextNewMoon)
+                }()
+                let dateStr: String = {
+                    let fmt = DateFormatter()
+                    fmt.dateFormat = "MMM d"
+                    if let tz = TimeZone(identifier: moon.timeZoneID) { fmt.timeZone = tz }
+                    return fmt.string(from: milestoneDate)
+                }()
+
+                HStack(spacing: 6) {
+                    Image(systemName: "calendar")
+                        .font(.caption)
+                        .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+                    if milestoneDays == 0 {
+                        Text("\(milestoneLabel) tonight")
+                            .font(.subheadline)
+                            .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+                    } else {
+                        Text("\(milestoneLabel) in \(milestoneDays) day\(milestoneDays == 1 ? "" : "s") · \(dateStr)")
+                            .font(.subheadline)
+                            .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+                    }
+                }
+            } else {
+                Text("Moon data unavailable")
+                    .font(.subheadline)
+                    .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+            }
+        }
+        .tileStyle()
+    }
+
+    private func moonEventColumn(label: String, icon: String, time: Date?, tzID: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.caption2)
+                    .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+                Text(label)
+                    .font(.caption)
+                    .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+            }
+            if let t = time {
+                let fmt: DateFormatter = {
+                    let f = DateFormatter()
+                    f.dateFormat = "h:mm a"
+                    if let tz = TimeZone(identifier: tzID) { f.timeZone = tz }
+                    return f
+                }()
+                Text(fmt.string(from: t))
+                    .font(.body.monospacedDigit())
+                    .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
+            } else {
+                Text("—")
+                    .font(.body)
+                    .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+            }
+        }
     }
 
     private func openRadar() {
+        selectedTab = .forecasts
+        cardOverlayDragOffset = .zero
+
         let loc = selected ?? locationStore.selected ?? SavedLocation.toronto
 
         let newTarget = RadarTarget(

@@ -104,20 +104,17 @@ final class NotificationCoordinator: ObservableObject {
             return true
         case .denied:
             #if DEBUG
-            print("[N1] notification authorization denied")
             #endif
             return false
         case .notDetermined:
             do {
                 let granted = try await center.requestAuthorization(options: [.alert, .sound, .badge])
                 #if DEBUG
-                print("[N1] requestAuthorization result=\(granted)")
                 #endif
                 await refreshAuthorizationStatus()
                 return granted
             } catch {
                 #if DEBUG
-                print("[N1] requestAuthorization failed: \(error)")
                 #endif
                 return false
             }
@@ -132,19 +129,16 @@ final class NotificationCoordinator: ObservableObject {
     ) async {
         let prefs = store.loadPreferences()
         #if DEBUG
-        print("[N1] reevaluate start enabled=\(prefs.forecastAlertsEnabled) targetKey=\(selectedLocationKey)")
         #endif
         guard prefs.forecastAlertsEnabled else { return }
 
         await refreshAuthorizationStatus()
         #if DEBUG
-        print("[N1] authorization status=\(authorizationStatus.rawValue)")
         #endif
         guard authorizationStatus == .authorized ||
               authorizationStatus == .provisional ||
               authorizationStatus == .ephemeral else {
             #if DEBUG
-            print("[N1] reevaluate aborted: notifications not authorized")
             #endif
             return
         }
@@ -161,7 +155,6 @@ final class NotificationCoordinator: ObservableObject {
             preferences: prefs
         )
         #if DEBUG
-        print("[N1] candidates count=\(candidates.count)")
         #endif
 
         guard let winner = candidates.sorted(by: { lhs, rhs in
@@ -180,12 +173,10 @@ final class NotificationCoordinator: ObservableObject {
             return lhs.id < rhs.id
         }).first else {
             #if DEBUG
-            print("[N1] reevaluate complete: no winning candidate")
             #endif
             return
         }
         #if DEBUG
-        print("[N1] winner id=\(winner.id) fireDate=\(winner.fireDate)")
         #endif
 
         await scheduleCandidateIfNeeded(
@@ -207,7 +198,6 @@ final class NotificationCoordinator: ObservableObject {
         let alreadyDelivered = store.deliveredIDs(for: targetKey)
         guard !alreadyDelivered.contains(winner.id) else {
             #if DEBUG
-            AppLogger.log("[N1] \(logPrefix) aborted: winner already scheduled/notified id=\(winner.id)")
             #endif
             return
         }
@@ -219,7 +209,6 @@ final class NotificationCoordinator: ObservableObject {
             if elapsedSinceFavoritesMonitor < favoritesMonitorSuppressionInterval {
                 let remaining = favoritesMonitorSuppressionInterval - elapsedSinceFavoritesMonitor
                 #if DEBUG
-                AppLogger.log("[N1] \(logPrefix) aborted: favorites-monitor suppression active location=\(winner.locationName) remaining=\(remaining)")
                 #endif
                 return
             }
@@ -230,7 +219,6 @@ final class NotificationCoordinator: ObservableObject {
             guard elapsed >= schedulingCooldownInterval else {
                 let remaining = schedulingCooldownInterval - elapsed
                 #if DEBUG
-                AppLogger.log("[N1] \(logPrefix) aborted: cooldown active location=\(winner.locationName) remaining=\(remaining)")
                 #endif
                 return
             }
@@ -259,22 +247,18 @@ final class NotificationCoordinator: ObservableObject {
         let request = UNNotificationRequest(identifier: requestID, content: content, trigger: trigger)
 
         #if DEBUG
-        AppLogger.log("[N1] scheduling requestID=\(requestID) interval=\(interval) fireDate=\(winner.fireDate) location=\(winner.locationName) targetKey=\(targetKey) logPrefix=\(logPrefix)")
         #endif
 
         do {
             try await center.add(request)
             #if DEBUG
-            AppLogger.log("[N1] scheduled requestID=\(requestID) interval=\(interval) targetKey=\(targetKey)")
             #endif
             #if DEBUG
-            AppLogger.log("[N1] notification content title=\(content.title) body=\(content.body)")
             #endif
 
             let appState = await MainActor.run { UIApplication.shared.applicationState }
             if appState == .active {
                 #if DEBUG
-                AppLogger.log("[N1] note: YC is active, so the notification banner may not appear while the app is open")
                 #endif
             }
 
@@ -297,7 +281,6 @@ final class NotificationCoordinator: ObservableObject {
             }
         } catch {
             #if DEBUG
-            AppLogger.log("[N1] failed to schedule requestID=\(requestID) error=\(error)")
             #endif
         }
     }
@@ -330,11 +313,9 @@ final class NotificationCoordinator: ObservableObject {
         do {
             try await center.add(request)
             #if DEBUG
-            print("[N1] test notification scheduled")
             #endif
         } catch {
             #if DEBUG
-            print("[N1] test notification failed: \(error)")
             #endif
         }
     }
@@ -346,7 +327,6 @@ final class NotificationCoordinator: ObservableObject {
             .filter { $0.hasPrefix("yc.forecast.") }
 
         #if DEBUG
-        print("[N1] removing scheduled forecast alerts count=\(ids.count)")
         #endif
         center.removePendingNotificationRequests(withIdentifiers: ids)
     }
@@ -355,7 +335,6 @@ final class NotificationCoordinator: ObservableObject {
         center.removeAllPendingNotificationRequests()
         center.removeAllDeliveredNotifications()
         #if DEBUG
-        AppLogger.log("[N1] cleared ALL system notifications (pending + delivered)")
         #endif
     }
 

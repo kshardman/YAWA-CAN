@@ -7,14 +7,12 @@ enum SharePresenter {
             .compactMap({ $0 as? UIWindowScene })
             .first(where: { $0.activationState == .foregroundActive })
         else {
-            AppLogger.log("[N1] share presenter failed: no foreground window scene")
             return
         }
 
         guard let root = windowScene.windows.first(where: { $0.isKeyWindow })?.rootViewController
             ?? windowScene.windows.first?.rootViewController
         else {
-            AppLogger.log("[N1] share presenter failed: no root view controller")
             return
         }
 
@@ -32,7 +30,6 @@ enum SharePresenter {
             popover.permittedArrowDirections = []
         }
 
-        AppLogger.log("[N1] share presenter presenting from=\(String(describing: type(of: presenter)))")
         presenter.present(activity, animated: true)
     }
 

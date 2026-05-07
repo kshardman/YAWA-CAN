@@ -38,7 +38,6 @@ enum NotificationRuleEngine {
 
         guard qualifiesAsNotableForecast(category: category, severity: severity) else {
             #if DEBUG
-            print("[N1] notableForecast filtered out title=\(alert.title) severity=\(alert.severity)")
             #endif
             return nil
         }
@@ -84,10 +83,8 @@ enum NotificationRuleEngine {
             sourceHeadline: alert.title
         )
         #if DEBUG
-        print("[N1] notableForecast candidate built id=\(candidate.id) title=\(candidate.title)")
         #endif
         #if DEBUG
-        print("[N1] notableForecast issuedAt=\(alert.issuedAt?.description ?? "nil") id=\(candidate.id)")
         #endif
         return candidate
     }
