@@ -192,7 +192,7 @@ enum MoonCalculator {
 
         // Greenwich Mean Sidereal Time → Local Sidereal Time → Hour Angle
         let gmst = greenwichSiderealTime(jd: jd)
-        let lst  = gmst + lon / 15.0      // degrees
+        let lst  = gmst + lon              // both in degrees; no /15 conversion needed
         let ha   = (lst - ra).truncatingRemainder(dividingBy: 360.0)
 
         let latR  = lat * .pi / 180
