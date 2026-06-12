@@ -207,7 +207,6 @@ final class NotificationCoordinator: ObservableObject {
            let lastFavoritesMonitorScheduleAt = UserDefaults.standard.object(forKey: lastFavoritesMonitorScheduleAtKey) as? Date {
             let elapsedSinceFavoritesMonitor = Date().timeIntervalSince(lastFavoritesMonitorScheduleAt)
             if elapsedSinceFavoritesMonitor < favoritesMonitorSuppressionInterval {
-                let remaining = favoritesMonitorSuppressionInterval - elapsedSinceFavoritesMonitor
                 #if DEBUG
                 #endif
                 return
@@ -217,7 +216,6 @@ final class NotificationCoordinator: ObservableObject {
         if let lastScheduledAt = UserDefaults.standard.object(forKey: cooldownKey) as? Date {
             let elapsed = Date().timeIntervalSince(lastScheduledAt)
             guard elapsed >= schedulingCooldownInterval else {
-                let remaining = schedulingCooldownInterval - elapsed
                 #if DEBUG
                 #endif
                 return

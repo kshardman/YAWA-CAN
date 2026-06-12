@@ -153,14 +153,6 @@ final class FavoritesNotificationMonitor {
 
                     topAlert = bestAlertForNotification(from: candidateAlerts)
 
-                    if let topAlert {
-                        let expiresText = topAlert.expiresAt?.description ?? "nil"
-                        #if DEBUG
-                        #endif
-                    } else {
-                        #if DEBUG
-                        #endif
-                    }
                 } else {
                     topAlert = nil
                 }
@@ -216,7 +208,7 @@ final class FavoritesNotificationMonitor {
                     )
                 }
 
-                for entry in evaluatedCandidates {
+                for _ in evaluatedCandidates {
                     #if DEBUG
                     #endif
                 }
@@ -254,8 +246,6 @@ final class FavoritesNotificationMonitor {
 
                         return $0.candidate.id < $1.candidate.id
                     }.first!
-
-                    let winner = winningEntry.candidate
 
                     #if DEBUG
                     #endif
