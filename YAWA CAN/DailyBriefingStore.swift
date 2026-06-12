@@ -79,10 +79,8 @@ final class DailyBriefingStore {
         snapshot: WeatherSnapshot,
         usesUSUnits: Bool
     ) async {
-        guard isEnabled else { return }
-
+        // Always cache so rescheduleFromCache() works when the user later enables the toggle.
         let isEvening = scheduledHour >= Self.eveningCutoffHour
-        let title = isEvening ? "Tonight · \(locationName)" : "Today · \(locationName)"
         let body  = buildBody(snapshot: snapshot, isEvening: isEvening, usesUSUnits: usesUSUnits)
 
         UserDefaults.standard.set(lat,          forKey: Keys.cachedLat)
@@ -91,6 +89,9 @@ final class DailyBriefingStore {
         UserDefaults.standard.set(usesUSUnits,  forKey: Keys.cachedUsesUSUnits)
         cachedBody = body
 
+        guard isEnabled else { return }
+
+        let title = isEvening ? "Tonight · \(locationName)" : "Today · \(locationName)"
         await post(title: title, body: body)
     }
 
