@@ -56,6 +56,8 @@ struct YAWA_CANApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        // Initialise early so UserDefaults keys are ready before SettingsView reads @AppStorage.
+        _ = DailyBriefingStore.shared
         UNUserNotificationCenter.current().delegate = NotificationResponseBridge.shared
     }
 

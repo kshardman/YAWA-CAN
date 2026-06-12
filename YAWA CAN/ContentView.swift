@@ -164,6 +164,19 @@ struct ContentView: View {
             showLoading: showLoading
         )
 
+        if let snap = viewModel.snapshot {
+            let usesUSUnits = loc.countryCode.uppercased() != "CA"
+            Task {
+                await DailyBriefingStore.shared.reschedule(
+                    lat: loc.latitude,
+                    lon: loc.longitude,
+                    locationName: loc.displayName,
+                    snapshot: snap,
+                    usesUSUnits: usesUSUnits
+                )
+            }
+        }
+
         displayedLocation = loc
         temperatureAnimationKey = UUID()
         sunRefreshToken = Date()

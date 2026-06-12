@@ -47,7 +47,10 @@ struct SettingsView: View {
     // Forecast length for the home screen (7 or 10)
     @AppStorage("forecastDaysToShow") private var forecastDaysToShow: Int = 7
 
-
+    // Daily briefing
+    @AppStorage("briefing.isEnabled") private var briefingEnabled: Bool = false
+    @AppStorage("briefing.hour")      private var briefingHour:    Int  = 7
+    @AppStorage("briefing.minute")    private var briefingMinute:  Int  = 0
 
     // Radar overlay opacity (used by interactive radar)
     @AppStorage("radarOpacity") private var radarOpacity: Double = 0.80
@@ -66,6 +69,7 @@ struct SettingsView: View {
                     forecastSection
                     radarSection
                     notificationsSection
+                    briefingSection
 //                    homeSection
                     privacySection
                     attributionSection
@@ -408,6 +412,88 @@ let interval = max(1, candidate.fireDate.timeIntervalSinceNow)
         @unknown default:
             return "Status: Unknown"
         }
+    }
+
+    // MARK: - Daily Briefing
+
+    private var briefingTimeBinding: Binding<Date> {
+        Binding(
+            get: {
+                Calendar.current.date(
+                    bySettingHour:   briefingHour,
+                    minute:          briefingMinute,
+                    second:          0,
+                    of:              Date()
+                ) ?? Date()
+            },
+            set: { date in
+                let comps      = Calendar.current.dateComponents([.hour, .minute], from: date)
+                briefingHour   = comps.hour   ?? 7
+                briefingMinute = comps.minute ?? 0
+                DailyBriefingStore.shared.scheduledHour   = briefingHour
+                DailyBriefingStore.shared.scheduledMinute = briefingMinute
+                guard briefingEnabled else { return }
+                Task { await DailyBriefingStore.shared.rescheduleFromCache() }
+            }
+        )
+    }
+
+    var briefingSection: some View {
+        Section {
+            Toggle(isOn: $briefingEnabled) {
+                Label("Daily briefing", systemImage: "sun.horizon.fill")
+                    .foregroundStyle(primaryText)
+            }
+            .tint(.green)
+            .onChange(of: briefingEnabled) { _, newValue in
+                Task {
+                    if newValue {
+                        let granted = await notifications.requestAuthorizationIfNeeded()
+                        if granted {
+                            await DailyBriefingStore.shared.rescheduleFromCache()
+                        } else {
+                            briefingEnabled = false
+                        }
+                    } else {
+                        DailyBriefingStore.shared.cancel()
+                    }
+                }
+            }
+
+            if briefingEnabled {
+                HStack {
+                    Text("Delivery time")
+                        .foregroundStyle(primaryText)
+                    Spacer()
+                    DatePicker(
+                        "",
+                        selection:           briefingTimeBinding,
+                        displayedComponents: .hourAndMinute
+                    )
+                    .labelsHidden()
+                    .colorScheme(colorScheme)
+                }
+            }
+
+            Text("Get a daily weather summary at your chosen time. Notifications before 5 PM show today's high and conditions; at 5 PM or later they switch to tonight's low and overnight outlook.")
+                .font(.caption)
+                .foregroundStyle(secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+        } header: {
+            Text("Daily Briefing")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(primaryText)
+        } footer: {
+            if briefingEnabled,
+               notifications.authorizationStatus != .authorized,
+               notifications.authorizationStatus != .provisional {
+                Text("Enable notifications in iOS Settings to receive briefings.")
+                    .foregroundStyle(.orange)
+            }
+        }
+        .textCase(nil)
+        .listRowBackground(rowBackgroundView)
+        .listRowSeparator(.hidden)
     }
 
     var privacySection: some View {

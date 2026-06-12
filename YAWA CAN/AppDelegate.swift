@@ -7,6 +7,7 @@
 
 import UIKit
 import BackgroundTasks
+import CoreLocation
 import Foundation
 
 final class AppDelegate: NSObject, UIApplicationDelegate {
@@ -118,10 +119,41 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
             }
 
             await FavoritesNotificationMonitor().evaluateFavorites(monitoredFavorites)
+            await refreshDailyBriefing()
         }
 
         task.expirationHandler = {
             work.cancel()
+        }
+    }
+
+    /// Fetch a fresh Open-Meteo forecast for the cached location and reschedule
+    /// the daily briefing notification. Falls back to cached content on failure.
+    private func refreshDailyBriefing() async {
+        guard DailyBriefingStore.shared.isEnabled else { return }
+
+        guard let lat  = DailyBriefingStore.shared.cachedLat,
+              let lon  = DailyBriefingStore.shared.cachedLon,
+              let name = DailyBriefingStore.shared.cachedLocationName else { return }
+
+        let usesUSUnits = DailyBriefingStore.shared.cachedUsesUSUnits
+        let service     = OpenMeteoWeatherService()
+
+        do {
+            let snapshot = try await service.fetchWeather(
+                coordinate:    CLLocationCoordinate2D(latitude: lat, longitude: lon),
+                locationName:  name,
+                forecastDays:  3
+            )
+            await DailyBriefingStore.shared.reschedule(
+                lat:          lat,
+                lon:          lon,
+                locationName: name,
+                snapshot:     snapshot,
+                usesUSUnits:  usesUSUnits
+            )
+        } catch {
+            await DailyBriefingStore.shared.rescheduleFromCache()
         }
     }
 }
