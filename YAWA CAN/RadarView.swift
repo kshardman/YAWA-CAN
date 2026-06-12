@@ -24,7 +24,6 @@ struct RadarView: View {
 
     private enum RadarLoadState: Equatable {
         case loading
-        case preparing
         case ready
         case error(String)
     }
@@ -66,10 +65,13 @@ struct RadarView: View {
     // Smooth playback: one background task continuously prewarming all frames.
     @State private var eagerPrewarmTask: Task<Void, Never>? = nil
 
-    // Startup prewarm (first 3 frames shown before the play loop starts).
+    // Progressive range expansion: play loop starts with just the newest frame
+    // and grows the available window backward as older frames finish prewarming.
+    @State private var readyFrameCount: Int = 1
+
+    // Kept as no-ops so RadarMapViewStage0's API is unchanged.
     @State private var prewarmToken: UUID = UUID()
-    @State private var startupPrewarmPaths: [String] = []
-    @State private var startAfterPrewarm: Bool = false
+    private let startupPrewarmPaths: [String] = []
 
     // Direct reference to the tile layer so the playback loop can check
     // memCache readiness without going through the SwiftUI update cycle.
@@ -264,36 +266,44 @@ struct RadarView: View {
 
     // MARK: Eager background prewarm
 
+    /// Prewarms frames from second-newest backward to oldest, incrementing
+    /// `readyFrameCount` after each so the play loop's window expands progressively.
     private func startEagerPrewarm(host: String) {
         eagerPrewarmTask?.cancel()
+
         let allFrames = frames
-        let startIdx  = frameIndex
+        let count = allFrames.count
+        guard count > 1 else { return }
 
         eagerPrewarmTask = Task {
-            guard !allFrames.isEmpty else { return }
-            let count = allFrames.count
-            var paths: [String] = []
-            var seen  = Set<String>()
-            for offset in 0..<count {
-                let path = allFrames[(startIdx + offset) % count].path
-                if seen.insert(path).inserted { paths.append(path) }
-            }
-            guard let layer = await MainActor.run(resultType: RadarTileLayerView?.self, body: { radarLayerRef })
-            else { return }
-            guard let mapView = await MainActor.run(resultType: MKMapView?.self, body: {
-                layer.superview?.superview as? MKMapView ?? layer.superview as? MKMapView
-            }) else { return }
-            let chunkSize = 3
-            var offset = 0
-            while !Task.isCancelled, offset < paths.count {
-                let chunk = Array(paths[offset..<min(offset + chunkSize, paths.count)])
+            for reverseOffset in 1..<count {
+                guard !Task.isCancelled else { return }
+                let idx = count - 1 - reverseOffset  // count-2 first, then count-3, …, 0
+
+                var layer: RadarTileLayerView? = nil
+                var mapView: MKMapView? = nil
+                for _ in 0..<20 {
+                    let refs = await MainActor.run { () -> (RadarTileLayerView?, MKMapView?) in
+                        let l = radarLayerRef
+                        let m = l?.superview?.superview as? MKMapView ?? l?.superview as? MKMapView
+                        return (l, m)
+                    }
+                    layer = refs.0; mapView = refs.1
+                    if layer != nil && mapView != nil { break }
+                    try? await Task.sleep(nanoseconds: 50_000_000) // 50 ms
+                    if Task.isCancelled { return }
+                }
+                guard let layer, let mapView else { continue }
+
+                let path = allFrames[idx].path
                 await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-                    layer.prewarm(mapView: mapView, host: host, framePaths: chunk, opacity: 0) {
+                    layer.prewarm(mapView: mapView, host: host, framePaths: [path], opacity: 0) {
                         cont.resume()
                     }
                 }
-                offset += chunkSize
-                try? await Task.sleep(nanoseconds: 20_000_000)
+                guard !Task.isCancelled else { return }
+
+                await MainActor.run { readyFrameCount = min(count, readyFrameCount + 1) }
             }
         }
     }
@@ -315,46 +325,45 @@ struct RadarView: View {
     // MARK: startPlayback / beginPlaybackLoop
 
     private func startPlayback() {
-        guard playTask == nil, !frames.isEmpty, let h = host else { return }
-        let count = frames.count
-        var seen = Set<String>(); var paths: [String] = []
-        func enqueue(_ p: String) { guard seen.insert(p).inserted else { return }; paths.append(p) }
-        enqueue(frames[frameIndex].path)
-        if count >= 2 { enqueue(frames[(frameIndex + 1) % count].path) }
-        if count >= 3 { enqueue(frames[(frameIndex + 2) % count].path) }
-        startupPrewarmPaths = paths
-        startAfterPrewarm   = true
-        prewarmToken        = UUID()
-        let delayedToken = prewarmToken
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 750_000_000)
-            if startAfterPrewarm, prewarmToken == delayedToken, loadState == .ready {
-                loadState = .preparing
-            }
-        }
-        startEagerPrewarm(host: h)
+        guard playTask == nil, !frames.isEmpty else { return }
+        beginPlaybackLoop()
     }
 
     private func beginPlaybackLoop() {
         guard playTask == nil, !frames.isEmpty, let h = host else { return }
         isPlaying = true
         startEagerPrewarm(host: h)
+
         playTask = Task {
             while !Task.isCancelled {
-                let idx   = await MainActor.run { frameIndex }
                 let count = await MainActor.run { frames.count }
+                let ready = await MainActor.run { readyFrameCount }
                 guard count > 0 else { break }
-                let atEnd = idx == count - 1
+
+                // Wait until at least 2 frames are prewarmed before animating.
+                if ready < 2 {
+                    try? await Task.sleep(nanoseconds: 100_000_000) // 100 ms poll
+                    continue
+                }
+
+                let idx    = await MainActor.run { frameIndex }
+                let minIdx = max(0, count - ready)
+                let atEnd  = idx >= count - 1
+
                 let dwell = atEnd ? loopPauseDwell : dwellTime(for: idx)
                 try? await Task.sleep(nanoseconds: UInt64(dwell * 1_000_000_000))
                 if Task.isCancelled { break }
-                let nextIdx  = (idx + 1) % count
+
+                let nextIdx  = atEnd ? minIdx : idx + 1
                 let nextPath = await MainActor.run { frames[nextIdx].path }
                 await waitForTiles(host: h, path: nextPath)
                 if Task.isCancelled { break }
+
                 await MainActor.run {
                     guard isPlaying, !frames.isEmpty else { return }
-                    frameIndex = (frameIndex + 1) % frames.count
+                    // Re-read: readyFrameCount may have grown while we waited.
+                    let currentMin = max(0, frames.count - readyFrameCount)
+                    frameIndex = max(currentMin, nextIdx)
                     framePath  = frames[frameIndex].path
                 }
             }
@@ -444,10 +453,6 @@ struct RadarView: View {
                         isActive: scenePhase == .active,
                         onUserPan: {
                             DispatchQueue.main.async {
-                                if loadState == .preparing {
-                                    startAfterPrewarm = false
-                                    loadState = .ready
-                                }
                                 stopPlayback()
                             }
                         },
@@ -463,20 +468,11 @@ struct RadarView: View {
                         },
                         currentZoomStep: zoomStep,
                         prewarmToken: prewarmToken,
-                        prewarmFramePaths: (loadState == .preparing) ? startupPrewarmPaths : [],
-                        onPrewarmFinished: { token in
-                            guard token == self.prewarmToken else { return }
-                            DispatchQueue.main.async {
-                                loadState = .ready
-                                if startAfterPrewarm {
-                                    startAfterPrewarm = false
-                                    beginPlaybackLoop()
-                                }
-                            }
-                        },
+                        prewarmFramePaths: [],
+                        onPrewarmFinished: { _ in },
                         onTileHealth: { health in
                             DispatchQueue.main.async {
-                                guard isPlaying, loadState != .preparing else {
+                                guard isPlaying else {
                                     if tileIssueBanner != nil { tileIssueBanner = nil }
                                     return
                                 }
@@ -650,16 +646,6 @@ struct RadarView: View {
                     .padding(14)
                     .background(.ultraThinMaterial)
                     .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                case .preparing:
-                    VStack(spacing: 10) {
-                        ProgressView()
-                        Text("Preparing radar…")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(14)
-                    .background(.ultraThinMaterial)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                 case .error(let msg):
                     VStack(spacing: 10) {
                         Image(systemName: "exclamationmark.triangle.fill")
@@ -715,6 +701,7 @@ struct RadarView: View {
         stopPlayback()
         radarLayerRef    = nil
         staleRadarBanner = nil
+        readyFrameCount  = 1
         host = nil; framePath = nil
         mapTitle = target.title
         scheduleTitleGeocode(for: mapCenter)
