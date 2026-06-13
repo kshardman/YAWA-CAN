@@ -504,7 +504,7 @@ let interval = max(1, candidate.fireDate.timeIntervalSinceNow)
                     .foregroundStyle(secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Link(destination: URL(string: "https://widgital-digital.com/yawa-can/index.html")!) {
+                Link(destination: URL(string: "https://widgetaldigital.com/yawacan/privacy.html")!) {
                     HStack {
                         Text("Privacy Policy")
                             .foregroundStyle(primaryText)
