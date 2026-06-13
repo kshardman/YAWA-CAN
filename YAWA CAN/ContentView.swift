@@ -221,7 +221,10 @@ struct ContentView: View {
 
     @State private var selectedTab: WeatherTab = .forecasts
     @State private var cardOverlayDragOffset: CGFloat = .zero
-    @State private var containerHeight: CGFloat = 800
+
+    private var screenHeight: CGFloat {
+        (UIApplication.shared.connectedScenes.first as? UIWindowScene)?.screen.bounds.height ?? 800
+    }
 
     private var appBackground: LinearGradient {
         YAWATheme.background(for: colorScheme)
@@ -232,11 +235,6 @@ struct ContentView: View {
             ZStack(alignment: .bottom) {
                 appBackground
                     .ignoresSafeArea()
-                    .background(
-                        GeometryReader { geo in
-                            Color.clear.onAppear { containerHeight = geo.size.height }
-                        }
-                    )
 
                 ScrollViewReader { proxy in
                     ScrollView {
@@ -1797,7 +1795,7 @@ struct ContentView: View {
                 .padding(.bottom, 90)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: containerHeight * 0.40)
+        .frame(maxWidth: .infinity, maxHeight: screenHeight * 0.40)
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
         .shadow(color: .black.opacity(0.18), radius: 20, y: -6)
