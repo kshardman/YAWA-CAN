@@ -498,45 +498,47 @@ let interval = max(1, candidate.fireDate.timeIntervalSinceNow)
 
     var privacySection: some View {
         Section(header: Text("Privacy").font(.subheadline.weight(.semibold)).foregroundStyle(primaryText)) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("YAWA CAN uses your location to show nearby conditions, forecasts, and radar. Forecast data is provided by Open-Meteo.")
-                    .font(.caption)
-                    .foregroundStyle(secondaryText)
-                    .fixedSize(horizontal: false, vertical: true)
+            Text("YAWA CAN uses your location to show nearby conditions, forecasts, and radar. Forecast data is provided by Open-Meteo.")
+                .font(.caption)
+                .foregroundStyle(secondaryText)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.vertical, 2)
+                .listRowBackground(rowBackgroundView)
+                .listRowSeparator(.hidden)
 
-                Link(destination: URL(string: "https://widgetaldigital.com/yawacan/getting-started-ios.html")!) {
-                    HStack {
-                        Text("Getting Started")
-                            .foregroundStyle(primaryText)
+            Link(destination: URL(string: "https://widgetaldigital.com/yawacan/getting-started-ios.html")!) {
+                HStack {
+                    Text("Getting Started")
+                        .foregroundStyle(primaryText)
 
-                        Spacer()
+                    Spacer()
 
-                        Image(systemName: "chevron.right")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(AnyShapeStyle(YAWATheme.textSecondary(for: colorScheme).opacity(0.9)))
-                    }
-                    .contentShape(Rectangle())
+                    Image(systemName: "chevron.right")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(AnyShapeStyle(YAWATheme.textSecondary(for: colorScheme).opacity(0.9)))
                 }
-
-                Link(destination: URL(string: "https://widgetaldigital.com/yawacan/privacy.html")!) {
-                    HStack {
-                        Text("Privacy Policy")
-                            .foregroundStyle(primaryText)
-
-                        Spacer()
-
-                        Image(systemName: "chevron.right")
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(AnyShapeStyle(YAWATheme.textSecondary(for: colorScheme).opacity(0.9)))
-                    }
-                    .contentShape(Rectangle())
-                }
+                .contentShape(Rectangle())
             }
-            .padding(.vertical, 2)
+            .listRowBackground(rowBackgroundView)
+            .listRowSeparator(.hidden)
+
+            Link(destination: URL(string: "https://widgetaldigital.com/yawacan/privacy.html")!) {
+                HStack {
+                    Text("Privacy Policy")
+                        .foregroundStyle(primaryText)
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(AnyShapeStyle(YAWATheme.textSecondary(for: colorScheme).opacity(0.9)))
+                }
+                .contentShape(Rectangle())
+            }
+            .listRowBackground(rowBackgroundView)
+            .listRowSeparator(.hidden)
         }
         .textCase(nil)
-        .listRowBackground(rowBackgroundView)
-        .listRowSeparator(.hidden)
     }
 
     var attributionSection: some View {
