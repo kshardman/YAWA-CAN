@@ -504,6 +504,20 @@ let interval = max(1, candidate.fireDate.timeIntervalSinceNow)
                     .foregroundStyle(secondaryText)
                     .fixedSize(horizontal: false, vertical: true)
 
+                Link(destination: URL(string: "https://widgetaldigital.com/yawacan/getting-started-ios.html")!) {
+                    HStack {
+                        Text("Getting Started")
+                            .foregroundStyle(primaryText)
+
+                        Spacer()
+
+                        Image(systemName: "chevron.right")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(AnyShapeStyle(YAWATheme.textSecondary(for: colorScheme).opacity(0.9)))
+                    }
+                    .contentShape(Rectangle())
+                }
+
                 Link(destination: URL(string: "https://widgetaldigital.com/yawacan/privacy.html")!) {
                     HStack {
                         Text("Privacy Policy")
