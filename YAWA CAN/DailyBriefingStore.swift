@@ -1,4 +1,5 @@
 import Foundation
+import CoreLocation
 import UserNotifications
 import OSLog
 
@@ -55,6 +56,52 @@ final class DailyBriefingStore {
     var cachedLon: Double?          { UserDefaults.standard.object(forKey: Keys.cachedLon) as? Double }
     var cachedUsesUSUnits: Bool     { UserDefaults.standard.bool(forKey: Keys.cachedUsesUSUnits) }
 
+    // MARK: - Pinned briefing location
+
+    /// The UUID string of the user-chosen location for the briefing.
+    /// Nil means "follow whatever location was last viewed."
+    var pinnedLocationID: String? {
+        get { UserDefaults.standard.string(forKey: Keys.pinnedLocationID) }
+        set { UserDefaults.standard.set(newValue, forKey: Keys.pinnedLocationID) }
+    }
+    var pinnedLat: Double? {
+        get { UserDefaults.standard.object(forKey: Keys.pinnedLat) as? Double }
+        set { UserDefaults.standard.set(newValue, forKey: Keys.pinnedLat) }
+    }
+    var pinnedLon: Double? {
+        get { UserDefaults.standard.object(forKey: Keys.pinnedLon) as? Double }
+        set { UserDefaults.standard.set(newValue, forKey: Keys.pinnedLon) }
+    }
+    var pinnedLocationName: String? {
+        get { UserDefaults.standard.string(forKey: Keys.pinnedLocationName) }
+        set { UserDefaults.standard.set(newValue, forKey: Keys.pinnedLocationName) }
+    }
+    var pinnedUsesUSUnits: Bool {
+        get { UserDefaults.standard.bool(forKey: Keys.pinnedUsesUSUnits) }
+        set { UserDefaults.standard.set(newValue, forKey: Keys.pinnedUsesUSUnits) }
+    }
+
+    /// Effective values used for scheduling — pinned location takes priority over the last-viewed cache.
+    var effectiveLat: Double?          { pinnedLat ?? cachedLat }
+    var effectiveLon: Double?          { pinnedLon ?? cachedLon }
+    var effectiveLocationName: String? { pinnedLocationName ?? cachedLocationName }
+    var effectiveUsesUSUnits: Bool     { pinnedLocationID != nil ? pinnedUsesUSUnits : cachedUsesUSUnits }
+
+    func pin(id: String, lat: Double, lon: Double, name: String, usesUSUnits: Bool) {
+        pinnedLocationID   = id
+        pinnedLat          = lat
+        pinnedLon          = lon
+        pinnedLocationName = name
+        pinnedUsesUSUnits  = usesUSUnits
+    }
+
+    func unpin() {
+        pinnedLocationID   = nil
+        pinnedLat          = nil
+        pinnedLon          = nil
+        pinnedLocationName = nil
+    }
+
     // MARK: - UserDefaults keys
 
     private enum Keys {
@@ -66,6 +113,11 @@ final class DailyBriefingStore {
         static let cachedLat          = "briefing.cachedLat"
         static let cachedLon          = "briefing.cachedLon"
         static let cachedUsesUSUnits  = "briefing.cachedUsesUSUnits"
+        static let pinnedLocationID   = "briefing.pinnedLocationID"
+        static let pinnedLat          = "briefing.pinnedLat"
+        static let pinnedLon          = "briefing.pinnedLon"
+        static let pinnedLocationName = "briefing.pinnedLocationName"
+        static let pinnedUsesUSUnits  = "briefing.pinnedUsesUSUnits"
     }
 
     // MARK: - Reschedule with fresh forecast data
@@ -79,20 +131,59 @@ final class DailyBriefingStore {
         snapshot: WeatherSnapshot,
         usesUSUnits: Bool
     ) async {
-        // Always cache so rescheduleFromCache() works when the user later enables the toggle.
-        let isEvening = scheduledHour >= Self.eveningCutoffHour
-        let body  = buildBody(snapshot: snapshot, isEvening: isEvening, usesUSUnits: usesUSUnits)
-
+        // Always update the viewed-location cache.
         UserDefaults.standard.set(lat,          forKey: Keys.cachedLat)
         UserDefaults.standard.set(lon,          forKey: Keys.cachedLon)
         UserDefaults.standard.set(locationName, forKey: Keys.cachedLocationName)
         UserDefaults.standard.set(usesUSUnits,  forKey: Keys.cachedUsesUSUnits)
-        cachedBody = body
 
         guard isEnabled else { return }
 
-        let title = isEvening ? "Tonight · \(locationName)" : "Today · \(locationName)"
-        await post(title: title, body: body)
+        // If a location is pinned, only post when the incoming data is for that location.
+        if let pLat = pinnedLat, let pLon = pinnedLon, let pName = pinnedLocationName {
+            guard abs(pLat - lat) < 0.01 && abs(pLon - lon) < 0.01 else { return }
+            let isEvening = scheduledHour >= Self.eveningCutoffHour
+            let body = buildBody(snapshot: snapshot, isEvening: isEvening, usesUSUnits: pinnedUsesUSUnits)
+            cachedBody = body
+            let title = isEvening ? "Tonight · \(pName)" : "Today · \(pName)"
+            await post(title: title, body: body)
+        } else {
+            let isEvening = scheduledHour >= Self.eveningCutoffHour
+            let body = buildBody(snapshot: snapshot, isEvening: isEvening, usesUSUnits: usesUSUnits)
+            cachedBody = body
+            let title = isEvening ? "Tonight · \(locationName)" : "Today · \(locationName)"
+            await post(title: title, body: body)
+        }
+    }
+
+    /// Pin an explicit briefing location, fetch fresh forecast data for it,
+    /// and reschedule. Falls back to cached content if the network call fails.
+    func chooseLocation(id: String, lat: Double, lon: Double, name: String, usesUSUnits: Bool) async {
+        pin(id: id, lat: lat, lon: lon, name: name, usesUSUnits: usesUSUnits)
+
+        // Cache immediately so the BGTask has coordinates even if the fetch below fails.
+        UserDefaults.standard.set(lat,  forKey: Keys.pinnedLat)
+        UserDefaults.standard.set(lon,  forKey: Keys.pinnedLon)
+        UserDefaults.standard.set(name, forKey: Keys.pinnedLocationName)
+
+        guard isEnabled else { return }
+
+        let service = OpenMeteoWeatherService()
+        do {
+            let snapshot = try await service.fetchWeather(
+                coordinate:   CLLocationCoordinate2D(latitude: lat, longitude: lon),
+                locationName: name,
+                forecastDays: 3
+            )
+            let isEvening = scheduledHour >= Self.eveningCutoffHour
+            let body = buildBody(snapshot: snapshot, isEvening: isEvening, usesUSUnits: usesUSUnits)
+            cachedBody = body
+            let title = isEvening ? "Tonight · \(name)" : "Today · \(name)"
+            await post(title: title, body: body)
+        } catch {
+            logger.warning("Daily briefing chooseLocation fetch failed, falling back to cache: \(error)")
+            await rescheduleFromCache()
+        }
     }
 
     /// Re-schedule using the last cached body (no network call).

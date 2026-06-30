@@ -17,6 +17,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     private let maxBackgroundFavorites = 3
 
     private struct BackgroundSavedFavorite: Decodable {
+        let id: UUID
         let displayName: String
         let latitude: Double
         let longitude: Double
@@ -89,6 +90,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
                 ) == key
             }.map {
                 MonitoredFavoriteLocation(
+                    id: $0.id.uuidString,
                     displayName: $0.displayName,
                     latitude: $0.latitude,
                     longitude: $0.longitude,
@@ -132,11 +134,11 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     private func refreshDailyBriefing() async {
         guard DailyBriefingStore.shared.isEnabled else { return }
 
-        guard let lat  = DailyBriefingStore.shared.cachedLat,
-              let lon  = DailyBriefingStore.shared.cachedLon,
-              let name = DailyBriefingStore.shared.cachedLocationName else { return }
+        guard let lat  = DailyBriefingStore.shared.effectiveLat,
+              let lon  = DailyBriefingStore.shared.effectiveLon,
+              let name = DailyBriefingStore.shared.effectiveLocationName else { return }
 
-        let usesUSUnits = DailyBriefingStore.shared.cachedUsesUSUnits
+        let usesUSUnits = DailyBriefingStore.shared.effectiveUsesUSUnits
         let service     = OpenMeteoWeatherService()
 
         do {

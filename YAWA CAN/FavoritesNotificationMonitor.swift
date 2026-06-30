@@ -10,6 +10,7 @@ import Foundation
 import CoreLocation
 
 struct MonitoredFavoriteLocation {
+    let id: String
     let displayName: String
     let latitude: Double
     let longitude: Double

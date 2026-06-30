@@ -48,9 +48,10 @@ struct SettingsView: View {
     @AppStorage("forecastDaysToShow") private var forecastDaysToShow: Int = 7
 
     // Daily briefing
-    @AppStorage("briefing.isEnabled") private var briefingEnabled: Bool = false
-    @AppStorage("briefing.hour")      private var briefingHour:    Int  = 7
-    @AppStorage("briefing.minute")    private var briefingMinute:  Int  = 0
+    @AppStorage("briefing.isEnabled")      private var briefingEnabled:      Bool   = false
+    @AppStorage("briefing.hour")           private var briefingHour:         Int    = 7
+    @AppStorage("briefing.minute")         private var briefingMinute:       Int    = 0
+    @AppStorage("briefing.pinnedLocationID") private var briefingLocationID: String = ""
 
     // Radar overlay opacity (used by interactive radar)
     @AppStorage("radarOpacity") private var radarOpacity: Double = 0.80
@@ -472,6 +473,56 @@ let interval = max(1, candidate.fireDate.timeIntervalSinceNow)
                     )
                     .labelsHidden()
                     .colorScheme(colorScheme)
+                }
+
+                if !monitoredFavorites.isEmpty {
+                    HStack {
+                        Text("Location")
+                            .foregroundStyle(primaryText)
+                        Spacer()
+                        Menu {
+                            Button {
+                                briefingLocationID = ""
+                                DailyBriefingStore.shared.unpin()
+                                Task { await DailyBriefingStore.shared.rescheduleFromCache() }
+                            } label: {
+                                Label("Current location", systemImage: briefingLocationID.isEmpty ? "checkmark" : "location")
+                            }
+                            Divider()
+                            ForEach(monitoredFavorites, id: \.id) { loc in
+                                Button {
+                                    briefingLocationID = loc.id
+                                    let usesUSUnits = loc.countryCode.uppercased() != "CA"
+                                    Task {
+                                        await DailyBriefingStore.shared.chooseLocation(
+                                            id:          loc.id,
+                                            lat:         loc.latitude,
+                                            lon:         loc.longitude,
+                                            name:        loc.displayName,
+                                            usesUSUnits: usesUSUnits
+                                        )
+                                    }
+                                } label: {
+                                    Label(
+                                        loc.displayName,
+                                        systemImage: briefingLocationID == loc.id ? "checkmark" : "mappin"
+                                    )
+                                }
+                            }
+                        } label: {
+                            let name: String = {
+                                if briefingLocationID.isEmpty { return "Current location" }
+                                return monitoredFavorites.first(where: { $0.id == briefingLocationID })?.displayName ?? "Current location"
+                            }()
+                            HStack(spacing: 4) {
+                                Text(name)
+                                    .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+                                Image(systemName: "chevron.up.chevron.down")
+                                    .font(.caption)
+                                    .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+                            }
+                        }
+                    }
                 }
             }
 

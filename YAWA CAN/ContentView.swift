@@ -415,6 +415,7 @@ struct ContentView: View {
             SettingsView(
                 monitoredFavorites: locationStore.favorites.map {
                     MonitoredFavoriteLocation(
+                        id: $0.id.uuidString,
                         displayName: $0.displayName,
                         latitude: $0.latitude,
                         longitude: $0.longitude,
@@ -1013,7 +1014,7 @@ struct ContentView: View {
             let days: [DailyForecastDay] = Array(snap.daily.prefix(daysToShow))
             
             ForEach(Array(days.enumerated()), id: \.offset) { idx, day in
-                let dayDateW: CGFloat = 78
+                let dayDateW: CGFloat = 68
                 let iconW: CGFloat = 36
                 
                 let sym = day.symbolName
@@ -1043,11 +1044,6 @@ struct ContentView: View {
                                     .lineLimit(1)
                                     .minimumScaleFactor(0.9)
                                 
-                                Text(dateLabel(day.date, timeZoneID: snap.timeZoneID))
-                                    .font(.caption)
-                                    .foregroundStyle(YAWATheme.textSecondary(for: colorScheme).opacity(0.75))
-                                    .monospacedDigit()
-                                    .lineLimit(1)
                             }
                             .frame(width: dayDateW, alignment: .leading)
                             
@@ -1106,7 +1102,7 @@ struct ContentView: View {
                             .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
                             .fixedSize(horizontal: true, vertical: false)
                     }
-                    .padding(.vertical, 3)
+                    .padding(.vertical, 1)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -1714,6 +1710,7 @@ struct ContentView: View {
                 .prefix(5)
                 .map {
                     MonitoredFavoriteLocation(
+                        id: $0.id.uuidString,
                         displayName: $0.displayName,
                         latitude: $0.latitude,
                         longitude: $0.longitude,
