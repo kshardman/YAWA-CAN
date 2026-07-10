@@ -4,6 +4,7 @@ import MapKit
 import Charts
 import Combine
 import UIKit
+import FoundationModels
 
 // YAWA CAN - Main ContentView
 /// Uses `WeatherViewModel` + `WeatherServiceProtocol` (Open-Meteo service) and renders
@@ -3822,6 +3823,7 @@ private struct DailyForecastDetailSheet: View {
     let usesUSUnits: Bool
 
     @State private var currentIndex: Int
+    @State private var aiSummary: String?
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
 
@@ -3969,10 +3971,11 @@ private struct DailyForecastDetailSheet: View {
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
 
-                        Text(forecastSummary)
+                        Text(aiSummary ?? forecastSummary)
                             .font(.subheadline)
                             .foregroundStyle(.primary)
                             .fixedSize(horizontal: false, vertical: true)
+                            .animation(.easeInOut(duration: 0.25), value: aiSummary)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -4063,6 +4066,57 @@ private struct DailyForecastDetailSheet: View {
             )
         }
         .fontDesign(.rounded)
+        .task(id: currentIndex) {
+            aiSummary = nil
+            aiSummary = await generateAISummary(for: days[currentIndex])
+        }
+    }
+
+    private func generateAISummary(for forecastDay: DailyForecastDay) async -> String? {
+        guard #available(iOS 26.0, *) else { return nil }
+        guard SystemLanguageModel.default.isAvailable else { return nil }
+
+        let corrected = temperatureCorrectedConditionText(forecastDay.conditionText, highC: forecastDay.highC)
+        let highLabel: String
+        let lowLabel: String
+        if usesUSUnits {
+            highLabel = "\(Int((forecastDay.highC * 9/5 + 32).rounded()))°F"
+            lowLabel  = "\(Int((forecastDay.lowC  * 9/5 + 32).rounded()))°F"
+        } else {
+            highLabel = "\(Int(forecastDay.highC.rounded()))°C"
+            lowLabel  = "\(Int(forecastDay.lowC.rounded()))°C"
+        }
+        let precipLine = forecastDay.precipChancePercent > 0
+            ? "\(forecastDay.precipChancePercent)% chance of precipitation."
+            : "No precipitation expected."
+        let windLine: String
+        if let kph = forecastDay.windSpeedKPH {
+            let speed = usesUSUnits ? Int((kph * 0.621371).rounded()) : Int(kph.rounded())
+            let unit  = usesUSUnits ? "mph" : "km/h"
+            windLine  = "Wind around \(speed) \(unit)."
+        } else {
+            windLine = ""
+        }
+
+        let prompt = """
+        Write a concise 1–2 sentence weather forecast summary for a mobile weather app.
+        Use plain, natural language — no bullet points, no markdown. End with a period.
+        Do not repeat the numbers from the data; focus on what the day will feel like.
+
+        Condition: \(corrected)
+        High: \(highLabel), Low: \(lowLabel)
+        \(precipLine)
+        \(windLine)
+        """
+
+        do {
+            let session = LanguageModelSession()
+            let response = try await session.respond(to: prompt)
+            let text = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            return text.isEmpty ? nil : text
+        } catch {
+            return nil
+        }
     }
 
     private var roundedPrecipChance: Int {
