@@ -3824,6 +3824,7 @@ private struct DailyForecastDetailSheet: View {
 
     @State private var currentIndex: Int
     @State private var aiSummary: String?
+    @State private var aiSummaryCache: [Int: String] = [:]
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
 
@@ -4067,8 +4068,18 @@ private struct DailyForecastDetailSheet: View {
         }
         .fontDesign(.rounded)
         .task(id: currentIndex) {
+            let index = currentIndex
+            if let cached = aiSummaryCache[index] {
+                aiSummary = cached
+                return
+            }
             aiSummary = nil
-            aiSummary = await generateAISummary(for: days[currentIndex])
+            let generated = await generateAISummary(for: days[index])
+            guard !Task.isCancelled, currentIndex == index else { return }
+            aiSummary = generated
+            if let generated {
+                aiSummaryCache[index] = generated
+            }
         }
     }
 
@@ -4098,20 +4109,26 @@ private struct DailyForecastDetailSheet: View {
             windLine = ""
         }
 
-        let prompt = """
-        Write a concise 1–2 sentence weather forecast summary for a mobile weather app.
-        Use plain, natural language — no bullet points, no markdown. End with a period.
-        Do not repeat the numbers from the data; focus on what the day will feel like.
+        let dataLines = [
+            "Condition: \(corrected)",
+            "High: \(highLabel), Low: \(lowLabel)",
+            precipLine,
+            windLine
+        ].filter { !$0.isEmpty }.joined(separator: "\n")
 
-        Condition: \(corrected)
-        High: \(highLabel), Low: \(lowLabel)
-        \(precipLine)
-        \(windLine)
+        let instructions = """
+        You write weather forecast summaries for a mobile weather app.
+        Respond with only the summary — 1–2 sentences, plain natural language, \
+        no bullet points, no markdown, no preamble. End with a period.
+        Describe what the day will feel like rather than restating exact figures; \
+        reference conditions qualitatively (e.g. "a good chance of rain", "breezy") \
+        rather than quoting the numbers.
         """
 
         do {
-            let session = LanguageModelSession()
-            let response = try await session.respond(to: prompt)
+            let session = LanguageModelSession(instructions: instructions)
+            let options = GenerationOptions(temperature: 0.3)
+            let response = try await session.respond(to: dataLines, options: options)
             let text = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
             return text.isEmpty ? nil : text
         } catch {
