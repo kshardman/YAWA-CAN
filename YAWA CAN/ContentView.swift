@@ -4181,9 +4181,10 @@ private struct DailyForecastDetailSheet: View {
         no bullet points, no markdown, no preamble. End with a period.
         This is a forecast for a day that has not happened yet, so write entirely \
         in the future tense (use "will be", not "is" or "there is").
-        Do not begin with "Today", do not name the day or any time of day, and \
-        never use the words "today" or "tonight". Never mention any number, \
-        temperature, degrees, wind chill, or heat index.
+        Do not begin with "Today" or "The forecast", do not name the day or any \
+        time of day, and never use relative-time words like "today", "tonight", \
+        "tomorrow", or "yesterday". Never mention any number, temperature, \
+        degrees, wind chill, or heat index.
         Use the wind and precipitation intensity exactly as given — do not soften \
         "windy" to "breezy", and do not downgrade "a chance" to "a slight chance". \
         Wind is not a chance event — never write "a chance of wind" or similar; \
@@ -4217,10 +4218,18 @@ private struct DailyForecastDetailSheet: View {
                     .replacingOccurrences(of: "\(word).", with: ".")
             }
 
+            let lowered = text.lowercased()
+
+            // Reject any surviving relative-time reference. These can't be stripped
+            // cleanly mid-sentence ("The forecast for tomorrow will be clear"), and
+            // the day is never relative to now, so fall back to the phrase-builder.
+            for word in ["today", "tonight", "tomorrow", "yesterday"] {
+                if lowered.contains(word) { return nil }
+            }
+
             // Reject hallucinated numbers/units. We pass no numbers to the model,
             // so any digit or temperature phrasing is fabricated (e.g. "a wind
             // chill of 90 degrees"). Discard it and let the phrase-builder show.
-            let lowered = text.lowercased()
             let hasDigit = text.rangeOfCharacter(from: .decimalDigits) != nil
             if hasDigit
                 || text.contains("°")
