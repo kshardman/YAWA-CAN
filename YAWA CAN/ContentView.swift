@@ -3825,6 +3825,7 @@ private struct DailyForecastDetailSheet: View {
     @State private var currentIndex: Int
     @State private var aiSummary: String?
     @State private var aiSummaryCache: [Int: String] = [:]
+    @State private var aiPending = false
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
 
@@ -3976,9 +3977,32 @@ private struct DailyForecastDetailSheet: View {
                             .font(.subheadline)
                             .foregroundStyle(.primary)
                             .fixedSize(horizontal: false, vertical: true)
+                            .redacted(reason: aiPending ? .placeholder : [])
                             .animation(.easeInOut(duration: 0.25), value: aiSummary)
+                            .animation(.easeInOut(duration: 0.2), value: aiPending)
+
+                        if aiSummary != nil {
+                            HStack(spacing: 4) {
+                                Image(systemName: "apple.intelligence")
+                                    .font(.caption2)
+                                Text("Summarized by Apple Intelligence")
+                                    .font(.caption2)
+                            }
+                            .foregroundStyle(.secondary.opacity(0.7))
+                            .transition(.opacity)
+                        } else if aiPending {
+                            HStack(spacing: 5) {
+                                ProgressView().controlSize(.mini)
+                                Text("Summarizing…")
+                                    .font(.caption2)
+                            }
+                            .foregroundStyle(.secondary.opacity(0.7))
+                            .transition(.opacity)
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .animation(.easeInOut(duration: 0.2), value: aiSummary)
+                    .animation(.easeInOut(duration: 0.2), value: aiPending)
 
 
                     if !hourlyTempsForDay.isEmpty {
@@ -4071,16 +4095,29 @@ private struct DailyForecastDetailSheet: View {
             let index = currentIndex
             if let cached = aiSummaryCache[index] {
                 aiSummary = cached
+                aiPending = false
+                return
+            }
+            guard aiModelAvailable else {
+                aiSummary = nil
+                aiPending = false
                 return
             }
             aiSummary = nil
+            aiPending = true
             let generated = await generateAISummary(for: days[index])
             guard !Task.isCancelled, currentIndex == index else { return }
             aiSummary = generated
+            aiPending = false
             if let generated {
                 aiSummaryCache[index] = generated
             }
         }
+    }
+
+    private var aiModelAvailable: Bool {
+        guard #available(iOS 26.0, *) else { return false }
+        return SystemLanguageModel.default.isAvailable
     }
 
     private func generateAISummary(for forecastDay: DailyForecastDay) async -> String? {
