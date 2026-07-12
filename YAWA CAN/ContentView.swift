@@ -4152,17 +4152,24 @@ private struct DailyForecastDetailSheet: View {
         }
 
         // Only surface wind when gusts are actually notable, so "breezy" stops
-        // appearing on calm days. Thresholds match windSummarySentence.
+        // appearing on calm days. Thresholds match windSummarySentence. Windy days
+        // use emphatic "strong winds" wording — the model reliably softens a plain
+        // "windy" to "breezy", but rarely downgrades "strong". `isWindy` (gusts ≥
+        // the windy threshold, i.e. when the "Windy" badge shows) drives the guard
+        // below, decoupled from the descriptor wording.
         var windDescriptor = ""
+        var isWindy = false
         if let gustKPH = forecastDay.windGustKPH {
             let gustValue = usesUSUnits ? gustKPH * 0.621371 : gustKPH
             let breezy = usesUSUnits ? 22.0 : 35.0
             let windy = usesUSUnits ? 30.0 : 45.0
             let veryWindy = usesUSUnits ? 40.0 : 60.0
             if gustValue >= veryWindy {
-                windDescriptor = "It will be very windy with strong gusts."
+                windDescriptor = "Very strong, gusty winds are expected."
+                isWindy = true
             } else if gustValue >= windy {
-                windDescriptor = "It will be windy."
+                windDescriptor = "Strong winds are expected."
+                isWindy = true
             } else if gustValue >= breezy {
                 windDescriptor = "It will be breezy at times."
             }
@@ -4243,7 +4250,7 @@ private struct DailyForecastDetailSheet: View {
             // genuinely windy (gusts ≥ the windy threshold — the same point the
             // "Windy" badge appears) the summary must not soften it to light/breezy/
             // calm. That contradiction is the visible defect; fall back instead.
-            if windDescriptor.contains("windy") {
+            if isWindy {
                 if lowered.contains("breez")
                     || lowered.contains("light wind")
                     || lowered.contains("gentle")
