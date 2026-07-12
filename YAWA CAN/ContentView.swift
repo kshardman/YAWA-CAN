@@ -4125,48 +4125,82 @@ private struct DailyForecastDetailSheet: View {
         guard SystemLanguageModel.default.isAvailable else { return nil }
 
         let corrected = temperatureCorrectedConditionText(forecastDay.conditionText, highC: forecastDay.highC)
-        let highLabel: String
-        let lowLabel: String
-        if usesUSUnits {
-            highLabel = "\(Int((forecastDay.highC * 9/5 + 32).rounded()))°F"
-            lowLabel  = "\(Int((forecastDay.lowC  * 9/5 + 32).rounded()))°F"
-        } else {
-            highLabel = "\(Int(forecastDay.highC.rounded()))°C"
-            lowLabel  = "\(Int(forecastDay.lowC.rounded()))°C"
+
+        // Bucket the numbers into qualitative descriptors in Swift so the small
+        // on-device model can't mischaracterize them (e.g. calling 20% "a good
+        // chance of rain"). Thresholds mirror the fallback phrase-builder.
+        let feelDescriptor: String
+        switch forecastDay.highC {
+        case ..<0:     feelDescriptor = "It will feel cold."
+        case 0..<10:   feelDescriptor = "It will feel chilly."
+        case 10..<18:  feelDescriptor = "It will feel cool."
+        case 18..<25:  feelDescriptor = "It will feel mild."
+        case 25..<30:  feelDescriptor = "It will feel warm."
+        default:       feelDescriptor = "It will feel hot."
         }
-        let precipLine = forecastDay.precipChancePercent > 0
-            ? "\(forecastDay.precipChancePercent)% chance of precipitation."
-            : "No precipitation expected."
-        let windLine: String
-        if let kph = forecastDay.windSpeedKPH {
-            let speed = usesUSUnits ? Int((kph * 0.621371).rounded()) : Int(kph.rounded())
-            let unit  = usesUSUnits ? "mph" : "km/h"
-            windLine  = "Wind around \(speed) \(unit)."
+
+        let pop = forecastDay.precipChancePercent
+        let precipDescriptor: String
+        if pop <= 0 {
+            precipDescriptor = "Precipitation is not expected."
+        } else if pop <= 20 {
+            precipDescriptor = "There is a slight chance of precipitation."
+        } else if pop <= 50 {
+            precipDescriptor = "There is a chance of precipitation."
         } else {
-            windLine = ""
+            precipDescriptor = "Precipitation is likely."
+        }
+
+        // Only surface wind when gusts are actually notable, so "breezy" stops
+        // appearing on calm days. Thresholds match windSummarySentence.
+        var windDescriptor = ""
+        if let gustKPH = forecastDay.windGustKPH {
+            let gustValue = usesUSUnits ? gustKPH * 0.621371 : gustKPH
+            let breezy = usesUSUnits ? 22.0 : 35.0
+            let windy = usesUSUnits ? 30.0 : 45.0
+            let veryWindy = usesUSUnits ? 40.0 : 60.0
+            if gustValue >= veryWindy {
+                windDescriptor = "It will be very windy with strong gusts."
+            } else if gustValue >= windy {
+                windDescriptor = "It will be windy."
+            } else if gustValue >= breezy {
+                windDescriptor = "It will be breezy at times."
+            }
         }
 
         let dataLines = [
-            "Condition: \(corrected)",
-            "High: \(highLabel), Low: \(lowLabel)",
-            precipLine,
-            windLine
+            "Sky: \(corrected)",
+            feelDescriptor,
+            precipDescriptor,
+            windDescriptor
         ].filter { !$0.isEmpty }.joined(separator: "\n")
 
         let instructions = """
-        You write weather forecast summaries for a mobile weather app.
-        Respond with only the summary — 1–2 sentences, plain natural language, \
+        You write a short weather forecast summary for a mobile weather app.
+        Respond with only the summary — 1 or 2 sentences, plain natural language, \
         no bullet points, no markdown, no preamble. End with a period.
-        Describe what the day will feel like rather than restating exact figures; \
-        reference conditions qualitatively (e.g. "a good chance of rain", "breezy") \
-        rather than quoting the numbers.
+        Do not begin with "Today", do not name the day or any time of day, and do \
+        not repeat any numbers. Describe the sky and how the day will feel using \
+        only the descriptions provided; never overstate the chance of precipitation \
+        beyond what is given. Vary your wording and avoid formulaic openers.
         """
 
         do {
             let session = LanguageModelSession(instructions: instructions)
-            let options = GenerationOptions(temperature: 0.3)
+            let options = GenerationOptions(temperature: 0.5)
             let response = try await session.respond(to: dataLines, options: options)
-            let text = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            var text = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            // Safety net: the model still opens with "Today…" often enough that we
+            // strip it rather than rely on the instruction alone.
+            for prefix in ["Today will be ", "Today is going to be ", "Today, ", "Today "] {
+                if text.hasPrefix(prefix) {
+                    text.removeFirst(prefix.count)
+                    text = text.prefix(1).uppercased() + text.dropFirst()
+                    break
+                }
+            }
+
             return text.isEmpty ? nil : text
         } catch {
             return nil
