@@ -4142,13 +4142,13 @@ private struct DailyForecastDetailSheet: View {
         let pop = forecastDay.precipChancePercent
         let precipDescriptor: String
         if pop <= 0 {
-            precipDescriptor = "Precipitation is not expected."
+            precipDescriptor = "No precipitation will be expected."
         } else if pop <= 20 {
-            precipDescriptor = "There is a slight chance of precipitation."
+            precipDescriptor = "There will be a slight chance of precipitation."
         } else if pop <= 50 {
-            precipDescriptor = "There is a chance of precipitation."
+            precipDescriptor = "There will be a chance of precipitation."
         } else {
-            precipDescriptor = "Precipitation is likely."
+            precipDescriptor = "Precipitation will be likely."
         }
 
         // Only surface wind when gusts are actually notable, so "breezy" stops
@@ -4179,6 +4179,8 @@ private struct DailyForecastDetailSheet: View {
         You write a short weather forecast summary for a mobile weather app.
         Respond with only the summary — 1 or 2 sentences, plain natural language, \
         no bullet points, no markdown, no preamble. End with a period.
+        This is a forecast for a day that has not happened yet, so write entirely \
+        in the future tense (use "will be", not "is" or "there is").
         Do not begin with "Today", do not name the day or any time of day, and do \
         not repeat any numbers. Describe the sky and how the day will feel using \
         only the descriptions provided; never overstate the chance of precipitation \
