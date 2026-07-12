@@ -3969,7 +3969,7 @@ private struct DailyForecastDetailSheet: View {
                     .padding(.bottom, -2)
 
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Discussion")
+                        Text("Outlook")
                             .font(.caption.weight(.semibold))
                             .foregroundStyle(.secondary)
 
@@ -4181,10 +4181,14 @@ private struct DailyForecastDetailSheet: View {
         no bullet points, no markdown, no preamble. End with a period.
         This is a forecast for a day that has not happened yet, so write entirely \
         in the future tense (use "will be", not "is" or "there is").
-        Do not begin with "Today", do not name the day or any time of day, and do \
-        not repeat any numbers. Describe the sky and how the day will feel using \
-        only the descriptions provided; never overstate the chance of precipitation \
-        beyond what is given. Vary your wording and avoid formulaic openers.
+        Do not begin with "Today", do not name the day or any time of day, and \
+        never use the words "today" or "tonight". Never mention any number, \
+        temperature, degrees, wind chill, or heat index.
+        Use the wind and precipitation intensity exactly as given — do not soften \
+        "windy" to "breezy", and do not downgrade "a chance" to "a slight chance".
+        Describe the sky and how the day will feel using only the descriptions \
+        provided; never overstate the chance of precipitation beyond what is given. \
+        Vary your wording and avoid formulaic openers.
         """
 
         do {
@@ -4201,6 +4205,27 @@ private struct DailyForecastDetailSheet: View {
                     text = text.prefix(1).uppercased() + text.dropFirst()
                     break
                 }
+            }
+
+            // Safety net: strip a stray mid-sentence "today"/"tonight" that slips
+            // past the instruction (e.g. "Rain will likely fall today, and …").
+            for word in [" today", " tonight"] {
+                text = text
+                    .replacingOccurrences(of: "\(word),", with: ",")
+                    .replacingOccurrences(of: "\(word).", with: ".")
+            }
+
+            // Reject hallucinated numbers/units. We pass no numbers to the model,
+            // so any digit or temperature phrasing is fabricated (e.g. "a wind
+            // chill of 90 degrees"). Discard it and let the phrase-builder show.
+            let lowered = text.lowercased()
+            let hasDigit = text.rangeOfCharacter(from: .decimalDigits) != nil
+            if hasDigit
+                || text.contains("°")
+                || lowered.contains("degree")
+                || lowered.contains("wind chill")
+                || lowered.contains("heat index") {
+                return nil
             }
 
             return text.isEmpty ? nil : text

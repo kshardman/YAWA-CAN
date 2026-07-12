@@ -106,7 +106,7 @@ final class WeatherViewModel: ObservableObject {
                     guard generation == self.loadGeneration else {
                         return
                     }
-                    self.errorMessage = error.localizedDescription
+                    self.errorMessage = Self.userFacingMessage(for: error)
                     self.isLoading = false
                 }
             }
@@ -119,6 +119,31 @@ final class WeatherViewModel: ObservableObject {
             currentTask = nil
         }
     }
+
+    /// Maps a fetch error to a concise, user-facing message. Network failures
+    /// (timeouts, host/DNS/connection errors) are attributed to Open-Meteo so the
+    /// raw "The request timed out." no longer surfaces on the main sheet.
+    static func userFacingMessage(for error: Error) -> String {
+        guard let urlError = error as? URLError else {
+            return "Weather data is temporarily unavailable. Pull to refresh to try again."
+        }
+
+        switch urlError.code {
+        case .notConnectedToInternet, .dataNotAllowed:
+            return "No internet connection. Check your network and pull to refresh."
+        case .timedOut,
+             .cannotConnectToHost,
+             .cannotFindHost,
+             .dnsLookupFailed,
+             .networkConnectionLost,
+             .resourceUnavailable,
+             .badServerResponse:
+            return "Open-Meteo is unreachable right now. Pull to refresh to try again."
+        default:
+            return "Weather data is temporarily unavailable. Pull to refresh to try again."
+        }
+    }
+
     private func handleSuccessfulLoad(
         snapshot: WeatherSnapshot,
         latitude: Double,
