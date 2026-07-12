@@ -4228,6 +4228,20 @@ private struct DailyForecastDetailSheet: View {
                 return nil
             }
 
+            // Reject wind wording that contradicts the actual strength. When it is
+            // genuinely windy (gusts ≥ the windy threshold — the same point the
+            // "Windy" badge appears) the summary must not soften it to light/breezy/
+            // calm. That contradiction is the visible defect; fall back instead.
+            if windDescriptor.contains("windy") {
+                if lowered.contains("breez")
+                    || lowered.contains("light wind")
+                    || lowered.contains("gentle")
+                    || lowered.contains("calm")
+                    || lowered.contains("still air") {
+                    return nil
+                }
+            }
+
             return text.isEmpty ? nil : text
         } catch {
             return nil
