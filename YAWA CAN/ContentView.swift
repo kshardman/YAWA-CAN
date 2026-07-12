@@ -4185,7 +4185,9 @@ private struct DailyForecastDetailSheet: View {
         never use the words "today" or "tonight". Never mention any number, \
         temperature, degrees, wind chill, or heat index.
         Use the wind and precipitation intensity exactly as given — do not soften \
-        "windy" to "breezy", and do not downgrade "a chance" to "a slight chance".
+        "windy" to "breezy", and do not downgrade "a chance" to "a slight chance". \
+        Wind is not a chance event — never write "a chance of wind" or similar; \
+        state the wind conditions directly.
         Describe the sky and how the day will feel using only the descriptions \
         provided; never overstate the chance of precipitation beyond what is given. \
         Vary your wording and avoid formulaic openers.
@@ -4237,7 +4239,8 @@ private struct DailyForecastDetailSheet: View {
                     || lowered.contains("light wind")
                     || lowered.contains("gentle")
                     || lowered.contains("calm")
-                    || lowered.contains("still air") {
+                    || lowered.contains("still air")
+                    || lowered.contains("chance of wind") {
                     return nil
                 }
             }
