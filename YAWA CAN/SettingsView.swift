@@ -27,6 +27,18 @@ struct SettingsView: View {
         )
     }
 
+    // The app-level .preferredColorScheme updates the window, but an already-
+    // presented sheet is a separate hosting controller that won't re-evaluate it
+    // live. Drive the sheet's own scheme off the observed appearance object so it
+    // re-themes immediately when the picker changes.
+    private var preferredColorScheme: ColorScheme? {
+        switch appearanceSettings.appearancePreferenceRaw {
+        case "light": return .light
+        case "dark":  return .dark
+        default:      return nil   // "system"
+        }
+    }
+
     private var backgroundView: some View {
         YAWATheme.background(for: colorScheme)
             .ignoresSafeArea()
@@ -116,7 +128,9 @@ struct SettingsView: View {
             //     await notifications.refreshAuthorizationStatus()
             // }
         }
-        // Preferred color scheme is now handled at the app level
+        // Give the sheet its own scheme so it updates live with the picker; the
+        // app-level .preferredColorScheme only re-themes the window behind it.
+        .preferredColorScheme(preferredColorScheme)
     }
 }
 
