@@ -99,7 +99,7 @@ struct ContentView: View {
     @State private var radarTarget: RadarTarget? = nil
     
     @State private var selectedDaySelection: ForecastDetailSelection? = nil
-    @State private var forecastDetailDetent: PresentationDetent = .fraction(0.7)
+    @State private var forecastDetailDetent: PresentationDetent = .fraction(0.76)
     
     @State private var selectedAlert: WeatherAlert? = nil
     
@@ -374,10 +374,10 @@ struct ContentView: View {
                 timeZoneID: selection.timeZoneID,
                 usesUSUnits: usesUSUnits
             )
-            .presentationDetents([.fraction(0.70), .large], selection: $forecastDetailDetent)
+            .presentationDetents([.fraction(0.76), .large], selection: $forecastDetailDetent)
             .presentationDragIndicator(.visible)
             .onAppear {
-                forecastDetailDetent = .fraction(0.70)
+                forecastDetailDetent = .fraction(0.76)
             }
         }
         .sheet(item: $selectedAlert) { alert in
@@ -1657,7 +1657,7 @@ struct ContentView: View {
             hourlyPrecipChancePercent: snapshot.hourlyPrecipChancePercent,
             timeZoneID: snapshot.timeZoneID
         )
-        forecastDetailDetent = .fraction(0.70)
+        forecastDetailDetent = .fraction(0.76)
         pendingNotificationRoute = nil
 
     }
@@ -3883,11 +3883,12 @@ private struct DailyForecastDetailSheet: View {
                         Spacer()
                     }
 
-                    Divider().opacity(0.18)
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack(alignment: .firstTextBaseline, spacing: 0) {
-                            VStack(alignment: .leading, spacing: 3) {
+                    // Grouped stat block — center-justified with hairline dividers
+                    // between columns and rows. Ported from the Android day-detail card.
+                    VStack(spacing: 0) {
+                        // High / Low / Precip
+                        HStack(spacing: 0) {
+                            VStack(spacing: 3) {
                                 Text("High")
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
@@ -3895,9 +3896,12 @@ private struct DailyForecastDetailSheet: View {
                                     .font(.title3.weight(.semibold))
                                     .monospacedDigit()
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(maxWidth: .infinity)
+                            .padding(.horizontal, 8)
 
-                            VStack(alignment: .leading, spacing: 3) {
+                            statColumnDivider
+
+                            VStack(spacing: 3) {
                                 Text("Low")
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
@@ -3905,10 +3909,13 @@ private struct DailyForecastDetailSheet: View {
                                     .font(.title3.weight(.semibold))
                                     .monospacedDigit()
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .frame(maxWidth: .infinity)
+                            .padding(.horizontal, 8)
 
                             if roundedPrecipChance > 0 {
-                                VStack(alignment: .leading, spacing: 3) {
+                                statColumnDivider
+
+                                VStack(spacing: 3) {
                                     Text("Precip")
                                         .font(.caption2)
                                         .foregroundStyle(.secondary)
@@ -3916,13 +3923,22 @@ private struct DailyForecastDetailSheet: View {
                                         .font(.title3.weight(.semibold))
                                         .monospacedDigit()
                                 }
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .frame(maxWidth: .infinity)
+                                .padding(.horizontal, 8)
                             }
                         }
+                        .fixedSize(horizontal: false, vertical: true)
 
+                        // Wind / Gusts — two half-width cells so longer text values
+                        // ("WSW 22 km/h") have room and don't wrap.
                         if shouldShowWindRow {
-                            HStack(alignment: .top, spacing: 16) {
-                                VStack(alignment: .leading, spacing: 3) {
+                            Divider()
+                                .overlay(Color.primary.opacity(0.08))
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 14)
+
+                            HStack(spacing: 0) {
+                                VStack(spacing: 3) {
                                     HStack(spacing: 6) {
                                         Text("Wind")
                                             .font(.caption2)
@@ -3946,11 +3962,15 @@ private struct DailyForecastDetailSheet: View {
                                         .font(.title3.weight(.medium))
                                         .foregroundStyle(.primary)
                                         .monospacedDigit()
+                                        .multilineTextAlignment(.center)
                                         .fixedSize(horizontal: false, vertical: true)
                                 }
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .frame(maxWidth: .infinity)
+                                .padding(.horizontal, 8)
 
-                                VStack(alignment: .leading, spacing: 3) {
+                                statColumnDivider
+
+                                VStack(spacing: 3) {
                                     Text("Gusts")
                                         .font(.caption2)
                                         .foregroundStyle(.secondary.opacity(0.72))
@@ -3958,15 +3978,21 @@ private struct DailyForecastDetailSheet: View {
                                         .font(.headline.weight(.medium))
                                         .foregroundStyle(.secondary.opacity(colorScheme == .dark ? 0.82 : 0.72))
                                         .monospacedDigit()
+                                        .multilineTextAlignment(.center)
                                         .fixedSize(horizontal: false, vertical: true)
                                 }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.top, 1)
+                                .frame(maxWidth: .infinity)
+                                .padding(.horizontal, 8)
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .fixedSize(horizontal: false, vertical: true)
                         }
                     }
-                    .padding(.bottom, -2)
+                    .padding(.vertical, 16)
+                    .frame(maxWidth: .infinity)
+                    .background(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(Color.primary.opacity(colorScheme == .dark ? 0.06 : 0.035))
+                    )
 
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Outlook")
@@ -4342,7 +4368,13 @@ private struct DailyForecastDetailSheet: View {
         Color.clear
             .ignoresSafeArea()
     }
-    
+
+    /// Hairline separator between stat columns; stretches to the row height.
+    private var statColumnDivider: some View {
+        Divider()
+            .overlay(Color.primary.opacity(0.08))
+    }
+
     private var innerCard: some View {
         RoundedRectangle(cornerRadius: 20, style: .continuous)
             .fill(
