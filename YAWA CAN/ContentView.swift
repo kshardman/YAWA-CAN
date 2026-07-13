@@ -4256,7 +4256,10 @@ private struct DailyForecastDetailSheet: View {
             // Reject any surviving relative-time reference. These can't be stripped
             // cleanly mid-sentence ("The forecast for tomorrow will be clear"), and
             // the day is never relative to now, so fall back to the phrase-builder.
-            for word in ["today", "tonight", "tomorrow", "yesterday"] {
+            // Keep this list in sync with the Android OutlookProvider validator.
+            for word in ["today", "tonight", "tomorrow", "yesterday",
+                         "this morning", "this afternoon", "this evening",
+                         "overnight", "right now", "currently"] {
                 if lowered.contains(word) { return nil }
             }
 
