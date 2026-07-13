@@ -9,6 +9,9 @@ import SwiftUI
 import UIKit
 import CoreLocation
 import UserNotifications
+#if canImport(FoundationModels)
+import FoundationModels
+#endif
 
 struct SettingsView: View {
     @StateObject private var appearanceSettings = AppearanceSettings()
@@ -59,6 +62,10 @@ struct SettingsView: View {
     // Forecast length for the home screen (7 or 10)
     @AppStorage("forecastDaysToShow") private var forecastDaysToShow: Int = 7
 
+    // AI forecast outlook (on-device Apple Intelligence). On by default — the app
+    // has shipped with it always-on; off shows the plain generated outlook.
+    @AppStorage("ai.forecastOutlook.enabled") private var aiOutlookEnabled: Bool = true
+
     // Daily briefing
     @AppStorage("briefing.isEnabled")      private var briefingEnabled:      Bool   = false
     @AppStorage("briefing.hour")           private var briefingHour:         Int    = 7
@@ -80,6 +87,7 @@ struct SettingsView: View {
                 List {
                     appearanceSection
                     forecastSection
+                    forecastOutlookSection
                     radarSection
                     notificationsSection
                     briefingSection
@@ -137,6 +145,43 @@ struct SettingsView: View {
 // MARK: - Sections
 
 private extension SettingsView {
+
+    /// True when the on-device Apple Intelligence model can generate the outlook.
+    private var appleIntelligenceAvailable: Bool {
+        #if canImport(FoundationModels)
+        if #available(iOS 26.0, *) {
+            return SystemLanguageModel.default.isAvailable
+        }
+        #endif
+        return false
+    }
+
+    /// Toggle for the AI outlook — only shown on devices that support Apple
+    /// Intelligence (elsewhere the plain generated outlook is always used).
+    @ViewBuilder
+    var forecastOutlookSection: some View {
+        if appleIntelligenceAvailable {
+            Section {
+                Toggle(isOn: $aiOutlookEnabled) {
+                    Label("Summarize with Apple Intelligence", systemImage: "apple.intelligence")
+                        .foregroundStyle(primaryText)
+                }
+                .tint(.green)
+
+                Text("Write each day's outlook as a short, friendly summary using Apple Intelligence. Runs entirely on your device. When off, a plain generated outlook is shown instead.")
+                    .font(.caption)
+                    .foregroundStyle(secondaryText)
+                    .fixedSize(horizontal: false, vertical: true)
+            } header: {
+                Text("Forecast Outlook")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(primaryText)
+            }
+            .textCase(nil)
+            .listRowBackground(rowBackgroundView)
+            .listRowSeparator(.hidden)
+        }
+    }
 
     var forecastSection: some View {
         Section {

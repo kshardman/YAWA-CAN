@@ -3826,6 +3826,7 @@ private struct DailyForecastDetailSheet: View {
     @State private var aiSummary: String?
     @State private var aiSummaryCache: [Int: String] = [:]
     @State private var aiPending = false
+    @AppStorage("ai.forecastOutlook.enabled") private var aiOutlookEnabled: Bool = true
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
 
@@ -4117,15 +4118,16 @@ private struct DailyForecastDetailSheet: View {
             )
         }
         .fontDesign(.rounded)
-        .task(id: currentIndex) {
+        .task(id: "\(currentIndex)|\(aiOutlookEnabled)") {
             let index = currentIndex
-            if let cached = aiSummaryCache[index] {
-                aiSummary = cached
+            // Off (or unsupported device) → show the deterministic outlook.
+            guard aiOutlookEnabled, aiModelAvailable else {
+                aiSummary = nil
                 aiPending = false
                 return
             }
-            guard aiModelAvailable else {
-                aiSummary = nil
+            if let cached = aiSummaryCache[index] {
+                aiSummary = cached
                 aiPending = false
                 return
             }
