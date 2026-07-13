@@ -4146,6 +4146,65 @@ private struct DailyForecastDetailSheet: View {
         return SystemLanguageModel.default.isAvailable
     }
 
+    /// A number-free precip-timing fragment for the outlook, bucketed from the
+    /// Open-Meteo hourly probability curve (`hour` in local time, `prob` 0–100).
+    /// Returns nil when no hour is meaningfully wet, so dry days add nothing.
+    /// Never emits a number or a relative-time word. (Ported from the NOAA app.)
+    private static func precipTimingDescriptor(hourly: [(hour: Int, prob: Int)]) -> String? {
+        let wet = hourly.filter { $0.prob >= 30 }
+        guard !wet.isEmpty else { return nil }
+
+        // Bucket local hours: morning 5–11, afternoon 12–16, evening 17–21, and
+        // late (night/early) otherwise. Weight each part by summed probability.
+        func part(_ h: Int) -> Int {
+            switch h {
+            case 5..<12:  return 0
+            case 12..<17: return 1
+            case 17..<22: return 2
+            default:      return 3
+            }
+        }
+        var weight = [0, 0, 0, 0]
+        var parts = Set<Int>()
+        for w in wet {
+            let p = part(w.hour)
+            weight[p] += w.prob
+            parts.insert(p)
+        }
+
+        // Spread across three or more parts of the day reads as intermittent.
+        if parts.count >= 3 { return "on and off through the day" }
+
+        guard let dominant = weight.indices.max(by: { weight[$0] < weight[$1] }) else { return nil }
+        switch dominant {
+        case 0:  return "mainly in the morning"
+        case 1:  return "mainly in the afternoon"
+        case 2:  return "mainly in the evening"
+        default: return "mainly late in the day"
+        }
+    }
+
+    /// Slice the flat hourly arrays to this day and produce the timing fragment.
+    /// Gated on the day's own POP > 0 so the hourly curve only refines WHEN, never
+    /// whether — keeps it consistent with the shown precip %.
+    private func precipTimingFragment(for forecastDay: DailyForecastDay) -> String? {
+        guard forecastDay.precipChancePercent > 0 else { return nil }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: timeZoneID) ?? .current
+        f.dateFormat = "yyyy-MM-dd"
+        let dayKey = f.string(from: forecastDay.date)
+
+        var hours: [(hour: Int, prob: Int)] = []
+        for (i, iso) in hourlyTimeISO.enumerated()
+        where iso.hasPrefix(dayKey) && i < hourlyPrecipChancePercent.count {
+            // Open-Meteo local time is "yyyy-MM-ddTHH:mm" — hour is chars 11–12.
+            guard let hour = Int(iso.dropFirst(11).prefix(2)) else { continue }
+            hours.append((hour: hour, prob: Int(hourlyPrecipChancePercent[i].rounded())))
+        }
+        return Self.precipTimingDescriptor(hourly: hours)
+    }
+
     private func generateAISummary(for forecastDay: DailyForecastDay) async -> String? {
         guard #available(iOS 26.0, *) else { return nil }
         guard SystemLanguageModel.default.isAvailable else { return nil }
@@ -4166,15 +4225,19 @@ private struct DailyForecastDetailSheet: View {
         }
 
         let pop = forecastDay.precipChancePercent
+        // Fold the number-free timing fragment (from the Open-Meteo hourly curve)
+        // into the precipitation descriptor. Only present when pop > 0, so it
+        // refines WHEN, never whether.
+        let timing = precipTimingFragment(for: forecastDay).map { ", \($0)" } ?? ""
         let precipDescriptor: String
         if pop <= 0 {
             precipDescriptor = "No precipitation will be expected."
         } else if pop <= 20 {
-            precipDescriptor = "There will be a slight chance of precipitation."
+            precipDescriptor = "There will be a slight chance of precipitation\(timing)."
         } else if pop <= 50 {
-            precipDescriptor = "There will be a chance of precipitation."
+            precipDescriptor = "There will be a chance of precipitation\(timing)."
         } else {
-            precipDescriptor = "Precipitation will be likely."
+            precipDescriptor = "Precipitation will be likely\(timing)."
         }
 
         // Only surface wind when gusts are actually notable, so "breezy" stops
@@ -4214,9 +4277,12 @@ private struct DailyForecastDetailSheet: View {
         no bullet points, no markdown, no preamble. End with a period.
         This is a forecast for a day that has not happened yet, so write entirely \
         in the future tense (use "will be", not "is" or "there is").
-        Do not begin with "Today" or "The forecast", do not name the day or any \
-        time of day, and never use relative-time words like "today", "tonight", \
-        "tomorrow", or "yesterday". Never mention any number, temperature, \
+        Do not begin with "Today" or "The forecast", do not name the day of the \
+        week, and never use relative-time words like "today", "tonight", "tomorrow", \
+        "yesterday", "this morning", or "overnight". When the descriptions say when \
+        precipitation is expected, you may state it using a general part of the day — \
+        "in the morning", "in the afternoon", "in the evening", or "on and off \
+        through the day". Never mention any number, temperature, \
         degrees, wind chill, or heat index.
         Use the wind and precipitation intensity exactly as given — do not soften \
         "windy" to "breezy", and do not downgrade "a chance" to "a slight chance". \
@@ -4233,15 +4299,11 @@ private struct DailyForecastDetailSheet: View {
             let response = try await session.respond(to: dataLines, options: options)
             var text = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
 
-            // Safety net: the model still opens with "Today…" often enough that we
-            // strip it rather than rely on the instruction alone.
-            for prefix in ["Today will be ", "Today is going to be ", "Today, ", "Today "] {
-                if text.hasPrefix(prefix) {
-                    text.removeFirst(prefix.count)
-                    text = text.prefix(1).uppercased() + text.dropFirst()
-                    break
-                }
-            }
+            // A "Today …" opener is rejected outright by the relative-time loop
+            // below (it catches the leading "today") rather than strip-and-
+            // recapitalized — the strip mangled forms like "Today will feature …"
+            // into "Will feature …". Mid-sentence "… today."/"… tonight." is still
+            // cleaned up next, since that removal reads naturally.
 
             // Safety net: strip a stray mid-sentence "today"/"tonight" that slips
             // past the instruction (e.g. "Rain will likely fall today, and …").
@@ -4473,6 +4535,12 @@ private struct DailyForecastDetailSheet: View {
             if !impliesDry && !windIsNotable {
                 summary += dryTailPhrase()
             }
+        }
+
+        // Precip-timing tail — number-free, from the hourly curve — attached after
+        // the precipitation clause and before the wind tail. nil on dry days.
+        if let timing = precipTimingFragment(for: day) {
+            summary += ", \(timing)"
         }
 
         // Wind tail
