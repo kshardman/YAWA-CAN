@@ -3867,21 +3867,23 @@ private struct DailyForecastDetailSheet: View {
                         }
                         .padding(.bottom, 2)
                     }
+                    // Leading calendar icon + day/date label; the weather symbol
+                    // (sky condition) sits trailing. Matches the Yawa NOAA card.
                     HStack(spacing: 10) {
+                        Image(systemName: "calendar")
+                            .font(.title2)
+                            .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+
+                        Text(longDay(day.date))
+                            .font(.headline.weight(.semibold))
+                            .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
+
+                        Spacer()
+
                         Image(systemName: day.symbolName)
                             .font(.system(size: 30, weight: .semibold))
                             .symbolRenderingMode(.hierarchical)
                             .foregroundStyle(YAWATheme.symbolColor(day.symbolName, scheme: colorScheme))
-
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(longDay(day.date))
-                                .font(.headline.weight(.semibold))
-                            Text(temperatureCorrectedConditionText(day.conditionText, highC: day.highC))
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Spacer()
                     }
 
                     // Grouped stat block — center-justified with hairline dividers
