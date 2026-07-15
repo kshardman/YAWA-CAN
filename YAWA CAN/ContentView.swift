@@ -3781,6 +3781,18 @@ private enum LocationSearch {
 
 /// Remaps rain-family condition text to snow/frozen equivalents when the daily high is ≤ 0°C.
 /// Used by both ContentView forecast rows and DailyForecastDetailSheet.
+/// Strips the probability words `refineDailySky` appends to a WMO label ("Rain
+/// likely", "Snow possible"). Likelihood is stated once by the Precip% tile and
+/// by the summary's own chance-derived wording, so the label shouldn't carry it
+/// too — "Snow possible expected." was the phrase-builder bug this prevents.
+/// (Yawa NOAA needs a bigger version of this: NWS bakes "Chance …"/"… Likely"
+/// into far longer labels — see `nwsConditionWithoutProbability` there.)
+private func conditionWithoutProbability(_ raw: String) -> String {
+    raw.replacingOccurrences(of: " likely", with: "", options: .caseInsensitive)
+        .replacingOccurrences(of: " possible", with: "", options: .caseInsensitive)
+        .trimmingCharacters(in: .whitespaces)
+}
+
 private func temperatureCorrectedConditionText(_ raw: String, highC: Double) -> String {
     let lower = raw.lowercased()
 
@@ -3867,24 +3879,32 @@ private struct DailyForecastDetailSheet: View {
                         }
                         .padding(.bottom, 2)
                     }
-                    // Leading calendar icon + day/date label; the weather symbol
-                    // (sky condition) sits trailing. Matches the Yawa NOAA card.
-                    HStack(spacing: 10) {
-                        Image(systemName: "calendar")
-                            .font(.title2)
+                    // A centered column: quiet date, sky symbol, condition — it
+                    // sits on the same axis as the stat block below, where the
+                    // old justified layout (calendar icon left, symbol right)
+                    // never settled. The calendar icon is gone: the date reads as
+                    // a date without it, and it only competed with the symbol
+                    // that carries real information. Matches Yawa NOAA build 49.
+                    VStack(spacing: 2) {
+                        Text(longDay(day.date))
+                            .font(.subheadline)
                             .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
 
-                        Text(longDay(day.date))
-                            .font(.headline.weight(.semibold))
-                            .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
-
-                        Spacer()
-
                         Image(systemName: day.symbolName)
-                            .font(.system(size: 30, weight: .semibold))
+                            .font(.system(size: 44, weight: .semibold))
                             .symbolRenderingMode(.hierarchical)
                             .foregroundStyle(YAWATheme.symbolColor(day.symbolName, scheme: colorScheme))
+                            .padding(.top, 4)
+                            .padding(.bottom, 2)
+
+                        Text(headerConditionText)
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
+                            .minimumScaleFactor(0.75)
                     }
+                    .frame(maxWidth: .infinity)
 
                     // Grouped stat block — center-justified with hairline dividers
                     // between columns and rows. Ported from the Android day-detail card.
@@ -4362,6 +4382,15 @@ private struct DailyForecastDetailSheet: View {
         }
     }
 
+    /// The sky condition as shown in the header: temperature-corrected, with the
+    /// probability word dropped — the Precip% tile directly below already states
+    /// the likelihood, so a label that hedges too is duplicated.
+    private var headerConditionText: String {
+        conditionWithoutProbability(
+            temperatureCorrectedConditionText(day.conditionText, highC: day.highC)
+        )
+    }
+
     private var roundedPrecipChance: Int {
         let clamped = max(0, min(100, day.precipChancePercent))
         return Int((Double(clamped) / 10.0).rounded() * 10.0)
@@ -4490,10 +4519,8 @@ private struct DailyForecastDetailSheet: View {
 
         // Strip qualifier words that refineDailySky may have appended (e.g. "Snow possible",
         // "Rain likely") so phrase builders don't produce "Snow possible expected."
-        let strippedText = correctedText
-            .replacingOccurrences(of: " likely", with: "", options: .caseInsensitive)
-            .replacingOccurrences(of: " possible", with: "", options: .caseInsensitive)
-            .trimmingCharacters(in: .whitespaces)
+        // Shared with the card header, which drops them for the same reason.
+        let strippedText = conditionWithoutProbability(correctedText)
 
         let condition = normalizedConditionText(strippedText)
         let rawLower = strippedText.lowercased()
