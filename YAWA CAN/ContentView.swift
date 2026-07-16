@@ -975,19 +975,24 @@ struct ContentView: View {
                     .foregroundStyle(YAWATheme.symbolColor("calendar", scheme: colorScheme))
                     .opacity(0.85)
                 
-                Text("\(max(1, min(forecastDaysToShow, 10)))-Day Forecast")
+                // Today is the hero card above, in the same words and numbers, so
+                // this list is the remainder.
+                Text("Next \(max(1, min(forecastDaysToShow, 10)) - 1) Days")
                     .font(.subheadline)
                     .fontWeight(.semibold)
                     .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
-                
+
                 Spacer()
             }
-            
-            // Forecast rows – now always visible below alerts
+
+            // Forecast rows. `days` stays the FULL list so the detail sheet can
+            // still swipe back to today; the list itself drops the leading day
+            // (it duplicated the hero), and each row keeps its ORIGINAL index so
+            // the sheet opens on the right page.
             let daysToShow = max(1, min(forecastDaysToShow, 10))
             let days: [DailyForecastDay] = Array(snap.daily.prefix(daysToShow))
-            
-            ForEach(Array(days.enumerated()), id: \.offset) { idx, day in
+
+            ForEach(Array(days.enumerated()).dropFirst(), id: \.offset) { idx, day in
                 let dayDateW: CGFloat = 68
                 let iconW: CGFloat = 36
                 

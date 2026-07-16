@@ -197,7 +197,7 @@ private extension SettingsView {
                 }
             }
 
-            Text("Choose how many days to show on the home screen forecast card.")
+            Text("Total days of forecast on the home screen. Today is the card at the top, so the list below it shows the rest.")
                 .font(.caption)
                 .foregroundStyle(secondaryText)
                 .fixedSize(horizontal: false, vertical: true)
