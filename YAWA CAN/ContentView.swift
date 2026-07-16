@@ -464,6 +464,59 @@ struct ContentView: View {
     // MARK: - Header
 
     private var headerButton: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            locationButton
+
+            // Alerts compact to a chip under the timestamp — a severity bar, icon,
+            // and title, plus "+N more". Moved up from the daily card so it sits
+            // with the location identity and doesn't push the forecast down.
+            if let first = activeAlertsForSelectedLocation.first {
+                HStack(spacing: 8) {
+                    alertChip(first)
+
+                    if activeAlertsForSelectedLocation.count > 1 {
+                        Button {
+                            showingAllAlerts = true
+                        } label: {
+                            Text("+\(activeAlertsForSelectedLocation.count - 1) more")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(YAWATheme.textSecondary(for: colorScheme).opacity(0.72))
+                                .fixedSize()
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    /// One alert reduced to its glanceable parts: severity bar, icon, title.
+    /// Tapping opens the same detail sheet the old card row did.
+    private func alertChip(_ alert: WeatherAlert) -> some View {
+        let tint = alertSeverityColor(alert.severity)
+        return HStack(spacing: 7) {
+            RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                .fill(tint)
+                .frame(width: 3, height: 18)
+
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.caption2.weight(.semibold))
+                .symbolRenderingMode(.monochrome)
+                .foregroundStyle(tint)
+
+            Text(normalizedAlertTitle(alert.title))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+
+            Spacer(minLength: 0)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { selectedAlert = alert }
+    }
+
+    private var locationButton: some View {
         Button {
             showingLocations = true
         } label: {
@@ -550,72 +603,23 @@ struct ContentView: View {
         }
     }
 
-    private func currentTile(_ snap: WeatherSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "clock")
-                            .font(.subheadline.weight(.semibold))
-                            .symbolRenderingMode(.hierarchical)
-                            .foregroundStyle(YAWATheme.symbolColor("clock", scheme: colorScheme))
-                            .opacity(0.9)
-
-                        Text("Now")
-                            .font(.headline)
-
-                        if viewModel.isLoading {
-                            ProgressView()
-                                .scaleEffect(0.7)
-                                .tint(.secondary)
-                        }
-                    }
-                    Text(snap.current.conditionText)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-                Spacer()
-                let nowSymbol = nowSymbolName(for: snap)
-                Image(systemName: nowSymbol)
-                    .font(.title2)
+    private func comfortMetricColumn(icon: String, label: String, value: String) -> some View {
+        VStack(spacing: 3) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.caption2)
                     .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(YAWATheme.symbolColor(nowSymbol, scheme: colorScheme))
+                    .foregroundStyle(YAWATheme.symbolColor(icon, scheme: colorScheme))
+                Text(label)
+                    .font(.caption2)
+                    .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
             }
-
-            HStack(alignment: .center, spacing: 12) {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(currentTemperatureValueText(snap.current.temperatureC))
-                        .font(.system(size: 60, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
-                        .contentTransition(.numericText())
-                        .opacity(viewModel.isLoading ? 0.82 : 1.0)
-                        .animation(.easeInOut(duration: 0.22), value: temperatureAnimationKey)
-                        .animation(.easeInOut(duration: 0.18), value: viewModel.isLoading)
-
-                    Text(temperatureUnitLabel)
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .opacity(viewModel.isLoading ? 0.78 : 1.0)
-                        .animation(.easeInOut(duration: 0.22), value: temperatureAnimationKey)
-                        .animation(.easeInOut(duration: 0.18), value: viewModel.isLoading)
-                }
-
-                Spacer(minLength: 12)
-
-                VStack(alignment: .trailing, spacing: 6) {
-                    metricIconValue(icon: "wind", value: windValueText(for: snap.current))
-                    metricIconValue(icon: "humidity.fill", value: "\(Int(round(snap.current.humidityPercent)))%")
-                    metricIconValue(icon: "gauge", value: pressureValueText(for: snap.current.pressureKPa))
-                }
-                .padding(.top, -8)
-                .font(.subheadline)
+            Text(value)
+                .font(.subheadline.weight(.semibold))
                 .monospacedDigit()
-            }
+                .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
         }
-        .opacity(viewModel.isLoading ? 0.72 : 1.0)
-        .animation(.easeInOut(duration: 0.18), value: viewModel.isLoading)
-        .tileStyle()
+        .frame(maxWidth: .infinity)
     }
 
     private func comfortTile(_ snap: WeatherSnapshot) -> some View {
@@ -666,6 +670,22 @@ struct ContentView: View {
                     .foregroundStyle(YAWATheme.textTertiary(for: colorScheme))
             }
             .padding(.top, 2)
+
+            // Humidity and pressure moved here when the main screen's "Now" tile
+            // folded into today's forecast card. Comfort is where they belong:
+            // they're what makes a temperature feel unlike the number it reads.
+            Divider()
+                .overlay(YAWATheme.textSecondary(for: colorScheme).opacity(colorScheme == .dark ? 0.22 : 0.16))
+                .padding(.vertical, 2)
+
+            HStack(spacing: 0) {
+                comfortMetricColumn(icon: "humidity.fill",
+                                    label: "Humidity",
+                                    value: "\(Int(round(snap.current.humidityPercent)))%")
+                comfortMetricColumn(icon: "gauge",
+                                    label: "Pressure",
+                                    value: pressureValueText(for: snap.current.pressureKPa))
+            }
         }
         .tileStyle()
     }
@@ -946,88 +966,6 @@ struct ContentView: View {
     private func dailyTile(_ snap: WeatherSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             
-            // Alerts section – always show first alert + tappable "more" if needed
-            if let firstAlert = activeAlertsForSelectedLocation.first {
-                VStack(alignment: .leading, spacing: 8) {
-                    Button {
-                        selectedAlert = firstAlert
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .font(.subheadline.weight(.semibold))
-                                .symbolRenderingMode(.monochrome)
-                                .foregroundStyle(alertSeverityColor(firstAlert.severity))
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(normalizedAlertTitle(firstAlert.title))
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
-                                    .lineLimit(1)
-                                
- //                               Text("Area: \(firstAlert.areaName)")
-                                Text("\(firstAlert.areaName)")
-                                    .font(.caption)
-                                        .fontWeight(.medium)
-                                        .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
-                                        .lineLimit(1)
-                                        .truncationMode(.tail)
-//                                    .font(.caption2)
-//                                    .foregroundStyle(YAWATheme.textTertiary(for: colorScheme))
-                            }
-                            
-                            Spacer()
-                            
-                            VStack(alignment: .trailing, spacing: 2) {
-                                Text(firstAlert.severity)
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(alertSeverityColor(firstAlert.severity))
-                                
-                                Text(firstAlert.expiresSoonText ?? "")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .padding(.vertical, 6)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                
-                    // "+ more" tappable row (only if more alerts exist)
-                    if activeAlertsForSelectedLocation.count > 1 {
-                        Button {
-                            showingAllAlerts = true
-                        } label: {
-                            HStack(spacing: 6) {
-                                Text("+\(activeAlertsForSelectedLocation.count - 1) more alerts")
-                                    .font(.subheadline)                    // exact match to forecast header size
-                                    .fontWeight(.semibold)                 // exact match to forecast header weight
-                                    .foregroundStyle(.tint)                // accent color to indicate tappable
-                                
-                                Spacer()
-                                
-                                Image(systemName: "chevron.right")
-                                    .font(.caption)                        // keep small and secondary
-                                    .foregroundStyle(.tint.opacity(0.8))
-                            }
-                            .padding(.vertical, 4)                         // tight spacing to align with forecast rows
-                            .padding(.horizontal, 0)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal, 12)
-                .background(
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.yellow.opacity(colorScheme == .dark ? 0.15 : 0.25))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(alertSeverityColor(firstAlert.severity).opacity(0.5), lineWidth: 1)
-                )
-                
-                Divider().opacity(0.3).padding(.vertical, 2)
-            }
             
             // Forecast header – always visible
             HStack(spacing: 6) {
@@ -1403,26 +1341,6 @@ struct ContentView: View {
         return f.string(from: date)
     }
 
-    private func metricIconValue(icon: String, value: String) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: icon)
-                .font(.subheadline.weight(.semibold))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(YAWATheme.symbolColor(icon, scheme: colorScheme))
-                .opacity(colorScheme == .dark ? 0.90 : 0.82)
-                .frame(width: 18, alignment: .center)
-                .offset(y: 0.5)
-
-            Text(value)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.82)
-                .frame(width: 84, alignment: .trailing)
-        }
-        .frame(width: 104, alignment: .trailing)
-    }
 
     private var displayedCountryCode: String {
         displayedLocation?.countryCode ?? selected?.countryCode ?? locationStore.selected?.countryCode ?? "CA"
