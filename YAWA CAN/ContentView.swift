@@ -258,7 +258,7 @@ struct ContentView: View {
                             }
 
                             if let snap = viewModel.snapshot {
-                                currentTile(snap)
+                                heroCard(snap)
                                 dailyTile(snap)
                             } else if !viewModel.isLoading && viewModel.errorMessage == nil {
                                 Text("No weather loaded yet.")
@@ -514,6 +514,41 @@ struct ContentView: View {
     }
 
     // MARK: - Tiles
+
+    /// The main-screen hero: today's forecast card (shared DailyForecastCardView)
+    /// with the live observation folded into its Now row, tappable to open the
+    /// detail pager at today. Replaces the old standalone "Now" tile.
+    @ViewBuilder
+    private func heroCard(_ snap: WeatherSnapshot) -> some View {
+        let days = Array(snap.daily.prefix(max(1, min(forecastDaysToShow, 10))))
+        if let today = days.first {
+            DailyForecastCardView(
+                day: today,
+                usesUSUnits: usesUSUnits,
+                timeZoneID: snap.timeZoneID,
+                hourlyTimeISO: snap.hourlyTimeISO,
+                hourlyPrecipChancePercent: snap.hourlyPrecipChancePercent,
+                now: DailyForecastNow(
+                    temperature: "\(currentTemperatureValueText(snap.current.temperatureC))°",
+                    condition: snap.current.conditionText,
+                    symbolName: nowSymbolName(for: snap)
+                ),
+                showsRelativeDay: true
+            )
+            .tileStyle()
+            .contentShape(Rectangle())
+            .onTapGesture {
+                selectedDaySelection = ForecastDetailSelection(
+                    days: days,
+                    initialIndex: 0,
+                    hourlyTempsC: snap.hourlyTempsC,
+                    hourlyTimeISO: snap.hourlyTimeISO,
+                    hourlyPrecipChancePercent: snap.hourlyPrecipChancePercent,
+                    timeZoneID: snap.timeZoneID
+                )
+            }
+        }
+    }
 
     private func currentTile(_ snap: WeatherSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -3826,6 +3861,739 @@ private func temperatureCorrectedConditionText(_ raw: String, highC: Double) -> 
     return raw
 }
 
+/// The live observation, folded into the top of the card's stat block on the
+/// main-screen hero. Always nil in the detail sheet: "now" only means anything
+/// on today's card, and the sheet can be on any day.
+struct DailyForecastNow: Equatable {
+    /// Already unit-formatted by the caller ("21°", "70°").
+    let temperature: String?
+    let condition: String
+    let symbolName: String
+}
+
+/// The concise daily card — centered header, grouped stat block, and the
+/// number-free Outlook — extracted from `DailyForecastDetailSheet` so the main
+/// screen can lead with today's card (hero) using the SAME implementation the
+/// sheet renders per page. The sheet keeps the pager dots, hourly chart, and
+/// swipe; this view owns the card visual and its outlook generation.
+struct DailyForecastCardView: View {
+    let day: DailyForecastDay
+    let usesUSUnits: Bool
+    let timeZoneID: String
+    /// Flat hourly arrays, only used to derive the number-free precip-timing
+    /// fragment for the outlook (the chart lives in the sheet).
+    let hourlyTimeISO: [String]
+    let hourlyPrecipChancePercent: [Double]
+    /// Non-nil only for the main-screen hero — see `DailyForecastNow`.
+    var now: DailyForecastNow? = nil
+    /// The hero shows "Today" instead of the long date; the sheet keeps the date.
+    var showsRelativeDay: Bool = false
+
+    @State private var aiSummary: String?
+    @State private var aiSummaryCache: [Date: String] = [:]
+    @State private var aiPending = false
+    @AppStorage("ai.forecastOutlook.enabled") private var aiOutlookEnabled: Bool = true
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            header
+            groupedStatBlock
+            outlook
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .task(id: "\(day.date.timeIntervalSince1970)|\(aiOutlookEnabled)") {
+            let key = day.date
+            guard aiOutlookEnabled, aiModelAvailable else {
+                aiSummary = nil
+                aiPending = false
+                return
+            }
+            if let cached = aiSummaryCache[key] {
+                aiSummary = cached
+                aiPending = false
+                return
+            }
+            aiSummary = nil
+            aiPending = true
+            let generated = await generateAISummary(for: day)
+            guard !Task.isCancelled, day.date == key else { return }
+            aiSummary = generated
+            aiPending = false
+            if let generated {
+                aiSummaryCache[key] = generated
+            }
+        }
+    }
+
+    // MARK: - Header
+
+    private var header: some View {
+        VStack(spacing: 2) {
+            Text(showsRelativeDay ? "Today" : longDay(day.date))
+                .font(.subheadline)
+                .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+
+            Image(systemName: day.symbolName)
+                .font(.system(size: 44, weight: .semibold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(YAWATheme.symbolColor(day.symbolName, scheme: colorScheme))
+                .padding(.top, 4)
+                .padding(.bottom, 2)
+
+            Text(headerConditionText)
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    /// The sky condition as shown in the header: temperature-corrected, with the
+    /// probability word dropped — the Precip% tile below already states it.
+    private var headerConditionText: String {
+        conditionWithoutProbability(
+            temperatureCorrectedConditionText(day.conditionText, highC: day.highC)
+        )
+    }
+
+    // MARK: - Grouped stat block
+
+    private var groupedStatBlock: some View {
+        VStack(spacing: 0) {
+            // The live observation, above the day's range — reads top-to-bottom as
+            // one story. Only present on the main-screen hero.
+            if let now {
+                HStack(spacing: 7) {
+                    Text("Now")
+                        .font(.caption2)
+                        .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+
+                    Image(systemName: now.symbolName)
+                        .font(.footnote.weight(.semibold))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(YAWATheme.symbolColor(now.symbolName, scheme: colorScheme))
+
+                    if let temperature = now.temperature {
+                        Text(temperature)
+                            .font(.title3.weight(.semibold))
+                            .monospacedDigit()
+                            .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
+                    }
+
+                    if !now.condition.isEmpty {
+                        Text(now.condition)
+                            .font(.subheadline)
+                            .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.bottom, 10)
+
+                Divider()
+                    .overlay(Color.primary.opacity(0.08))
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 10)
+            }
+
+            // High / Low / Precip
+            HStack(spacing: 0) {
+                VStack(spacing: 3) {
+                    Text("High")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text(temperatureText(day.highC))
+                        .font(.title3.weight(.semibold))
+                        .monospacedDigit()
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 8)
+
+                statColumnDivider
+
+                VStack(spacing: 3) {
+                    Text("Low")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text(temperatureText(day.lowC))
+                        .font(.title3.weight(.semibold))
+                        .monospacedDigit()
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 8)
+
+                if roundedPrecipChance > 0 {
+                    statColumnDivider
+
+                    VStack(spacing: 3) {
+                        Text("Precip")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                        Text("\(roundedPrecipChance)%")
+                            .font(.title3.weight(.semibold))
+                            .monospacedDigit()
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 8)
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+
+            // Wind / Gusts
+            if shouldShowWindRow {
+                Divider()
+                    .overlay(Color.primary.opacity(0.08))
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 14)
+
+                HStack(spacing: 0) {
+                    VStack(spacing: 3) {
+                        HStack(spacing: 6) {
+                            Text("Wind")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+
+                            if isWindyFlagVisible {
+                                Text("Windy")
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundStyle(windyFlagColor)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(
+                                        Capsule()
+                                            .fill(windyFlagColor.opacity(colorScheme == .dark ? 0.16 : 0.10))
+                                    )
+                                    .fixedSize()
+                            }
+                        }
+
+                        Text(windPrimaryText)
+                            .font(.title3.weight(.medium))
+                            .foregroundStyle(.primary)
+                            .monospacedDigit()
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 8)
+
+                    statColumnDivider
+
+                    VStack(spacing: 3) {
+                        Text("Gusts")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary.opacity(0.72))
+                        Text(windGustDisplayText)
+                            .font(.headline.weight(.medium))
+                            .foregroundStyle(.secondary.opacity(colorScheme == .dark ? 0.82 : 0.72))
+                            .monospacedDigit()
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 8)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.vertical, 16)
+        .frame(maxWidth: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.primary.opacity(colorScheme == .dark ? 0.06 : 0.035))
+        )
+    }
+
+    /// Hairline separator between stat columns; stretches to the row height.
+    private var statColumnDivider: some View {
+        Divider()
+            .overlay(Color.primary.opacity(0.08))
+    }
+
+    // MARK: - Outlook
+
+    private var outlook: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Outlook")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            Text(aiSummary ?? forecastSummary)
+                .font(.subheadline)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+                .redacted(reason: aiPending ? .placeholder : [])
+                .animation(.easeInOut(duration: 0.25), value: aiSummary)
+                .animation(.easeInOut(duration: 0.2), value: aiPending)
+
+            if aiSummary != nil {
+                HStack(spacing: 4) {
+                    Image(systemName: "apple.intelligence")
+                        .font(.caption2)
+                    Text("Summarized by Apple Intelligence")
+                        .font(.caption2)
+                }
+                .foregroundStyle(.secondary.opacity(0.7))
+                .transition(.opacity)
+            } else if aiPending {
+                HStack(spacing: 5) {
+                    ProgressView().controlSize(.mini)
+                    Text("Summarizing…")
+                        .font(.caption2)
+                }
+                .foregroundStyle(.secondary.opacity(0.7))
+                .transition(.opacity)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(.easeInOut(duration: 0.2), value: aiSummary)
+        .animation(.easeInOut(duration: 0.2), value: aiPending)
+    }
+
+    // MARK: - Card formatters
+
+    private var roundedPrecipChance: Int {
+        let clamped = max(0, min(100, day.precipChancePercent))
+        return Int((Double(clamped) / 10.0).rounded() * 10.0)
+    }
+
+    private var windSpeedValueText: String? {
+        guard let windKPH = day.windSpeedKPH else { return nil }
+        let value = usesUSUnits ? windKPH * 0.621371 : windKPH
+        return "\(Int(round(value)))"
+    }
+
+    private var windDirectionText: String? {
+        guard let degrees = day.windDirectionDegrees else { return nil }
+        return cardinalDirection(for: degrees)
+    }
+
+    private var windPrimaryText: String {
+        let speed = windSpeedValueText ?? "—"
+        let unit = usesUSUnits ? " mph" : " km/h"
+        if let direction = windDirectionText {
+            return "\(direction) \(speed)\(unit)"
+        }
+        return "\(speed)\(unit)"
+    }
+
+    private var windGustText: String? {
+        guard let gustKPH = day.windGustKPH else { return nil }
+        let value = usesUSUnits ? gustKPH * 0.621371 : gustKPH
+        return "\(Int(round(value)))"
+    }
+
+    private var windGustDisplayText: String {
+        guard let gust = windGustText else { return "—" }
+        return "up to \(gust)"
+    }
+
+    private var shouldShowWindRow: Bool {
+        windSpeedValueText != nil || windGustText != nil || windDirectionText != nil
+    }
+
+    private var isWindyFlagVisible: Bool {
+        guard let gustKPH = day.windGustKPH else { return false }
+        return gustKPH >= 45
+    }
+
+    private var windyFlagColor: Color {
+        colorScheme == .dark ? Color.cyan.opacity(0.95) : Color.blue.opacity(0.82)
+    }
+
+    private func temperatureText(_ celsius: Double) -> String {
+        let value = usesUSUnits ? ((celsius * 9.0 / 5.0) + 32.0) : celsius
+        let unit = usesUSUnits ? "°F" : "°C"
+        return "\(Int(round(value)))\(unit)"
+    }
+
+    private func longDay(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_CA")
+        f.timeZone = TimeZone(identifier: timeZoneID) ?? .current
+        f.dateFormat = "EEEE, MMM d"
+        return f.string(from: date)
+    }
+
+    private func cardinalDirection(for degrees: Double) -> String {
+        let normalized = degrees.truncatingRemainder(dividingBy: 360)
+        let positive = normalized >= 0 ? normalized : normalized + 360
+        let directions = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
+        let index = Int((positive / 22.5).rounded()) % directions.count
+        return directions[index]
+    }
+
+    // MARK: - Outlook: on-device model
+
+    private var aiModelAvailable: Bool {
+        guard #available(iOS 26.0, *) else { return false }
+        return SystemLanguageModel.default.isAvailable
+    }
+
+    private var windSummarySentence: String? {
+        guard let gustKPH = day.windGustKPH else { return nil }
+        let gustValue = usesUSUnits ? gustKPH * 0.621371 : gustKPH
+        let breezyThreshold = usesUSUnits ? 22.0 : 35.0
+        let windyThreshold = usesUSUnits ? 30.0 : 45.0
+        let veryWindyThreshold = usesUSUnits ? 40.0 : 60.0
+        if gustValue >= veryWindyThreshold {
+            return "Very windy, with strong gusts at times."
+        } else if gustValue >= windyThreshold {
+            return "Windy conditions expected."
+        } else if gustValue >= breezyThreshold {
+            return "Breezy at times."
+        } else {
+            return nil
+        }
+    }
+
+    /// A number-free precip-timing fragment for the outlook, bucketed from the
+    /// Open-Meteo hourly probability curve (`hour` local time, `prob` 0–100).
+    private static func precipTimingDescriptor(hourly: [(hour: Int, prob: Int)]) -> String? {
+        let wet = hourly.filter { $0.prob >= 30 }
+        guard !wet.isEmpty else { return nil }
+        func part(_ h: Int) -> Int {
+            switch h {
+            case 5..<12:  return 0
+            case 12..<17: return 1
+            case 17..<22: return 2
+            default:      return 3
+            }
+        }
+        var weight = [0, 0, 0, 0]
+        var parts = Set<Int>()
+        for w in wet {
+            let p = part(w.hour)
+            weight[p] += w.prob
+            parts.insert(p)
+        }
+        if parts.count >= 3 { return "on and off through the day" }
+        guard let dominant = weight.indices.max(by: { weight[$0] < weight[$1] }) else { return nil }
+        switch dominant {
+        case 0:  return "mainly in the morning"
+        case 1:  return "mainly in the afternoon"
+        case 2:  return "mainly in the evening"
+        default: return "mainly late in the day"
+        }
+    }
+
+    private func precipTimingFragment(for forecastDay: DailyForecastDay) -> String? {
+        guard forecastDay.precipChancePercent > 0 else { return nil }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: timeZoneID) ?? .current
+        f.dateFormat = "yyyy-MM-dd"
+        let dayKey = f.string(from: forecastDay.date)
+
+        var hours: [(hour: Int, prob: Int)] = []
+        for (i, iso) in hourlyTimeISO.enumerated()
+        where iso.hasPrefix(dayKey) && i < hourlyPrecipChancePercent.count {
+            guard let hour = Int(iso.dropFirst(11).prefix(2)) else { continue }
+            hours.append((hour: hour, prob: Int(hourlyPrecipChancePercent[i].rounded())))
+        }
+        return Self.precipTimingDescriptor(hourly: hours)
+    }
+
+    private func generateAISummary(for forecastDay: DailyForecastDay) async -> String? {
+        guard #available(iOS 26.0, *) else { return nil }
+        guard SystemLanguageModel.default.isAvailable else { return nil }
+
+        let corrected = temperatureCorrectedConditionText(forecastDay.conditionText, highC: forecastDay.highC)
+
+        let feelDescriptor: String
+        switch forecastDay.highC {
+        case ..<0:     feelDescriptor = "It will feel cold."
+        case 0..<10:   feelDescriptor = "It will feel chilly."
+        case 10..<18:  feelDescriptor = "It will feel cool."
+        case 18..<25:  feelDescriptor = "It will feel mild."
+        case 25..<30:  feelDescriptor = "It will feel warm."
+        default:       feelDescriptor = "It will feel hot."
+        }
+
+        let pop = forecastDay.precipChancePercent
+        let timing = precipTimingFragment(for: forecastDay).map { ", \($0)" } ?? ""
+        let precipDescriptor: String
+        if pop <= 0 {
+            precipDescriptor = "No precipitation will be expected."
+        } else if pop <= 20 {
+            precipDescriptor = "There will be a slight chance of precipitation\(timing)."
+        } else if pop <= 50 {
+            precipDescriptor = "There will be a chance of precipitation\(timing)."
+        } else {
+            precipDescriptor = "Precipitation will be likely\(timing)."
+        }
+
+        var windDescriptor = ""
+        var isWindy = false
+        if let gustKPH = forecastDay.windGustKPH {
+            let gustValue = usesUSUnits ? gustKPH * 0.621371 : gustKPH
+            let breezy = usesUSUnits ? 22.0 : 35.0
+            let windy = usesUSUnits ? 30.0 : 45.0
+            let veryWindy = usesUSUnits ? 40.0 : 60.0
+            if gustValue >= veryWindy {
+                windDescriptor = "Very strong, gusty winds are expected."
+                isWindy = true
+            } else if gustValue >= windy {
+                windDescriptor = "Strong winds are expected."
+                isWindy = true
+            } else if gustValue >= breezy {
+                windDescriptor = "It will be breezy at times."
+            }
+        }
+
+        let dataLines = [
+            "Sky: \(corrected)",
+            feelDescriptor,
+            precipDescriptor,
+            windDescriptor
+        ].filter { !$0.isEmpty }.joined(separator: "\n")
+
+        let instructions = """
+        You write a short weather forecast summary for a mobile weather app.
+        Respond with only the summary — 1 or 2 sentences, plain natural language, \
+        no bullet points, no markdown, no preamble. End with a period.
+        This is a forecast for a day that has not happened yet, so write entirely \
+        in the future tense (use "will be", not "is" or "there is").
+        Do not begin with "Today" or "The forecast", do not name the day of the \
+        week, and never use relative-time words like "today", "tonight", "tomorrow", \
+        "yesterday", "this morning", or "overnight". When the descriptions say when \
+        precipitation is expected, you may state it using a general part of the day — \
+        "in the morning", "in the afternoon", "in the evening", or "on and off \
+        through the day". Never mention any number, temperature, \
+        degrees, wind chill, or heat index.
+        Use the wind and precipitation intensity exactly as given — do not soften \
+        "windy" to "breezy", and do not downgrade "a chance" to "a slight chance". \
+        Wind is not a chance event — never write "a chance of wind" or similar; \
+        state the wind conditions directly.
+        Describe the sky and how the day will feel using only the descriptions \
+        provided; never overstate the chance of precipitation beyond what is given. \
+        Vary your wording and avoid formulaic openers.
+        """
+
+        do {
+            let session = LanguageModelSession(instructions: instructions)
+            let options = GenerationOptions(temperature: 0.5)
+            let response = try await session.respond(to: dataLines, options: options)
+            var text = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            for word in [" today", " tonight"] {
+                text = text
+                    .replacingOccurrences(of: "\(word),", with: ",")
+                    .replacingOccurrences(of: "\(word).", with: ".")
+            }
+
+            let lowered = text.lowercased()
+
+            for word in ["today", "tonight", "tomorrow", "yesterday",
+                         "this morning", "this afternoon", "this evening",
+                         "overnight", "right now", "currently"] {
+                if lowered.contains(word) { return nil }
+            }
+
+            let hasDigit = text.rangeOfCharacter(from: .decimalDigits) != nil
+            if hasDigit
+                || text.contains("°")
+                || lowered.contains("degree")
+                || lowered.contains("wind chill")
+                || lowered.contains("heat index") {
+                return nil
+            }
+
+            if isWindy {
+                if lowered.contains("breez")
+                    || lowered.contains("light wind")
+                    || lowered.contains("gentle")
+                    || lowered.contains("calm")
+                    || lowered.contains("still air")
+                    || lowered.contains("chance of wind") {
+                    return nil
+                }
+            }
+
+            return text.isEmpty ? nil : text
+        } catch {
+            return nil
+        }
+    }
+
+    // MARK: - Outlook: deterministic phrase-builder fallback
+
+    private var forecastSummary: String {
+        let correctedText = temperatureCorrectedConditionText(day.conditionText, highC: day.highC)
+        let isFreezing = day.highC <= 0
+
+        let strippedText = conditionWithoutProbability(correctedText)
+
+        let condition = normalizedConditionText(strippedText)
+        let rawLower = strippedText.lowercased()
+
+        let hasPrecipWord = rawLower.contains("rain") || rawLower.contains("snow") ||
+            rawLower.contains("storm") || rawLower.contains("shower") ||
+            rawLower.contains("drizzle") || rawLower.contains("hail") ||
+            rawLower.contains("freezing") || rawLower.contains("grains")
+
+        let isSimplePrecip = hasPrecipWord
+
+        var summary: String
+
+        if isSimplePrecip {
+            if roundedPrecipChance <= 30 {
+                summary = simplePrecipPossiblePhrase(condition: condition, rawLower: rawLower)
+            } else if roundedPrecipChance <= 60 {
+                summary = simplePrecipChancePhrase(condition: condition, rawLower: rawLower)
+            } else {
+                summary = simplePrecipLikelyPhrase(condition: condition, rawLower: rawLower)
+            }
+        } else {
+            summary = conditionBasePhrase(condition)
+        }
+
+        if roundedPrecipChance > 0 && !isSimplePrecip {
+            if roundedPrecipChance <= 20 {
+                summary += slightPrecipTailPhrase(isFreezing: isFreezing)
+            } else if roundedPrecipChance <= 50 {
+                summary += chancePrecipTailPhrase(isFreezing: isFreezing)
+            } else {
+                summary += likelyPrecipTailPhrase(isFreezing: isFreezing)
+            }
+        } else if roundedPrecipChance == 0 {
+            let windIsNotable = windSummarySentence != nil
+            let impliesDry = rawLower.contains("clear") || rawLower.contains("sun") ||
+                rawLower.contains("mainly") || rawLower.contains("mostly clear")
+            if !impliesDry && !windIsNotable {
+                summary += dryTailPhrase()
+            }
+        }
+
+        if let timing = precipTimingFragment(for: day) {
+            summary += ", \(timing)"
+        }
+
+        let hasWithClause = summary.contains(", with ")
+        if let windSentence = windSummarySentence {
+            if windSentence.contains("Very windy") {
+                summary += hasWithClause ? strongWindTailPhraseAfterWith() : strongWindTailPhrase()
+            } else if windSentence.contains("Windy") {
+                summary += hasWithClause ? windyTailPhraseAfterWith() : windyTailPhrase()
+            } else if windSentence.contains("Breezy") {
+                summary += hasWithClause ? breezyTailPhraseAfterWith() : breezyTailPhrase()
+            }
+        }
+
+        return summary + "."
+    }
+
+    private var summaryVariationSeed: Int {
+        let dayKey = Calendar.current.startOfDay(for: day.date).timeIntervalSince1970
+        let roundedHigh = Int(round(day.highC))
+        let roundedLow = Int(round(day.lowC))
+        return Int(dayKey) ^ (roundedPrecipChance << 2) ^ (roundedHigh << 1) ^ roundedLow
+    }
+
+    private func variant(_ options: [String]) -> String {
+        guard !options.isEmpty else { return "" }
+        let index = abs(summaryVariationSeed) % options.count
+        return options[index]
+    }
+
+    private func conditionBasePhrase(_ condition: String) -> String {
+        variant([
+            condition,
+            "Expect a \(condition.lowercased()) day",
+            "\(condition) throughout the day"
+        ])
+    }
+
+    private func simplePrecipPossiblePhrase(condition: String, rawLower: String) -> String {
+        variant([
+            "\(condition) possible",
+            "\(condition) may develop",
+            "A chance of \(rawLower)"
+        ])
+    }
+
+    private func simplePrecipChancePhrase(condition: String, rawLower: String) -> String {
+        variant([
+            "A chance of \(rawLower)",
+            "\(condition) at times",
+            "\(condition) possible"
+        ])
+    }
+
+    private func simplePrecipLikelyPhrase(condition: String, rawLower: String) -> String {
+        variant([
+            "\(condition) expected",
+            "Periods of \(rawLower)",
+            "\(condition) likely"
+        ])
+    }
+
+    private func slightPrecipTailPhrase(isFreezing: Bool) -> String {
+        let precip = isFreezing ? "snow" : "rain"
+        return variant([
+            ", with a slight chance of \(precip)",
+            ", with a low chance of \(precip)"
+        ])
+    }
+
+    private func chancePrecipTailPhrase(isFreezing: Bool) -> String {
+        let precip = isFreezing ? "snow" : "rain"
+        return variant([
+            ", with a chance of \(precip)",
+            ", with some \(precip) possible"
+        ])
+    }
+
+    private func likelyPrecipTailPhrase(isFreezing: Bool) -> String {
+        let precip = isFreezing ? "snow" : "rain"
+        return variant([
+            ", with periods of \(precip)",
+            ", with \(precip) at times"
+        ])
+    }
+
+    private func dryTailPhrase() -> String {
+        variant([
+            ", dry",
+            ", staying dry",
+            ", with no precipitation expected"
+        ])
+    }
+
+    private func strongWindTailPhrase() -> String {
+        variant([", with strong winds at times", ", with gusty winds at times"])
+    }
+
+    private func strongWindTailPhraseAfterWith() -> String {
+        variant([", and strong winds at times", ", and gusty winds at times"])
+    }
+
+    private func windyTailPhrase() -> String {
+        variant([", and windy at times", ", with periods of wind"])
+    }
+
+    private func windyTailPhraseAfterWith() -> String {
+        variant([", and windy at times", ", and periods of wind"])
+    }
+
+    private func breezyTailPhrase() -> String {
+        variant([", breezy at times", ", with a breeze at times"])
+    }
+
+    private func breezyTailPhraseAfterWith() -> String {
+        variant([", and breezy at times", ", and a breeze at times"])
+    }
+
+    private func normalizedConditionText(_ text: String) -> String {
+        guard let first = text.first else { return "Forecast conditions" }
+        return first.isLowercase ? first.uppercased() + text.dropFirst() : text
+    }
+}
+
 private struct DailyForecastDetailSheet: View {
     let days: [DailyForecastDay]
     let hourlyTempsC: [Double]
@@ -3835,10 +4603,6 @@ private struct DailyForecastDetailSheet: View {
     let usesUSUnits: Bool
 
     @State private var currentIndex: Int
-    @State private var aiSummary: String?
-    @State private var aiSummaryCache: [Int: String] = [:]
-    @State private var aiPending = false
-    @AppStorage("ai.forecastOutlook.enabled") private var aiOutlookEnabled: Bool = true
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
 
@@ -3879,180 +4643,18 @@ private struct DailyForecastDetailSheet: View {
                         }
                         .padding(.bottom, 2)
                     }
-                    // A centered column: quiet date, sky symbol, condition — it
-                    // sits on the same axis as the stat block below, where the
-                    // old justified layout (calendar icon left, symbol right)
-                    // never settled. The calendar icon is gone: the date reads as
-                    // a date without it, and it only competed with the symbol
-                    // that carries real information. Matches Yawa NOAA build 49.
-                    VStack(spacing: 2) {
-                        Text(longDay(day.date))
-                            .font(.subheadline)
-                            .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
 
-                        Image(systemName: day.symbolName)
-                            .font(.system(size: 44, weight: .semibold))
-                            .symbolRenderingMode(.hierarchical)
-                            .foregroundStyle(YAWATheme.symbolColor(day.symbolName, scheme: colorScheme))
-                            .padding(.top, 4)
-                            .padding(.bottom, 2)
-
-                        Text(headerConditionText)
-                            .font(.title3.weight(.semibold))
-                            .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
-                            .multilineTextAlignment(.center)
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.75)
-                    }
-                    .frame(maxWidth: .infinity)
-
-                    // Grouped stat block — center-justified with hairline dividers
-                    // between columns and rows. Ported from the Android day-detail card.
-                    VStack(spacing: 0) {
-                        // High / Low / Precip
-                        HStack(spacing: 0) {
-                            VStack(spacing: 3) {
-                                Text("High")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                                Text(temperatureText(day.highC))
-                                    .font(.title3.weight(.semibold))
-                                    .monospacedDigit()
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.horizontal, 8)
-
-                            statColumnDivider
-
-                            VStack(spacing: 3) {
-                                Text("Low")
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                                Text(temperatureText(day.lowC))
-                                    .font(.title3.weight(.semibold))
-                                    .monospacedDigit()
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.horizontal, 8)
-
-                            if roundedPrecipChance > 0 {
-                                statColumnDivider
-
-                                VStack(spacing: 3) {
-                                    Text("Precip")
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                    Text("\(roundedPrecipChance)%")
-                                        .font(.title3.weight(.semibold))
-                                        .monospacedDigit()
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding(.horizontal, 8)
-                            }
-                        }
-                        .fixedSize(horizontal: false, vertical: true)
-
-                        // Wind / Gusts — two half-width cells so longer text values
-                        // ("WSW 22 km/h") have room and don't wrap.
-                        if shouldShowWindRow {
-                            Divider()
-                                .overlay(Color.primary.opacity(0.08))
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 14)
-
-                            HStack(spacing: 0) {
-                                VStack(spacing: 3) {
-                                    HStack(spacing: 6) {
-                                        Text("Wind")
-                                            .font(.caption2)
-                                            .foregroundStyle(.secondary)
-
-                                        if isWindyFlagVisible {
-                                            Text("Windy")
-                                                .font(.caption2.weight(.semibold))
-                                                .foregroundStyle(windyFlagColor)
-                                                .padding(.horizontal, 6)
-                                                .padding(.vertical, 2)
-                                                .background(
-                                                    Capsule()
-                                                        .fill(windyFlagColor.opacity(colorScheme == .dark ? 0.16 : 0.10))
-                                                )
-                                                .fixedSize()
-                                        }
-                                    }
-
-                                    Text(windPrimaryText)
-                                        .font(.title3.weight(.medium))
-                                        .foregroundStyle(.primary)
-                                        .monospacedDigit()
-                                        .multilineTextAlignment(.center)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding(.horizontal, 8)
-
-                                statColumnDivider
-
-                                VStack(spacing: 3) {
-                                    Text("Gusts")
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary.opacity(0.72))
-                                    Text(windGustDisplayText)
-                                        .font(.headline.weight(.medium))
-                                        .foregroundStyle(.secondary.opacity(colorScheme == .dark ? 0.82 : 0.72))
-                                        .monospacedDigit()
-                                        .multilineTextAlignment(.center)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding(.horizontal, 8)
-                            }
-                            .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                    .padding(.vertical, 16)
-                    .frame(maxWidth: .infinity)
-                    .background(
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .fill(Color.primary.opacity(colorScheme == .dark ? 0.06 : 0.035))
+                    // The card visual + Outlook now live in the shared
+                    // DailyForecastCardView, so the main-screen hero and this sheet
+                    // render the same implementation. The sheet keeps the pager
+                    // dots above and the hourly chart below.
+                    DailyForecastCardView(
+                        day: day,
+                        usesUSUnits: usesUSUnits,
+                        timeZoneID: timeZoneID,
+                        hourlyTimeISO: hourlyTimeISO,
+                        hourlyPrecipChancePercent: hourlyPrecipChancePercent
                     )
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Outlook")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.secondary)
-
-                        Text(aiSummary ?? forecastSummary)
-                            .font(.subheadline)
-                            .foregroundStyle(.primary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .redacted(reason: aiPending ? .placeholder : [])
-                            .animation(.easeInOut(duration: 0.25), value: aiSummary)
-                            .animation(.easeInOut(duration: 0.2), value: aiPending)
-
-                        if aiSummary != nil {
-                            HStack(spacing: 4) {
-                                Image(systemName: "apple.intelligence")
-                                    .font(.caption2)
-                                Text("Summarized by Apple Intelligence")
-                                    .font(.caption2)
-                            }
-                            .foregroundStyle(.secondary.opacity(0.7))
-                            .transition(.opacity)
-                        } else if aiPending {
-                            HStack(spacing: 5) {
-                                ProgressView().controlSize(.mini)
-                                Text("Summarizing…")
-                                    .font(.caption2)
-                            }
-                            .foregroundStyle(.secondary.opacity(0.7))
-                            .transition(.opacity)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .animation(.easeInOut(duration: 0.2), value: aiSummary)
-                    .animation(.easeInOut(duration: 0.2), value: aiPending)
-
 
                     if !hourlyTempsForDay.isEmpty {
                         Divider().opacity(0.18)
@@ -4140,338 +4742,14 @@ private struct DailyForecastDetailSheet: View {
             )
         }
         .fontDesign(.rounded)
-        .task(id: "\(currentIndex)|\(aiOutlookEnabled)") {
-            let index = currentIndex
-            // Off (or unsupported device) → show the deterministic outlook.
-            guard aiOutlookEnabled, aiModelAvailable else {
-                aiSummary = nil
-                aiPending = false
-                return
-            }
-            if let cached = aiSummaryCache[index] {
-                aiSummary = cached
-                aiPending = false
-                return
-            }
-            aiSummary = nil
-            aiPending = true
-            let generated = await generateAISummary(for: days[index])
-            guard !Task.isCancelled, currentIndex == index else { return }
-            aiSummary = generated
-            aiPending = false
-            if let generated {
-                aiSummaryCache[index] = generated
-            }
-        }
     }
 
-    private var aiModelAvailable: Bool {
-        guard #available(iOS 26.0, *) else { return false }
-        return SystemLanguageModel.default.isAvailable
-    }
-
-    /// A number-free precip-timing fragment for the outlook, bucketed from the
-    /// Open-Meteo hourly probability curve (`hour` in local time, `prob` 0–100).
-    /// Returns nil when no hour is meaningfully wet, so dry days add nothing.
-    /// Never emits a number or a relative-time word. (Ported from the NOAA app.)
-    private static func precipTimingDescriptor(hourly: [(hour: Int, prob: Int)]) -> String? {
-        let wet = hourly.filter { $0.prob >= 30 }
-        guard !wet.isEmpty else { return nil }
-
-        // Bucket local hours: morning 5–11, afternoon 12–16, evening 17–21, and
-        // late (night/early) otherwise. Weight each part by summed probability.
-        func part(_ h: Int) -> Int {
-            switch h {
-            case 5..<12:  return 0
-            case 12..<17: return 1
-            case 17..<22: return 2
-            default:      return 3
-            }
-        }
-        var weight = [0, 0, 0, 0]
-        var parts = Set<Int>()
-        for w in wet {
-            let p = part(w.hour)
-            weight[p] += w.prob
-            parts.insert(p)
-        }
-
-        // Spread across three or more parts of the day reads as intermittent.
-        if parts.count >= 3 { return "on and off through the day" }
-
-        guard let dominant = weight.indices.max(by: { weight[$0] < weight[$1] }) else { return nil }
-        switch dominant {
-        case 0:  return "mainly in the morning"
-        case 1:  return "mainly in the afternoon"
-        case 2:  return "mainly in the evening"
-        default: return "mainly late in the day"
-        }
-    }
-
-    /// Slice the flat hourly arrays to this day and produce the timing fragment.
-    /// Gated on the day's own POP > 0 so the hourly curve only refines WHEN, never
-    /// whether — keeps it consistent with the shown precip %.
-    private func precipTimingFragment(for forecastDay: DailyForecastDay) -> String? {
-        guard forecastDay.precipChancePercent > 0 else { return nil }
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.timeZone = TimeZone(identifier: timeZoneID) ?? .current
-        f.dateFormat = "yyyy-MM-dd"
-        let dayKey = f.string(from: forecastDay.date)
-
-        var hours: [(hour: Int, prob: Int)] = []
-        for (i, iso) in hourlyTimeISO.enumerated()
-        where iso.hasPrefix(dayKey) && i < hourlyPrecipChancePercent.count {
-            // Open-Meteo local time is "yyyy-MM-ddTHH:mm" — hour is chars 11–12.
-            guard let hour = Int(iso.dropFirst(11).prefix(2)) else { continue }
-            hours.append((hour: hour, prob: Int(hourlyPrecipChancePercent[i].rounded())))
-        }
-        return Self.precipTimingDescriptor(hourly: hours)
-    }
-
-    private func generateAISummary(for forecastDay: DailyForecastDay) async -> String? {
-        guard #available(iOS 26.0, *) else { return nil }
-        guard SystemLanguageModel.default.isAvailable else { return nil }
-
-        let corrected = temperatureCorrectedConditionText(forecastDay.conditionText, highC: forecastDay.highC)
-
-        // Bucket the numbers into qualitative descriptors in Swift so the small
-        // on-device model can't mischaracterize them (e.g. calling 20% "a good
-        // chance of rain"). Thresholds mirror the fallback phrase-builder.
-        let feelDescriptor: String
-        switch forecastDay.highC {
-        case ..<0:     feelDescriptor = "It will feel cold."
-        case 0..<10:   feelDescriptor = "It will feel chilly."
-        case 10..<18:  feelDescriptor = "It will feel cool."
-        case 18..<25:  feelDescriptor = "It will feel mild."
-        case 25..<30:  feelDescriptor = "It will feel warm."
-        default:       feelDescriptor = "It will feel hot."
-        }
-
-        let pop = forecastDay.precipChancePercent
-        // Fold the number-free timing fragment (from the Open-Meteo hourly curve)
-        // into the precipitation descriptor. Only present when pop > 0, so it
-        // refines WHEN, never whether.
-        let timing = precipTimingFragment(for: forecastDay).map { ", \($0)" } ?? ""
-        let precipDescriptor: String
-        if pop <= 0 {
-            precipDescriptor = "No precipitation will be expected."
-        } else if pop <= 20 {
-            precipDescriptor = "There will be a slight chance of precipitation\(timing)."
-        } else if pop <= 50 {
-            precipDescriptor = "There will be a chance of precipitation\(timing)."
-        } else {
-            precipDescriptor = "Precipitation will be likely\(timing)."
-        }
-
-        // Only surface wind when gusts are actually notable, so "breezy" stops
-        // appearing on calm days. Thresholds match windSummarySentence. Windy days
-        // use emphatic "strong winds" wording — the model reliably softens a plain
-        // "windy" to "breezy", but rarely downgrades "strong". `isWindy` (gusts ≥
-        // the windy threshold, i.e. when the "Windy" badge shows) drives the guard
-        // below, decoupled from the descriptor wording.
-        var windDescriptor = ""
-        var isWindy = false
-        if let gustKPH = forecastDay.windGustKPH {
-            let gustValue = usesUSUnits ? gustKPH * 0.621371 : gustKPH
-            let breezy = usesUSUnits ? 22.0 : 35.0
-            let windy = usesUSUnits ? 30.0 : 45.0
-            let veryWindy = usesUSUnits ? 40.0 : 60.0
-            if gustValue >= veryWindy {
-                windDescriptor = "Very strong, gusty winds are expected."
-                isWindy = true
-            } else if gustValue >= windy {
-                windDescriptor = "Strong winds are expected."
-                isWindy = true
-            } else if gustValue >= breezy {
-                windDescriptor = "It will be breezy at times."
-            }
-        }
-
-        let dataLines = [
-            "Sky: \(corrected)",
-            feelDescriptor,
-            precipDescriptor,
-            windDescriptor
-        ].filter { !$0.isEmpty }.joined(separator: "\n")
-
-        let instructions = """
-        You write a short weather forecast summary for a mobile weather app.
-        Respond with only the summary — 1 or 2 sentences, plain natural language, \
-        no bullet points, no markdown, no preamble. End with a period.
-        This is a forecast for a day that has not happened yet, so write entirely \
-        in the future tense (use "will be", not "is" or "there is").
-        Do not begin with "Today" or "The forecast", do not name the day of the \
-        week, and never use relative-time words like "today", "tonight", "tomorrow", \
-        "yesterday", "this morning", or "overnight". When the descriptions say when \
-        precipitation is expected, you may state it using a general part of the day — \
-        "in the morning", "in the afternoon", "in the evening", or "on and off \
-        through the day". Never mention any number, temperature, \
-        degrees, wind chill, or heat index.
-        Use the wind and precipitation intensity exactly as given — do not soften \
-        "windy" to "breezy", and do not downgrade "a chance" to "a slight chance". \
-        Wind is not a chance event — never write "a chance of wind" or similar; \
-        state the wind conditions directly.
-        Describe the sky and how the day will feel using only the descriptions \
-        provided; never overstate the chance of precipitation beyond what is given. \
-        Vary your wording and avoid formulaic openers.
-        """
-
-        do {
-            let session = LanguageModelSession(instructions: instructions)
-            let options = GenerationOptions(temperature: 0.5)
-            let response = try await session.respond(to: dataLines, options: options)
-            var text = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
-
-            // A "Today …" opener is rejected outright by the relative-time loop
-            // below (it catches the leading "today") rather than strip-and-
-            // recapitalized — the strip mangled forms like "Today will feature …"
-            // into "Will feature …". Mid-sentence "… today."/"… tonight." is still
-            // cleaned up next, since that removal reads naturally.
-
-            // Safety net: strip a stray mid-sentence "today"/"tonight" that slips
-            // past the instruction (e.g. "Rain will likely fall today, and …").
-            for word in [" today", " tonight"] {
-                text = text
-                    .replacingOccurrences(of: "\(word),", with: ",")
-                    .replacingOccurrences(of: "\(word).", with: ".")
-            }
-
-            let lowered = text.lowercased()
-
-            // Reject any surviving relative-time reference. These can't be stripped
-            // cleanly mid-sentence ("The forecast for tomorrow will be clear"), and
-            // the day is never relative to now, so fall back to the phrase-builder.
-            // Keep this list in sync with the Android OutlookProvider validator.
-            for word in ["today", "tonight", "tomorrow", "yesterday",
-                         "this morning", "this afternoon", "this evening",
-                         "overnight", "right now", "currently"] {
-                if lowered.contains(word) { return nil }
-            }
-
-            // Reject hallucinated numbers/units. We pass no numbers to the model,
-            // so any digit or temperature phrasing is fabricated (e.g. "a wind
-            // chill of 90 degrees"). Discard it and let the phrase-builder show.
-            let hasDigit = text.rangeOfCharacter(from: .decimalDigits) != nil
-            if hasDigit
-                || text.contains("°")
-                || lowered.contains("degree")
-                || lowered.contains("wind chill")
-                || lowered.contains("heat index") {
-                return nil
-            }
-
-            // Reject wind wording that contradicts the actual strength. When it is
-            // genuinely windy (gusts ≥ the windy threshold — the same point the
-            // "Windy" badge appears) the summary must not soften it to light/breezy/
-            // calm. That contradiction is the visible defect; fall back instead.
-            if isWindy {
-                if lowered.contains("breez")
-                    || lowered.contains("light wind")
-                    || lowered.contains("gentle")
-                    || lowered.contains("calm")
-                    || lowered.contains("still air")
-                    || lowered.contains("chance of wind") {
-                    return nil
-                }
-            }
-
-            return text.isEmpty ? nil : text
-        } catch {
-            return nil
-        }
-    }
-
-    /// The sky condition as shown in the header: temperature-corrected, with the
-    /// probability word dropped — the Precip% tile directly below already states
-    /// the likelihood, so a label that hedges too is duplicated.
-    private var headerConditionText: String {
-        conditionWithoutProbability(
-            temperatureCorrectedConditionText(day.conditionText, highC: day.highC)
-        )
-    }
-
-    private var roundedPrecipChance: Int {
-        let clamped = max(0, min(100, day.precipChancePercent))
-        return Int((Double(clamped) / 10.0).rounded() * 10.0)
-    }
-
-    private var windSpeedValueText: String? {
-        guard let windKPH = day.windSpeedKPH else { return nil }
-        let value = usesUSUnits ? windKPH * 0.621371 : windKPH
-        let rounded = Int(round(value))
-        return "\(rounded)"
-    }
-
-    private var windDirectionText: String? {
-        guard let degrees = day.windDirectionDegrees else { return nil }
-        return cardinalDirection(for: degrees)
-    }
-
-    private var windPrimaryText: String {
-        let speed = windSpeedValueText ?? "—"
-        let unit = usesUSUnits ? " mph" : " km/h"
-        if let direction = windDirectionText {
-            return "\(direction) \(speed)\(unit)"
-        }
-        return "\(speed)\(unit)"
-    }
-
-
-    private var windGustText: String? {
-        guard let gustKPH = day.windGustKPH else { return nil }
-        let value = usesUSUnits ? gustKPH * 0.621371 : gustKPH
-        let rounded = Int(round(value))
-        return "\(rounded)"
-    }
-
-    private var windGustDisplayText: String {
-        guard let gust = windGustText else { return "—" }
-        return "up to \(gust)"
-    }
-
-    private var shouldShowWindRow: Bool {
-        windSpeedValueText != nil || windGustText != nil || windDirectionText != nil
-    }
-
-    private var isWindyFlagVisible: Bool {
-        guard let gustKPH = day.windGustKPH else { return false }
-        return gustKPH >= 45
-    }
-
-    private var windSummarySentence: String? {
-        guard let gustKPH = day.windGustKPH else { return nil }
-
-        let gustValue = usesUSUnits ? gustKPH * 0.621371 : gustKPH
-        let breezyThreshold = usesUSUnits ? 22.0 : 35.0
-        let windyThreshold = usesUSUnits ? 30.0 : 45.0
-        let veryWindyThreshold = usesUSUnits ? 40.0 : 60.0
-
-        if gustValue >= veryWindyThreshold {
-            return "Very windy, with strong gusts at times."
-        } else if gustValue >= windyThreshold {
-            return "Windy conditions expected."
-        } else if gustValue >= breezyThreshold {
-            return "Breezy at times."
-        } else {
-            return nil
-        }
-    }
-
-    private var windyFlagColor: Color {
-        colorScheme == .dark ? Color.cyan.opacity(0.95) : Color.blue.opacity(0.82)
-    }
 
     private var sheetBackground: some View {
         Color.clear
             .ignoresSafeArea()
     }
 
-    /// Hairline separator between stat columns; stretches to the row height.
-    private var statColumnDivider: some View {
-        Divider()
-            .overlay(Color.primary.opacity(0.08))
-    }
 
     private var innerCard: some View {
         RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -4513,243 +4791,6 @@ private struct DailyForecastDetailSheet: View {
         return max(0.0, min(23.999, hours))
     }
 
-    private var forecastSummary: String {
-        let correctedText = temperatureCorrectedConditionText(day.conditionText, highC: day.highC)
-        let isFreezing = day.highC <= 0
-
-        // Strip qualifier words that refineDailySky may have appended (e.g. "Snow possible",
-        // "Rain likely") so phrase builders don't produce "Snow possible expected."
-        // Shared with the card header, which drops them for the same reason.
-        let strippedText = conditionWithoutProbability(correctedText)
-
-        let condition = normalizedConditionText(strippedText)
-        let rawLower = strippedText.lowercased()
-
-        // Determine if the condition already carries a precip word
-        let hasPrecipWord = rawLower.contains("rain") || rawLower.contains("snow") ||
-            rawLower.contains("storm") || rawLower.contains("shower") ||
-            rawLower.contains("drizzle") || rawLower.contains("hail") ||
-            rawLower.contains("freezing") || rawLower.contains("grains")
-
-        // Classify precip-bearing conditions by contains rather than exact match,
-        // so granular descriptions like "Light snow" and "Heavy showers" are caught.
-        let isSimplePrecip = hasPrecipWord
-
-        var summary: String
-
-        if isSimplePrecip {
-            if roundedPrecipChance <= 30 {
-                summary = simplePrecipPossiblePhrase(condition: condition, rawLower: rawLower)
-            } else if roundedPrecipChance <= 60 {
-                summary = simplePrecipChancePhrase(condition: condition, rawLower: rawLower)
-            } else {
-                summary = simplePrecipLikelyPhrase(condition: condition, rawLower: rawLower)
-            }
-        } else {
-            summary = conditionBasePhrase(condition)
-        }
-
-        // Append a precip tail only when the condition doesn't already carry precip language
-        if roundedPrecipChance > 0 && !isSimplePrecip {
-            if roundedPrecipChance <= 20 {
-                summary += slightPrecipTailPhrase(isFreezing: isFreezing)
-            } else if roundedPrecipChance <= 50 {
-                summary += chancePrecipTailPhrase(isFreezing: isFreezing)
-            } else {
-                summary += likelyPrecipTailPhrase(isFreezing: isFreezing)
-            }
-        } else if roundedPrecipChance == 0 {
-            // Suppress dry tail when wind will provide a more meaningful secondary note
-            let windIsNotable = windSummarySentence != nil
-            let impliesDry = rawLower.contains("clear") || rawLower.contains("sun") ||
-                rawLower.contains("mainly") || rawLower.contains("mostly clear")
-            if !impliesDry && !windIsNotable {
-                summary += dryTailPhrase()
-            }
-        }
-
-        // Precip-timing tail — number-free, from the hourly curve — attached after
-        // the precipitation clause and before the wind tail. nil on dry days.
-        if let timing = precipTimingFragment(for: day) {
-            summary += ", \(timing)"
-        }
-
-        // Wind tail
-        let hasWithClause = summary.contains(", with ")
-        if let windSentence = windSummarySentence {
-            if windSentence.contains("Very windy") {
-                summary += hasWithClause ? strongWindTailPhraseAfterWith() : strongWindTailPhrase()
-            } else if windSentence.contains("Windy") {
-                summary += hasWithClause ? windyTailPhraseAfterWith() : windyTailPhrase()
-            } else if windSentence.contains("Breezy") {
-                summary += hasWithClause ? breezyTailPhraseAfterWith() : breezyTailPhrase()
-            }
-        }
-
-        return summary + "."
-    }
-
-    private var summaryVariationSeed: Int {
-        let dayKey = Calendar.current.startOfDay(for: day.date).timeIntervalSince1970
-        let roundedHigh = Int(round(day.highC))
-        let roundedLow = Int(round(day.lowC))
-        return Int(dayKey) ^ (roundedPrecipChance << 2) ^ (roundedHigh << 1) ^ roundedLow
-    }
-
-    private func variant(_ options: [String]) -> String {
-        guard !options.isEmpty else { return "" }
-        let index = abs(summaryVariationSeed) % options.count
-        return options[index]
-    }
-
-    // MARK: - Base phrase builders
-
-    private func conditionBasePhrase(_ condition: String) -> String {
-        variant([
-            condition,
-            "Expect a \(condition.lowercased()) day",
-            "\(condition) throughout the day"
-        ])
-    }
-
-    // MARK: - Precip phrase builders
-
-    private func simplePrecipPossiblePhrase(condition: String, rawLower: String) -> String {
-        variant([
-            "\(condition) possible",
-            "\(condition) may develop",
-            "A chance of \(rawLower)"
-        ])
-    }
-
-    private func simplePrecipChancePhrase(condition: String, rawLower: String) -> String {
-        variant([
-            "A chance of \(rawLower)",
-            "\(condition) at times",
-            "\(condition) possible"
-        ])
-    }
-
-    private func simplePrecipLikelyPhrase(condition: String, rawLower: String) -> String {
-        variant([
-            "\(condition) expected",
-            "Periods of \(rawLower)",
-            "\(condition) likely"
-        ])
-    }
-
-    // MARK: - Precip tail phrases (appended to non-precip base)
-
-    private func slightPrecipTailPhrase(isFreezing: Bool) -> String {
-        let precip = isFreezing ? "snow" : "rain"
-        return variant([
-            ", with a slight chance of \(precip)",
-            ", with a low chance of \(precip)"
-        ])
-    }
-
-    private func chancePrecipTailPhrase(isFreezing: Bool) -> String {
-        let precip = isFreezing ? "snow" : "rain"
-        return variant([
-            ", with a chance of \(precip)",
-            ", with some \(precip) possible"
-        ])
-    }
-
-    private func likelyPrecipTailPhrase(isFreezing: Bool) -> String {
-        let precip = isFreezing ? "snow" : "rain"
-        return variant([
-            ", with periods of \(precip)",
-            ", with \(precip) at times"
-        ])
-    }
-
-    private func dryTailPhrase() -> String {
-        variant([
-            ", dry",
-            ", staying dry",
-            ", with no precipitation expected"
-        ])
-    }
-
-    // MARK: - Wind tail phrases
-
-    private func strongWindTailPhrase() -> String {
-        variant([
-            ", with strong winds at times",
-            ", with gusty winds at times"
-        ])
-    }
-
-    private func strongWindTailPhraseAfterWith() -> String {
-        variant([
-            ", and strong winds at times",
-            ", and gusty winds at times"
-        ])
-    }
-
-    private func windyTailPhrase() -> String {
-        variant([
-            ", and windy at times",
-            ", with periods of wind"
-        ])
-    }
-
-    private func windyTailPhraseAfterWith() -> String {
-        variant([
-            ", and windy at times",
-            ", and periods of wind"
-        ])
-    }
-
-    private func breezyTailPhrase() -> String {
-        variant([
-            ", breezy at times",
-            ", with a breeze at times"
-        ])
-    }
-
-    private func breezyTailPhraseAfterWith() -> String {
-        variant([
-            ", and breezy at times",
-            ", and a breeze at times"
-        ])
-    }
-
-    private func normalizedConditionText(_ text: String) -> String {
-        guard let first = text.first else { return "Forecast conditions" }
-        return first.isLowercase ? first.uppercased() + text.dropFirst() : text
-    }
-
-    private func formattedTemp(_ celsius: Double) -> String {
-        let value = usesUSUnits ? ((celsius * 9.0 / 5.0) + 32.0) : celsius
-        let rounded = Int(round(value))
-        let unit = usesUSUnits ? "°F" : "°C"
-        return rounded > 0 ? "\(rounded)\(unit)" : "\(rounded)\(unit)"
-    }
-
-    private func temperatureText(_ celsius: Double) -> String {
-        let value = usesUSUnits ? ((celsius * 9.0 / 5.0) + 32.0) : celsius
-        let rounded = Int(round(value))
-        let unit = usesUSUnits ? "°F" : "°C"
-        return "\(rounded)\(unit)"
-    }
-
-    private func longDay(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_CA")
-        f.timeZone = TimeZone(identifier: timeZoneID) ?? .current
-        f.dateFormat = "EEEE, MMM d"
-        return f.string(from: date)
-    }
-
-    private func cardinalDirection(for degrees: Double) -> String {
-        let normalized = degrees.truncatingRemainder(dividingBy: 360)
-        let positive = normalized >= 0 ? normalized : normalized + 360
-        let directions = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"]
-        let index = Int((positive / 22.5).rounded()) % directions.count
-        return directions[index]
-    }
 
     
     private struct HourlyPoint: Identifiable {
