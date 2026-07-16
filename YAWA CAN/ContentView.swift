@@ -3819,7 +3819,7 @@ struct DailyForecastCardView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             header
             groupedStatBlock
             outlook
@@ -3858,11 +3858,11 @@ struct DailyForecastCardView: View {
                 .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
 
             Image(systemName: day.symbolName)
-                .font(.system(size: 44, weight: .semibold))
+                .font(.system(size: 36, weight: .semibold))
                 .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(YAWATheme.symbolColor(day.symbolName, scheme: colorScheme))
-                .padding(.top, 4)
-                .padding(.bottom, 2)
+                .padding(.top, 2)
+                .padding(.bottom, 1)
 
             Text(headerConditionText)
                 .font(.title3.weight(.semibold))
@@ -3895,13 +3895,15 @@ struct DailyForecastCardView: View {
                         .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
 
                     Image(systemName: now.symbolName)
-                        .font(.footnote.weight(.semibold))
+                        .font(.title3.weight(.semibold))
                         .symbolRenderingMode(.hierarchical)
                         .foregroundStyle(YAWATheme.symbolColor(now.symbolName, scheme: colorScheme))
 
+                    // The now temperature is the single most-glanced number on the
+                    // main screen — the largest, a step above the day's range.
                     if let temperature = now.temperature {
                         Text(temperature)
-                            .font(.title3.weight(.semibold))
+                            .font(.title2.weight(.semibold))
                             .monospacedDigit()
                             .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
                     }
@@ -3930,7 +3932,7 @@ struct DailyForecastCardView: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                     Text(temperatureText(day.highC))
-                        .font(.title3.weight(.semibold))
+                        .font(.headline.weight(.semibold))
                         .monospacedDigit()
                 }
                 .frame(maxWidth: .infinity)
@@ -3943,7 +3945,7 @@ struct DailyForecastCardView: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                     Text(temperatureText(day.lowC))
-                        .font(.title3.weight(.semibold))
+                        .font(.headline.weight(.semibold))
                         .monospacedDigit()
                 }
                 .frame(maxWidth: .infinity)
@@ -3957,7 +3959,7 @@ struct DailyForecastCardView: View {
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                         Text("\(roundedPrecipChance)%")
-                            .font(.title3.weight(.semibold))
+                            .font(.headline.weight(.semibold))
                             .monospacedDigit()
                     }
                     .frame(maxWidth: .infinity)
@@ -3995,7 +3997,7 @@ struct DailyForecastCardView: View {
                         }
 
                         Text(windPrimaryText)
-                            .font(.title3.weight(.medium))
+                            .font(.headline.weight(.semibold))
                             .foregroundStyle(.primary)
                             .monospacedDigit()
                             .multilineTextAlignment(.center)
@@ -4011,7 +4013,7 @@ struct DailyForecastCardView: View {
                             .font(.caption2)
                             .foregroundStyle(.secondary.opacity(0.72))
                         Text(windGustDisplayText)
-                            .font(.headline.weight(.medium))
+                            .font(.headline.weight(.semibold))
                             .foregroundStyle(.secondary.opacity(colorScheme == .dark ? 0.82 : 0.72))
                             .monospacedDigit()
                             .multilineTextAlignment(.center)
@@ -4040,11 +4042,9 @@ struct DailyForecastCardView: View {
     // MARK: - Outlook
 
     private var outlook: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Outlook")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-
+        // No "Outlook" heading: it's the only prose on the card, sits under the
+        // stat block, and the Apple Intelligence line already says what it is.
+        VStack(alignment: .leading, spacing: 6) {
             Text(aiSummary ?? forecastSummary)
                 .font(.subheadline)
                 .foregroundStyle(.primary)
@@ -4206,16 +4206,27 @@ struct DailyForecastCardView: View {
 
     private func precipTimingFragment(for forecastDay: DailyForecastDay) -> String? {
         guard forecastDay.precipChancePercent > 0 else { return nil }
+        let tz = TimeZone(identifier: timeZoneID) ?? .current
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = tz
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
-        f.timeZone = TimeZone(identifier: timeZoneID) ?? .current
+        f.timeZone = tz
         f.dateFormat = "yyyy-MM-dd"
         let dayKey = f.string(from: forecastDay.date)
+
+        // Never point the timing at a part of the day that has already passed:
+        // on TODAY's card, an evening reading was bucketing this morning's rain as
+        // "mainly in the morning". Drop elapsed hours; a future day has none.
+        // (Mirrors the NOAA build-55 fix.)
+        let isToday = cal.isDate(forecastDay.date, inSameDayAs: Date())
+        let nowHour = cal.component(.hour, from: Date())
 
         var hours: [(hour: Int, prob: Int)] = []
         for (i, iso) in hourlyTimeISO.enumerated()
         where iso.hasPrefix(dayKey) && i < hourlyPrecipChancePercent.count {
             guard let hour = Int(iso.dropFirst(11).prefix(2)) else { continue }
+            if isToday && hour < nowHour { continue }
             hours.append((hour: hour, prob: Int(hourlyPrecipChancePercent[i].rounded())))
         }
         return Self.precipTimingDescriptor(hourly: hours)
