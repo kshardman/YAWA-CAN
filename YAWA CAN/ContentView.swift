@@ -3851,7 +3851,68 @@ struct DailyForecastCardView: View {
 
     // MARK: - Header
 
+    @ViewBuilder
     private var header: some View {
+        if let now {
+            heroNowHeader(now)
+        } else {
+            dayHeader
+        }
+    }
+
+    /// The main-screen hero leads with the live observation (prominent), then a
+    /// compact line for today's forecast — the Now and Today rows swapped, Now
+    /// enlarged and Today shrunk. The detail sheet uses `dayHeader` unchanged.
+    private func heroNowHeader(_ now: DailyForecastNow) -> some View {
+        VStack(spacing: 2) {
+            Text("Now")
+                .font(.subheadline)
+                .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+
+            HStack(alignment: .center, spacing: 10) {
+                Image(systemName: now.symbolName)
+                    .font(.system(size: 38, weight: .semibold))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(YAWATheme.symbolColor(now.symbolName, scheme: colorScheme))
+
+                if let temperature = now.temperature {
+                    Text(temperature)
+                        .font(.system(size: 46, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
+                }
+            }
+            .padding(.top, 2)
+
+            if !now.condition.isEmpty {
+                Text(now.condition)
+                    .font(.title3)
+                    .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+
+            // Today's forecast, compact — the day card's old header, shrunk.
+            HStack(spacing: 6) {
+                Text("Today's Forecast")
+                    .font(.caption)
+                    .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+                Image(systemName: day.symbolName)
+                    .font(.footnote.weight(.semibold))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(YAWATheme.symbolColor(day.symbolName, scheme: colorScheme))
+                Text(headerConditionText)
+                    .font(.footnote)
+                    .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+            }
+            .padding(.top, 6)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var dayHeader: some View {
         VStack(spacing: 2) {
             Text(showsRelativeDay ? "Today" : longDay(day.date))
                 .font(.subheadline)
@@ -3886,46 +3947,8 @@ struct DailyForecastCardView: View {
 
     private var groupedStatBlock: some View {
         VStack(spacing: 0) {
-            // The live observation, above the day's range — reads top-to-bottom as
-            // one story. Only present on the main-screen hero.
-            if let now {
-                HStack(spacing: 7) {
-                    Text("Now")
-                        .font(.caption2)
-                        .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
-
-                    Image(systemName: now.symbolName)
-                        .font(.title3.weight(.semibold))
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(YAWATheme.symbolColor(now.symbolName, scheme: colorScheme))
-
-                    // The now temperature is the single most-glanced number on the
-                    // main screen — the largest, a step above the day's range.
-                    if let temperature = now.temperature {
-                        Text(temperature)
-                            .font(.title2.weight(.semibold))
-                            .monospacedDigit()
-                            .foregroundStyle(YAWATheme.textPrimary(for: colorScheme))
-                    }
-
-                    if !now.condition.isEmpty {
-                        Text(now.condition)
-                            .font(.subheadline)
-                            .foregroundStyle(YAWATheme.textSecondary(for: colorScheme))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.bottom, 10)
-
-                Divider()
-                    .overlay(Color.primary.opacity(0.08))
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 10)
-            }
-
-            // High / Low / Precip
+            // High / Low / Precip. (The live "Now" observation now leads the
+            // header on the hero; it no longer sits here.)
             HStack(spacing: 0) {
                 VStack(spacing: 3) {
                     Text("High")
@@ -3968,8 +3991,9 @@ struct DailyForecastCardView: View {
             }
             .fixedSize(horizontal: false, vertical: true)
 
-            // Wind / Gusts
-            if shouldShowWindRow {
+            // Wind / Gusts — hidden on the hero (now == nil is the detail sheet).
+            // The user taps into the day for wind; the hero stays uncluttered.
+            if now == nil, shouldShowWindRow {
                 Divider()
                     .overlay(Color.primary.opacity(0.08))
                     .padding(.horizontal, 16)
